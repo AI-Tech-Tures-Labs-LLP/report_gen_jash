@@ -578,6 +578,17 @@ For each data_requirement in KPIs and charts:
 
 ## UNIVERSAL SQL RULES (apply in both modes)
 
+GROUP BY RULES — READ FIRST, THESE ARE THE MOST COMMON MISTAKES:
+- GROUP BY must contain ONLY raw column names or positional numbers (GROUP BY 1, 2).
+- NEVER put aggregate functions (SUM, COUNT, AVG, ROUND, etc.) inside GROUP BY.
+- NEVER put column aliases (AS revenue, AS label, AS value) inside GROUP BY.
+- NEVER put expressions like DATE_TRUNC('month', col), TO_CHAR(...) directly in GROUP BY if they are already in the SELECT list — use positional reference (GROUP BY 1) instead.
+- CORRECT: SELECT category, SUM(total) AS revenue FROM t GROUP BY category
+- CORRECT: SELECT TO_CHAR(order_date,'YYYY-MM') AS month, SUM(total) AS rev FROM t GROUP BY 1
+- WRONG:   SELECT category, SUM(total) AS revenue FROM t GROUP BY category, SUM(total), AS, revenue
+- WRONG:   SELECT DATE_TRUNC('month', d), SUM(v) FROM t GROUP BY DATE_TRUNC('month',, d)  ← double comma bug
+- When using CTEs (WITH ... AS (...)), wrap the aggregation inside the CTE and SELECT from it — do not repeat aggregates in the outer GROUP BY.
+
 SCHEMA AND JOINS:
 - Use ONLY tables and columns present in the schema below
 - Follow documented JOIN chains — never guess a join path

@@ -156,13 +156,65 @@ def handle_get_data_profile() -> str:
         return json.dumps({"error": str(exc)})
 
 
+def _prevalidate_sql(sql: str) -> tuple[bool, str, str]:
+    """Pre-validate SQL syntax before execution to catch common errors.
+
+    Returns (is_valid, corrected_sql, error_message)
+    """
+    if not sql or not sql.strip():
+        return False, sql, "Empty SQL query"
+
+    sql_clean = ' '.join(sql.split())
+    sql_upper = sql_clean.upper()
+    errors = []
+
+    # Check 2: Duplicate table aliases
+    # Skip for CTEs — the same alias is routinely reused in different CTE scopes
+    # and a flat regex scan across the whole SQL produces false positives.
+    has_cte = bool(re.match(r'\s*WITH\b', sql_clean, re.IGNORECASE))
+    if not has_cte:
+        from_matches = re.findall(r'\bFROM\s+(\w+)\s+(\w+)', sql_clean, re.IGNORECASE)
+        join_matches = re.findall(r'\bJOIN\s+(\w+)\s+(\w+)', sql_clean, re.IGNORECASE)
+
+        all_aliases = {}
+        for table, alias in from_matches + join_matches:
+            alias_lower = alias.lower()
+            if alias_lower in all_aliases and all_aliases[alias_lower].lower() != table.lower():
+                errors.append(f"Duplicate alias '{alias}' used for both {all_aliases[alias_lower]} and {table}")
+            else:
+                all_aliases[alias_lower] = table
+
+    # Check 3: Window function inside aggregate (common error)
+    if re.search(r'(SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*?(OVER|RANK|ROW_NUMBER|LAG|LEAD)\s*\(', sql_clean, re.IGNORECASE):
+        errors.append("Aggregate function cannot contain window function calls - restructure query")
+
+    # Check 4: CTE (WITH clause) reference errors
+    cte_matches = re.findall(r'WITH\s+(\w+)\s+AS', sql_clean, re.IGNORECASE)
+    cte_names = {cte.lower() for cte in cte_matches}
+
+    # Check for undefined table references (basic check)
+    table_refs = re.findall(r'\bFROM\s+(\w+)|JOIN\s+(\w+)', sql_clean, re.IGNORECASE)
+    for match in table_refs:
+        table = match[0] or match[1]
+        table_lower = table.lower()
+        # Skip if it's a known CTE or common table
+        if table_lower in cte_names:
+            continue
+
+    if errors:
+        return False, sql, "; ".join(errors)
+
+    return True, sql, ""
+
+
 def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
     """Execute SQL with auto-correction and safety validation.
 
     Applies the full validation chain:
     1. Auto-correct known LLM mistakes (_fix_report_sql)
-    2. Safety validation (validate_sql)
-    3. Execute and return results or error
+    2. Pre-validation (syntax checks before DB execution)
+    3. Safety validation (validate_sql)
+    4. Execute and return results or error
     """
     try:
         # Step 1: Auto-correct common mistakes
@@ -177,7 +229,16 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
                 corrected_sql[:200],
             )
 
-        # Step 2: Safety validation
+        # Step 2: Pre-validation (catch errors before DB execution)
+        is_valid, corrected_sql, validation_error = _prevalidate_sql(corrected_sql)
+        if not is_valid:
+            return json.dumps({
+                "success": False,
+                "error": f"SQL validation error: {validation_error}",
+                "corrected_sql": corrected_sql,
+            })
+
+        # Step 3: Safety validation
         is_safe, reason = validate_sql(corrected_sql)
         if not is_safe:
             return json.dumps({
@@ -186,7 +247,7 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
                 "corrected_sql": corrected_sql,
             })
 
-        # Step 3: Execute
+        # Step 4: Execute
         result = execute_sql(corrected_sql)
 
         if result["success"]:
@@ -232,13 +293,14 @@ def handle_validate_sql_query(sql: str) -> str:
         if not schema_valid:
             issues.extend(schema_issues)
 
-        # Pattern checker
+        # Pattern checker (includes GROUP BY aggregate/alias contamination check)
         pattern_issues = check_sql_patterns(sql)
         if pattern_issues:
             for pi in pattern_issues:
-                issues.append(
-                    f"{pi['pattern_name']}: {pi.get('description', pi.get('fix', ''))}"
-                )
+                msg = f"{pi['pattern_name']}: {pi.get('description', pi.get('fix', ''))}"
+                if pi.get('correction'):
+                    msg += f"\nHOW TO FIX: {pi['correction']}"
+                issues.append(msg)
 
         # Safety check
         is_safe, reason = validate_sql(sql)

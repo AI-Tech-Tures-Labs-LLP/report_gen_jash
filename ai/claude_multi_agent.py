@@ -46,8 +46,8 @@ from db.profiler import get_data_profile
 logger = logging.getLogger(__name__)
 
 # ── Model aliases ─────────────────────────────────────────────────────────────
-_SONNET = config.CLAUDE_MODEL        # Business Analyst, SQL Agent, Report Writer
-_HAIKU  = config.CLAUDE_HAIKU_MODEL  # Context Agent, Data Analyst, QA Agent (~8x cheaper)
+_SONNET = config.CLAUDE_MODEL        # Available for complex tasks if needed
+_HAIKU  = config.CLAUDE_HAIKU_MODEL  # All agents — fast & cost-effective
 
 # ── Agent display config ─────────────────────────────────────────────────────
 _AGENTS_STANDARD = [
@@ -232,10 +232,12 @@ class ClaudeReportPipeline:
             feedback = qa_result.get("feedback", "")[:80]
 
             # Override the LLM's approved field based on actual score.
-            # Haiku sometimes returns approved=false for scores that should pass.
-            # Rule: ≥58% of max_score = approved (i.e., 7/12 for standard, 7/12 for drift)
+            # Match the QA prompt scoring rules:
+            #   10+ → APPROVED, 7-9 → APPROVED_WITH_WARNINGS,
+            #   4-6 → CONDITIONAL (show to user), <4 → REJECTED (retry)
+            # Only scores below 4 trigger expensive pipeline retries.
             if isinstance(score, (int, float)) and isinstance(max_sc, (int, float)) and max_sc > 0:
-                approved = score >= (max_sc * 0.58)
+                approved = score >= 4
             status_col = _GREEN if approved else _RED
             _tee(
                 f"  {_c('QA VERDICT', _BOLD)}: {_c('APPROVED' if approved else 'REJECTED', status_col, _BOLD)}  "
@@ -325,9 +327,8 @@ class ClaudeReportPipeline:
             ),
             tools=CONTEXT_AGENT_TOOLS,
             tool_handlers=TOOL_HANDLERS,
-            max_tokens=4096,
             agent_name="Context + Signal Agent",
-            model=_SONNET,
+            model=_HAIKU,
             use_cache=True,
         )
 
@@ -388,9 +389,8 @@ class ClaudeReportPipeline:
             user_message=user_msg,
             tools=BA_AGENT_TOOLS,
             tool_handlers=TOOL_HANDLERS,
-            max_tokens=16384 if intent_mode == 'DRIFT_INVESTIGATION' else 8192,
             agent_name="Drift Architect" if intent_mode == 'DRIFT_INVESTIGATION' else "Business Analyst",
-            model=_SONNET,
+            model=_HAIKU,
             use_cache=True,
         )
 
@@ -441,7 +441,6 @@ class ClaudeReportPipeline:
                 f"Include all SQL and actual data in the output JSON."
             )
             max_rounds = 40  # drift needs more rounds for multi-phase
-            max_tokens = 32768
         else:
             user_msg = (
                 f"Execute SQL queries to populate this report blueprint with real data.\n\n"
@@ -458,17 +457,15 @@ class ClaudeReportPipeline:
                 f"- Include the SQL used and actual data for each element"
             )
             max_rounds = 25
-            max_tokens = 16384
 
         response = self.client.call_agent(
             system_prompt=system_prompt,
             user_message=user_msg,
             tools=SQL_AGENT_TOOLS,
             tool_handlers=TOOL_HANDLERS,
-            max_tokens=max_tokens,
             max_tool_rounds=max_rounds,
             agent_name="Drift Detective" if intent_mode == 'DRIFT_INVESTIGATION' else "SQL Agent",
-            model=_SONNET,
+            model=_HAIKU,
             use_cache=True,
         )
 
@@ -512,9 +509,8 @@ class ClaudeReportPipeline:
         response = self.client.call_agent(
             system_prompt=DATA_ANALYST_SYSTEM,
             user_message=user_msg,
-            max_tokens=16384,
             agent_name="Causal Validator" if intent_mode == 'DRIFT_INVESTIGATION' else "Data Analyst",
-            model=_SONNET if intent_mode == 'DRIFT_INVESTIGATION' else _HAIKU,
+            model=_HAIKU,
             use_cache=True,
         )
 
@@ -565,14 +561,13 @@ class ClaudeReportPipeline:
         response = self.client.call_agent(
             system_prompt=REPORT_WRITER_SYSTEM,
             user_message=user_msg,
-            max_tokens=16384,
             agent_name="Drift Narrator" if intent_mode == 'DRIFT_INVESTIGATION' else "Report Writer",
-            model=_SONNET,
+            model=_HAIKU,
             use_cache=True,
         )
 
         try:
-            return self.client.extract_json(response)
+            result = self.client.extract_json(response)
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning("Report writer parse failed: %s", exc)
             for kpi in report.get('kpis', []):
@@ -584,6 +579,13 @@ class ClaudeReportPipeline:
             if 'insights' not in report:
                 report['insights'] = []
             return report
+
+        # If report writer returned empty insights, generate them in a focused follow-up call
+        if not result.get("insights"):
+            logger.info("Report writer returned 0 insights — running focused insight generation")
+            result["insights"] = self._generate_insights_fallback(result, context)
+
+        return result
 
     def _run_qa_agent(self, question: str, report: dict) -> dict:
         """Agent 6: Quality assurance - 12-point for drift, 8-point for standard."""
@@ -612,9 +614,8 @@ class ClaudeReportPipeline:
         response = self.client.call_agent(
             system_prompt=QA_AGENT_SYSTEM,
             user_message=user_msg,
-            max_tokens=8192 if intent_mode == 'DRIFT_INVESTIGATION' else 4096,
             agent_name="Drift QA" if intent_mode == 'DRIFT_INVESTIGATION' else "QA Agent",
-            model=_SONNET if intent_mode == 'DRIFT_INVESTIGATION' else _HAIKU,
+            model=_HAIKU,
             use_cache=True,
         )
 
@@ -623,6 +624,65 @@ class ClaudeReportPipeline:
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning("QA agent parse failed: %s - auto-approving", exc)
             return {'approved': True, 'score': max_score - 2, 'max_score': max_score, 'feedback': 'Auto-approved'}
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # INSIGHT FALLBACK
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _generate_insights_fallback(self, report: dict, context: dict) -> list[dict]:
+        """Generate insights via a focused follow-up call when the report writer omits them."""
+        # Build a compact data summary for the insight generation prompt
+        kpi_summary = "; ".join(
+            f"{k.get('label','?')}: {k.get('value','?')}"
+            for k in report.get("kpis", [])
+        )
+        chart_summary = "; ".join(
+            f"{c.get('title','?')} ({len(c.get('data',[]))} rows)"
+            for c in report.get("charts", [])
+        )
+
+        user_msg = (
+            f"Generate exactly 6-8 data-driven insights for this report.\n\n"
+            f"CONTEXT: {context.get('subject', 'Report')}, domain: {context.get('business_domain', 'sales')}\n"
+            f"KPIs: {kpi_summary}\n"
+            f"Charts: {chart_summary}\n"
+            f"Summary: {report.get('summary', '')[:500]}\n\n"
+            f"Return ONLY a JSON array of insight objects. Each insight MUST have:\n"
+            f"- \"title\": 5-8 word directional claim\n"
+            f"- \"body\": 2-3 sentences with specific numbers from the data\n"
+            f"- \"type\": \"positive\" | \"negative\" | \"neutral\" | \"warning\"\n\n"
+            f"At least 2 insights must be \"warning\" or \"negative\" type.\n"
+            f"Do NOT restate KPI values — synthesize across dimensions and find non-obvious patterns.\n\n"
+            f"REPORT DATA (first 2 chart datasets for reference):\n"
+            f"{json.dumps([c.get('data', [])[:10] for c in report.get('charts', [])[:2]], default=str)}"
+        )
+
+        response = self.client.call_agent(
+            system_prompt="You are a data analyst generating insights. Return ONLY a JSON array.",
+            user_message=user_msg,
+            agent_name="Insight Fallback",
+            model=_HAIKU,
+            use_cache=False,
+        )
+
+        try:
+            text = response.strip()
+            if text.startswith("```"):
+                lines = text.split("\n")
+                lines = [ln for ln in lines if not ln.strip().startswith("```")]
+                text = "\n".join(lines).strip()
+            start = text.find("[")
+            end = text.rfind("]")
+            if start != -1 and end != -1 and end > start:
+                text = text[start:end + 1]
+            insights = json.loads(text)
+            if isinstance(insights, list) and len(insights) > 0:
+                logger.info("Insight fallback generated %d insights", len(insights))
+                return insights
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("Insight fallback parse failed: %s", exc)
+
+        return []
 
     # ═══════════════════════════════════════════════════════════════════════
     # POST-PROCESSING

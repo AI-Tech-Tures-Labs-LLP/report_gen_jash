@@ -17,8 +17,9 @@
         return;
     }
 
-    // ── Retrieve data from sessionStorage ─────────────────────────────────
-    const raw = sessionStorage.getItem(reportId);
+    // ── Retrieve data from localStorage ─────────────────────────────────
+    // localStorage persists across tabs (unlike sessionStorage which is tab-specific)
+    const raw = localStorage.getItem("sqlbot_report_" + reportId);
     if (!raw) {
         document.getElementById("reportContent").innerHTML =
             '<div class="report-loading"><div class="report-loading-text">Report data not found. Please generate the report again from the chat.</div></div>';
@@ -26,8 +27,8 @@
     }
 
     const reportData = JSON.parse(raw);
-    const question = sessionStorage.getItem(reportId + "_question") || "Report";
-    const theme = sessionStorage.getItem(reportId + "_theme") || "light";
+    const question = localStorage.getItem("sqlbot_report_" + reportId + "_question") || "Report";
+    const theme = localStorage.getItem("sqlbot_report_" + reportId + "_theme") || "light";
 
     // Apply the theme from the parent page
     document.documentElement.setAttribute("data-theme", theme);
@@ -37,9 +38,9 @@
 
     function _persistReport() {
         try {
-            const saved = JSON.parse(sessionStorage.getItem(reportId) || "{}");
+            const saved = JSON.parse(localStorage.getItem("sqlbot_report_" + reportId) || "{}");
             saved.report = currentReport;
-            sessionStorage.setItem(reportId, JSON.stringify(saved));
+            localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(saved));
         } catch (_) {}
         // Broadcast to main chat tab so @ mentions update
         try {
@@ -57,10 +58,10 @@
     // ── Color Palettes ────────────────────────────────────────────────────
     const PALETTES = {
         blues:   ["#3b82f6","#2563eb","#1d4ed8","#60a5fa","#93c5fd","#1e40af"],
-        greens:  ["#10b981","#059669","#047857","#34d399","#6ee7b7","#065f46"],
+        golds:   ["#d4af37","#b8860b","#8b6914","#daa520","#f0e68c","#ffd700"],
         purples: ["#8b5cf6","#7c3aed","#6d28d9","#a78bfa","#c4b5fd","#5b21b6"],
         oranges: ["#f59e0b","#d97706","#b45309","#fbbf24","#fcd34d","#92400e"],
-        mixed:   ["#10b981","#3b82f6","#8b5cf6","#f59e0b","#f43f5e","#06b6d4","#6366f1","#ec4899","#14b8a6","#a855f7","#eab308","#ef4444","#22c55e","#0ea5e9","#d946ef"],
+        mixed:   ["#d4af37","#3b82f6","#8b5cf6","#f59e0b","#f43f5e","#06b6d4","#6366f1","#ec4899","#daa520","#a855f7","#eab308","#ef4444","#ffd700","#0ea5e9","#d946ef"],
         gradient:["#6366f1","#8b5cf6","#a855f7","#c084fc","#d8b4fe","#7c3aed"],
     };
     const DEFAULT_COLORS = PALETTES.mixed;
@@ -627,7 +628,7 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         report: originalReport,
-                        provider: sessionStorage.getItem(reportId + "_provider") || "claude",
+                        provider: localStorage.getItem("sqlbot_report_" + reportId + "_provider") || "claude",
                         ...filters,
                     }),
                 });
@@ -645,7 +646,7 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         question: question,
-                        provider: sessionStorage.getItem(reportId + "_provider") || "claude",
+                        provider: localStorage.getItem("sqlbot_report_" + reportId + "_provider") || "claude",
                         ...filters,
                     }),
                 });
@@ -1122,66 +1123,89 @@
         const chartType = (chartSpec.type || "bar").toLowerCase();
         const totalItems = data.length;
         const uniqueLabels = [...new Set(data.map(r => String(r[labelKey])))];
-        const chartTitle = chartSpec.title || "Chart";
 
-        // ── Which filters to show per chart type ────────────────────────
-        const isPie = isPieType(chartType);
-        const isLine = chartType === "line" || chartType === "area";
-        const isBar = chartType === "bar" || chartType === "horizontalbar" || chartType === "stackedbar";
-        const showLabel    = uniqueLabels.length > 1;
-        const showTopN     = totalItems > 3 && !isLine;
-        const showSort     = isBar || isPie;
-        const showSeries   = valueKeys.length > 1;
-        const showGroupOthers = showTopN && totalItems > 5;
+        // ── Smart filter decisions per chart type ────────────────────────
+        const isPie    = isPieType(chartType);
+        const isLine   = chartType === "line" || chartType === "area";
+        const isBar    = chartType === "bar" || chartType === "horizontalbar" || chartType === "stackedbar";
+        const isScatter = chartType === "scatter" || chartType === "bubble";
 
-        // ── Header ──────────────────────────────────────────────────────
-        let html = `<div class="cf-header">
+        // Detect if label column looks like a date/time axis
+        const looksLikeDate = /date|week|month|year|period|time/i.test(labelKey) ||
+            (uniqueLabels.length > 0 && /^\d{4}[-\/]\d{2}/.test(String(uniqueLabels[0])));
+
+        const showDateRange   = isLine && looksLikeDate && uniqueLabels.length > 3;
+        // Label pills for small sets; dropdown for medium; search for large
+        const showLabelPills  = !looksLikeDate && uniqueLabels.length > 1 && uniqueLabels.length <= 12;
+        const showLabelSelect = !looksLikeDate && !showLabelPills && uniqueLabels.length <= 50 && uniqueLabels.length > 1;
+        const showLabelSearch = !looksLikeDate && uniqueLabels.length > 50;
+        const showTopN        = totalItems > 4 && !isLine && !isScatter;
+        const showSort        = isBar || isPie;
+        const showSeries      = valueKeys.length > 1;
+        const showGroupOthers = showTopN && totalItems > 6;
+
+        // ── Build HTML — wrapped in .chart-filter-panel-inner ───────────
+        let innerHtml = '';
+
+        // Header
+        innerHtml += `<div class="cf-header">
             <div class="cf-header-title">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                Chart Filters
-                <span class="cf-header-subtitle">\u2014 ${escapeHtml(chartTitle.length > 28 ? chartTitle.substring(0, 26) + '\u2026' : chartTitle)}</span>
+                Filters
             </div>
-            <button class="cf-close-btn" id="cfClose_${idx}" title="Close filters">
+            <button class="cf-close-btn" id="cfClose_${idx}" title="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
         </div>`;
 
-        // ── Body ────────────────────────────────────────────────────────
-        html += '<div class="cf-body">';
+        // Body
+        innerHtml += '<div class="cf-body">';
 
-        // Section: Label / Category
-        if (showLabel && uniqueLabels.length <= 50) {
-            html += `<div class="cf-section">
+        // Date range (time-series charts)
+        if (showDateRange) {
+            innerHtml += `<div class="cf-section">
+                <div class="cf-section-label">Date Range</div>
+                <div class="cf-date-row">
+                    <input type="date" class="cf-date-input" id="cfDateFrom_${idx}" title="From" />
+                    <span class="cf-date-sep">\u2192</span>
+                    <input type="date" class="cf-date-input" id="cfDateTo_${idx}" title="To" />
+                </div>
+            </div>`;
+        }
+
+        // Label pills (≤12 unique values — clickable multi-select)
+        if (showLabelPills) {
+            innerHtml += `<div class="cf-section">
                 <div class="cf-section-label">${escapeHtml(formatColumnName(labelKey))}</div>
-                <select class="cf-select" id="cfLabel_${idx}" multiple size="1">
-                    <option value="__all__" selected>All ${escapeHtml(formatColumnName(labelKey))}s</option>
-                    ${uniqueLabels.map(l => `<option value="${escapeAttr(l)}">${escapeHtml(l.length > 35 ? l.substring(0, 33) + '\u2026' : l)}</option>`).join('')}
+                <div class="cf-label-pills" id="cfLabelPills_${idx}">
+                    <button class="cf-label-pill active" data-val="__all__">All</button>
+                    ${uniqueLabels.map(l => `<button class="cf-label-pill" data-val="${escapeAttr(l)}">${escapeHtml(l.length > 18 ? l.substring(0, 16) + '\u2026' : l)}</button>`).join('')}
+                </div>
+            </div>`;
+        }
+
+        // Label dropdown (13-50 values)
+        if (showLabelSelect) {
+            innerHtml += `<div class="cf-section">
+                <div class="cf-section-label">${escapeHtml(formatColumnName(labelKey))}</div>
+                <select class="cf-select" id="cfLabel_${idx}">
+                    <option value="__all__">All ${escapeHtml(formatColumnName(labelKey))}s</option>
+                    ${uniqueLabels.map(l => `<option value="${escapeAttr(l)}">${escapeHtml(l.length > 32 ? l.substring(0, 30) + '\u2026' : l)}</option>`).join('')}
                 </select>
             </div>`;
-        } else if (showLabel && uniqueLabels.length > 50) {
-            html += `<div class="cf-section">
+        }
+
+        // Label search (>50 values)
+        if (showLabelSearch) {
+            innerHtml += `<div class="cf-section">
                 <div class="cf-section-label">${escapeHtml(formatColumnName(labelKey))}</div>
                 <input type="text" class="cf-search-input" id="cfSearch_${idx}" placeholder="Search ${formatColumnName(labelKey).toLowerCase()}\u2026" />
             </div>`;
         }
 
-        // Section: Sort By (dropdown)
-        if (showSort) {
-            html += `<div class="cf-section">
-                <div class="cf-section-label">Sort By</div>
-                <select class="cf-select" id="cfSort_${idx}">
-                    <option value="default">Default Order</option>
-                    <option value="desc">\u2193 Highest First</option>
-                    <option value="asc">\u2191 Lowest First</option>
-                    <option value="alpha">A \u2192 Z</option>
-                    <option value="alpha_desc">Z \u2192 A</option>
-                </select>
-            </div>`;
-        }
-
-        // Section: Series selector
+        // Series selector (multi-series charts)
         if (showSeries) {
-            html += `<div class="cf-section">
+            innerHtml += `<div class="cf-section">
                 <div class="cf-section-label">Series</div>
                 <select class="cf-select" id="cfValueCol_${idx}">
                     <option value="__all__">All Series</option>
@@ -1190,43 +1214,58 @@
             </div>`;
         }
 
-        // Section: Show Top (pill buttons)
-        if (showTopN) {
-            const topOptions = [5, 10, 20].filter(n => n < totalItems);
-            html += `<div class="cf-section">
-                <div class="cf-section-label">Show Top</div>
-                <div class="cf-pills">
-                    <button class="cf-pill active" data-topn="0" data-idx="${idx}">All</button>
-                    ${topOptions.map(n => `<button class="cf-pill" data-topn="${n}" data-idx="${idx}">Top ${n}</button>`).join('')}
-                </div>
+        // Sort By (bar / pie)
+        if (showSort) {
+            innerHtml += `<div class="cf-section">
+                <div class="cf-section-label">Sort</div>
+                <select class="cf-select" id="cfSort_${idx}">
+                    <option value="default">Default</option>
+                    <option value="desc">\u2193 Highest first</option>
+                    <option value="asc">\u2191 Lowest first</option>
+                    <option value="alpha">A \u2192 Z</option>
+                    <option value="alpha_desc">Z \u2192 A</option>
+                </select>
             </div>`;
+        }
 
-            // Group Others toggle (inside Top N section)
+        // Top N (non-line charts with many items)
+        if (showTopN) {
+            const topOptions = [5, 10, 15, 20].filter(n => n < totalItems);
+            if (topOptions.length > 0) {
+                innerHtml += `<div class="cf-section">
+                    <div class="cf-section-label">Show Top</div>
+                    <div class="cf-pills" id="cfTopPills_${idx}">
+                        <button class="cf-pill active" data-topn="0" data-idx="${idx}">All</button>
+                        ${topOptions.map(n => `<button class="cf-pill" data-topn="${n}" data-idx="${idx}">Top ${n}</button>`).join('')}
+                    </div>
+                </div>`;
+            }
+
             if (showGroupOthers) {
-                html += `<div class="cf-section">
+                innerHtml += `<div class="cf-section">
                     <div class="cf-toggle-row">
                         <label class="cf-switch">
                             <input type="checkbox" id="cfGroupOthers_${idx}" />
                             <span class="cf-switch-track"></span>
                         </label>
-                        <label class="cf-switch-label" for="cfGroupOthers_${idx}">Group remaining as "Others"</label>
+                        <label class="cf-switch-label" for="cfGroupOthers_${idx}">Group rest as "Others"</label>
                     </div>
                 </div>`;
             }
         }
 
-        html += '</div>';
+        innerHtml += '</div>';
 
-        // ── Footer ──────────────────────────────────────────────────────
-        html += `<div class="cf-footer">
+        // Footer
+        innerHtml += `<div class="cf-footer">
             <button class="cf-apply-btn" id="cfApply_${idx}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                Apply Filters
+                Apply
             </button>
             <button class="cf-reset-btn" id="cfReset_${idx}">Reset</button>
         </div>`;
 
-        panel.innerHTML = html;
+        panel.innerHTML = `<div class="chart-filter-panel-inner">${innerHtml}</div>`;
 
         // ── Wire events ─────────────────────────────────────────────────
         document.getElementById(`cfApply_${idx}`)?.addEventListener("click", () => applyChartFilter(idx));
@@ -1237,25 +1276,34 @@
             if (toggleBtn) toggleBtn.classList.remove("active");
         });
 
-        // Wire pill buttons (Top N)
-        panel.querySelectorAll(".cf-pill").forEach(pill => {
+        // Wire Top N pill buttons
+        panel.querySelectorAll(".cf-pill[data-topn]").forEach(pill => {
             pill.addEventListener("click", () => {
-                panel.querySelectorAll(".cf-pill").forEach(p => p.classList.remove("active"));
+                panel.querySelectorAll(".cf-pill[data-topn]").forEach(p => p.classList.remove("active"));
                 pill.classList.add("active");
+                applyChartFilter(idx);
             });
         });
 
-        // Wire label dropdown: deselect "All" when specific items are picked
-        const labelSelect = document.getElementById(`cfLabel_${idx}`);
-        if (labelSelect) {
-            labelSelect.addEventListener("change", () => {
-                const selected = Array.from(labelSelect.selectedOptions).map(o => o.value);
-                if (selected.includes("__all__") && selected.length > 1) {
-                    labelSelect.querySelector('option[value="__all__"]').selected = false;
+        // Wire label pills (multi-select: clicking "All" resets, clicking items toggles)
+        const pillsContainer = document.getElementById(`cfLabelPills_${idx}`);
+        if (pillsContainer) {
+            pillsContainer.addEventListener("click", e => {
+                const pill = e.target.closest(".cf-label-pill");
+                if (!pill) return;
+                const val = pill.dataset.val;
+                if (val === "__all__") {
+                    pillsContainer.querySelectorAll(".cf-label-pill").forEach(p => p.classList.remove("active"));
+                    pill.classList.add("active");
+                } else {
+                    const allPill = pillsContainer.querySelector('[data-val="__all__"]');
+                    if (allPill) allPill.classList.remove("active");
+                    pill.classList.toggle("active");
+                    // If nothing selected, revert to All
+                    const anyActive = [...pillsContainer.querySelectorAll(".cf-label-pill")].some(p => p.classList.contains("active") && p.dataset.val !== "__all__");
+                    if (!anyActive && allPill) allPill.classList.add("active");
                 }
-                if (selected.filter(v => v !== "__all__").length === 0) {
-                    labelSelect.querySelector('option[value="__all__"]').selected = true;
-                }
+                applyChartFilter(idx);
             });
         }
     }
@@ -1280,21 +1328,36 @@
         let filtered = [...data];
         let activeFilterDescriptions = [];
 
-        // ── 1. Label filter (dropdown or search) ────────────────────────
-        const labelSelect = document.getElementById(`cfLabel_${idx}`);
-        const searchInput = document.getElementById(`cfSearch_${idx}`);
+        // ── 1. Label filter (pills / dropdown / search / date range) ───────
+        const labelPillsEl  = document.getElementById(`cfLabelPills_${idx}`);
+        const labelSelect   = document.getElementById(`cfLabel_${idx}`);
+        const searchInput   = document.getElementById(`cfSearch_${idx}`);
+        const dateFromInput = document.getElementById(`cfDateFrom_${idx}`);
+        const dateToInput   = document.getElementById(`cfDateTo_${idx}`);
 
-        if (labelSelect) {
-            const selected = Array.from(labelSelect.selectedOptions).map(o => o.value);
-            if (!selected.includes("__all__") && selected.length > 0) {
-                filtered = filtered.filter(row => selected.includes(String(row[labelKey])));
-                activeFilterDescriptions.push(`${selected.length} selected`);
+        if (labelPillsEl) {
+            const activePills = [...labelPillsEl.querySelectorAll(".cf-label-pill.active")].map(p => p.dataset.val);
+            if (!activePills.includes("__all__") && activePills.length > 0) {
+                filtered = filtered.filter(row => activePills.includes(String(row[labelKey])));
+                activeFilterDescriptions.push(`${activePills.length} selected`);
             }
+        }
+        if (labelSelect && labelSelect.value !== "__all__") {
+            filtered = filtered.filter(row => String(row[labelKey]) === labelSelect.value);
+            activeFilterDescriptions.push(labelSelect.options[labelSelect.selectedIndex]?.text || labelSelect.value);
         }
         if (searchInput && searchInput.value.trim()) {
             const term = searchInput.value.trim().toLowerCase();
             filtered = filtered.filter(row => String(row[labelKey]).toLowerCase().includes(term));
             activeFilterDescriptions.push(`"${searchInput.value.trim()}"`);
+        }
+        if (dateFromInput && dateFromInput.value) {
+            filtered = filtered.filter(row => String(row[labelKey]) >= dateFromInput.value);
+            activeFilterDescriptions.push(`From ${dateFromInput.value}`);
+        }
+        if (dateToInput && dateToInput.value) {
+            filtered = filtered.filter(row => String(row[labelKey]) <= dateToInput.value);
+            activeFilterDescriptions.push(`To ${dateToInput.value}`);
         }
 
         // ── 2. Sort ─────────────────────────────────────────────────────
@@ -1411,11 +1474,20 @@
 
         // Reset all filter controls
         const labelSelect = document.getElementById(`cfLabel_${idx}`);
-        if (labelSelect) {
-            Array.from(labelSelect.options).forEach(o => { o.selected = o.value === "__all__"; });
-        }
+        if (labelSelect) labelSelect.value = "__all__";
         const searchInput = document.getElementById(`cfSearch_${idx}`);
         if (searchInput) searchInput.value = "";
+        const dateFromInput = document.getElementById(`cfDateFrom_${idx}`);
+        if (dateFromInput) dateFromInput.value = "";
+        const dateToInput = document.getElementById(`cfDateTo_${idx}`);
+        if (dateToInput) dateToInput.value = "";
+        // Reset label pills
+        const pillsContainer = document.getElementById(`cfLabelPills_${idx}`);
+        if (pillsContainer) {
+            pillsContainer.querySelectorAll(".cf-label-pill").forEach(p => p.classList.remove("active"));
+            const allPill = pillsContainer.querySelector('[data-val="__all__"]');
+            if (allPill) allPill.classList.add("active");
+        }
         // Reset Top N pills to "All"
         const filterPanel = document.getElementById(`chartFilterPanel_${idx}`);
         if (filterPanel) {
@@ -1999,10 +2071,14 @@
         msgs.appendChild(typEl); msgs.scrollTop = msgs.scrollHeight;
 
         try {
-            // Build a targeted command: prepend chart title so LLM knows which chart
+            // Build a targeted command: include chart title + data context for better AI targeting
             const chartSpec = (currentReport.charts || [])[parseInt(idx)];
             const chartTitle = chartSpec ? (chartSpec.title || `chart ${idx}`) : `chart ${idx}`;
-            const command = `For the chart titled "${chartTitle}": ${text}`;
+            const chartDataKeys = chartSpec && chartSpec.data && chartSpec.data.length > 0
+                ? Object.keys(chartSpec.data[0]).join(", ")
+                : "";
+            const dataContext = chartDataKeys ? ` [columns: ${chartDataKeys}, rows: ${chartSpec.data.length}]` : "";
+            const command = `For the chart titled "${chartTitle}"${dataContext}: ${text}`;
 
             const clean = JSON.parse(JSON.stringify(currentReport));
             clean.kpis   = (clean.kpis   || []).filter(k => !k._placeholder);
@@ -2329,5 +2405,190 @@
             });
         });
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Report AI Chat Assistant
+    // Floating chat panel that calls /report/modify and re-renders live.
+    // ══════════════════════════════════════════════════════════════════════
+    (function initReportChat() {
+        const fab       = document.getElementById("rcFab");
+        const panel     = document.getElementById("rcPanel");
+        const closeBtn  = document.getElementById("rcCloseBtn");
+        const messagesEl= document.getElementById("rcMessages");
+        const inputEl   = document.getElementById("rcInput");
+        const sendBtn   = document.getElementById("rcSendBtn");
+        const badge     = document.getElementById("rcBadge");
+        const suggsEl   = document.getElementById("rcSuggestions");
+        const compEl    = document.getElementById("rcComponents");
+
+        if (!fab || !panel) return;
+
+        let panelOpen = false;
+        let busy = false;
+
+        // ── Populate component list (KPIs & Charts) ──────────────────────
+        function buildComponentList() {
+            if (!compEl || !currentReport) return;
+            let html = "";
+            const kpis = currentReport.kpis || [];
+            const charts = currentReport.charts || [];
+
+            if (kpis.length) {
+                html += '<div class="rc-comp-section-title">KPIs</div>';
+                kpis.forEach((k, i) => {
+                    const label = k.label || k.title || `KPI ${i + 1}`;
+                    html += `<div class="rc-comp-item" data-type="kpi" data-idx="${i}" data-label="${label.replace(/"/g, '&quot;')}">
+                        <span class="rc-comp-badge kpi">KPI</span>
+                        <span class="rc-comp-label">${label}</span>
+                    </div>`;
+                });
+            }
+            if (charts.length) {
+                html += '<div class="rc-comp-section-title">Charts</div>';
+                charts.forEach((c, i) => {
+                    const label = c.title || `Chart ${i + 1}`;
+                    const typeTag = c.type ? ` (${c.type})` : "";
+                    html += `<div class="rc-comp-item" data-type="chart" data-idx="${i}" data-label="${label.replace(/"/g, '&quot;')}">
+                        <span class="rc-comp-badge chart">CHART</span>
+                        <span class="rc-comp-label">${label}${typeTag}</span>
+                    </div>`;
+                });
+            }
+            compEl.innerHTML = html;
+
+            // Click to insert reference into input
+            compEl.querySelectorAll(".rc-comp-item").forEach(item => {
+                item.addEventListener("click", () => {
+                    const label = item.dataset.label;
+                    const type = item.dataset.type;
+                    const prefix = inputEl.value.trim() ? inputEl.value.trim() + " " : "";
+                    inputEl.value = prefix + `${label}: `;
+                    inputEl.focus();
+                    inputEl.dispatchEvent(new Event("input"));
+                });
+            });
+        }
+
+        function openPanel() {
+            panelOpen = true;
+            panel.classList.add("open");
+            badge.classList.remove("show");
+            buildComponentList();
+            inputEl.focus();
+        }
+        function closePanel() {
+            panelOpen = false;
+            panel.classList.remove("open");
+        }
+
+        fab.addEventListener("click", () => panelOpen ? closePanel() : openPanel());
+        closeBtn.addEventListener("click", closePanel);
+
+        // Quick suggestion chips
+        suggsEl.querySelectorAll(".rc-suggestion").forEach(btn => {
+            btn.addEventListener("click", () => {
+                inputEl.value = btn.dataset.prompt;
+                inputEl.dispatchEvent(new Event("input"));
+                inputEl.focus();
+            });
+        });
+
+        // Auto-grow textarea
+        inputEl.addEventListener("input", () => {
+            inputEl.style.height = "auto";
+            inputEl.style.height = Math.min(inputEl.scrollHeight, 80) + "px";
+        });
+
+        // Enter to send, Shift+Enter for newline
+        inputEl.addEventListener("keydown", e => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+        });
+        sendBtn.addEventListener("click", doSend);
+
+        function addMsg(text, role, extra) {
+            const div = document.createElement("div");
+            div.className = "rc-msg " + role + (extra ? " " + extra : "");
+            const label = document.createElement("span");
+            label.className = "rc-msg-label";
+            label.textContent = role === "user" ? "You" : "Assistant";
+            div.appendChild(label);
+            div.appendChild(document.createTextNode(text));
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return div;
+        }
+
+        function updateMsg(el, text, removeClass) {
+            el.lastChild.textContent = text;
+            if (removeClass) el.classList.remove(removeClass);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        async function doSend() {
+            const text = inputEl.value.trim();
+            if (!text || busy) return;
+
+            busy = true;
+            sendBtn.disabled = true;
+            inputEl.value = "";
+            inputEl.style.height = "auto";
+            suggsEl.style.display = "none";
+
+            addMsg(text, "user");
+            const thinkingEl = addMsg("Modifying your report…", "ai", "thinking");
+
+            try {
+                const resp = await fetch("/report/modify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        report_json: JSON.stringify(currentReport),
+                        modification: text,
+                        provider: "claude"
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok || data.error || data.status === "failed") {
+                    const errMsg = data.error || data.message || "Something went wrong. Please try again.";
+                    updateMsg(thinkingEl, errMsg, "thinking");
+                    thinkingEl.style.color = "var(--accent-rose, #f43f5e)";
+                } else {
+                    // Accept either {report: {...}} or the report object directly
+                    const newReport = data.report || data;
+                    if (newReport && (newReport.kpis || newReport.charts || newReport.tables)) {
+                        currentReport = newReport;
+                        _persistReport();
+                        // Destroy existing Chart.js instances before re-render
+                        try {
+                            Object.values(Chart.instances).forEach(inst => inst.destroy());
+                        } catch (_) {}
+                        renderReport(currentReport, { skipAnimation: true });
+                        if (typeof _attachEditControls === "function" && editModeActive) {
+                            setTimeout(_attachEditControls, 60);
+                        }
+                        // Refresh component list
+                        buildComponentList();
+                        const changed = [];
+                        if (newReport.charts) changed.push(newReport.charts.length + " charts");
+                        if (newReport.kpis)   changed.push(newReport.kpis.length + " KPIs");
+                        updateMsg(thinkingEl, "Done! Updated your report (" + changed.join(", ") + ").", "thinking");
+                    } else {
+                        updateMsg(thinkingEl, "Report updated successfully.", "thinking");
+                    }
+                }
+            } catch (err) {
+                updateMsg(thinkingEl, "Network error: " + String(err), "thinking");
+                thinkingEl.style.color = "var(--accent-rose, #f43f5e)";
+            } finally {
+                busy = false;
+                sendBtn.disabled = false;
+            }
+        }
+
+        // Pulse badge once after 3s to invite interaction
+        setTimeout(() => { if (!panelOpen) badge.classList.add("show"); }, 3000);
+    })();
 
 })();

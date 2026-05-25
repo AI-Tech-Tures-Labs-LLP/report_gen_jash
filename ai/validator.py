@@ -34,8 +34,14 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     if not stripped:
         return False, "Empty query."
 
+    # Strip leading SQL comments (-- line comments and /* block comments */)
+    # so that queries like "\n-- KPI 1: ...\nSELECT ..." pass validation.
+    check_str = re.sub(r'--[^\n]*\n?', '', stripped)
+    check_str = re.sub(r'/\*.*?\*/', '', check_str, flags=re.DOTALL)
+    check_str = check_str.strip()
+
     # Must start with SELECT or WITH (CTE)
-    if not re.match(r"^\s*(SELECT|WITH)\b", stripped, re.IGNORECASE):
+    if not re.match(r"^\s*(SELECT|WITH)\b", check_str, re.IGNORECASE):
         return False, "Only SELECT queries are allowed."
 
     # Check for forbidden keywords

@@ -4,16 +4,22 @@ import logging
 import threading
 from pathlib import Path
 
+import json as _json
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(name)s  %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s  %(name)s  %(message)s")
 logger = logging.getLogger("api")
 
-app = FastAPI(title="AI SQL Analyst", version="1.0.0")
+app = FastAPI(title="AI SQL Analyst", version="2.0.0")
+
+# ── Enhanced API Routes (Enterprise Features) ────────────────────────────────
+from api_enhanced import router as enhanced_router
+app.include_router(enhanced_router)
 
 
 def _warm_caches():
@@ -335,6 +341,7 @@ def chat_stream_endpoint(req: QuestionRequest):
 @app.post("/report")
 def report_endpoint(req: ReportRequest):
     """Generate a full analytics report from a natural-language question."""
+    import asyncio
 
     # Build filter context string for the LLM
     filters = []
@@ -363,9 +370,26 @@ def report_endpoint(req: ReportRequest):
                 req.provider, req.question, filter_ctx or "none")
 
     if req.provider == "claude":
-        from ai.claude_multi_agent import ClaudeReportPipeline
-        pipeline = ClaudeReportPipeline()
-        return pipeline.generate(question_with_filters, force_refresh=req.force_refresh)
+        from ai.enhanced_pipeline import EnhancedReportPipeline
+        pipeline = EnhancedReportPipeline(
+            enable_logging=True,
+            enable_signals=True,
+            enable_caching=True,
+            enable_optimization=True,
+        )
+        result = asyncio.run(pipeline.generate(
+            question=question_with_filters,
+            provider=req.provider,
+            force_refresh=req.force_refresh,
+        ))
+        if result.get("status") == "failed":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=result.get("error", "Report generation failed"))
+        # Return via JSONResponse with default=str to handle numpy/datetime types
+        # from signal detection that would otherwise break FastAPI's serializer.
+        return JSONResponse(
+            content=_json.loads(_json.dumps(result, default=str))
+        )
     else:
         # Legacy DSPy pipeline (Groq/OpenAI)
         from ai.report_generator import ReportPipeline
@@ -408,7 +432,9 @@ def report_modify_endpoint(req: ReportModifyRequest):
 
     logger.info("REPORT MODIFY | command=%s", req.modification)
     pipeline = ReportPipeline(provider=req.provider)
-    return pipeline.modify(req.report_json, req.modification)
+    result = pipeline.modify(req.report_json, req.modification)
+    # Safe serialization — SQL results may contain numpy/Decimal/datetime types
+    return JSONResponse(content=_json.loads(_json.dumps(result, default=str)))
 
 
 # ── Filter values endpoint ──────────────────────────────────────────────────

@@ -74,7 +74,7 @@ class ClaudeClient:
         user_message: str,
         tools: list[dict] | None = None,
         tool_handlers: dict[str, Callable] | None = None,
-        max_tokens: int = 8192,
+        max_tokens: int = 16384,
         max_tool_rounds: int = 15,
         agent_name: str = "Agent",
         model: str | None = None,

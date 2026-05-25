@@ -35,16 +35,16 @@
         if (reportId) {
             localStorage.setItem("sqlbot_latestReportId", reportId);
         }
-        // Also persist to sessionStorage so _tryRestoreReportData works after refresh
+        // Also persist to localStorage so _tryRestoreReportData works after refresh and across tabs
         if (reportId && reportData) {
             try {
-                const existing = sessionStorage.getItem(reportId);
+                const existing = localStorage.getItem("sqlbot_report_" + reportId);
                 if (existing) {
                     const parsed = JSON.parse(existing);
                     parsed.report = reportData;
-                    sessionStorage.setItem(reportId, JSON.stringify(parsed));
+                    localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(parsed));
                 } else {
-                    sessionStorage.setItem(reportId, JSON.stringify({ report: reportData }));
+                    localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify({ report: reportData }));
                 }
             } catch (_) {}
         }
@@ -199,43 +199,113 @@
 
     sidebarToggle.addEventListener("click", () => setSidebar(!sidebarOpen));
 
+    function groupConversationsByDate(list) {
+        const groups = {};
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const lastWeek = new Date(today);
+        lastWeek.setDate(lastWeek.getDate() - 7);
+        const lastMonth = new Date(today);
+        lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+        list.forEach(conv => {
+            const d = new Date(conv.created_at);
+            const convDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+            let key;
+            if (convDate.getTime() === today.getTime()) {
+                key = "Today";
+            } else if (convDate.getTime() === yesterday.getTime()) {
+                key = "Yesterday";
+            } else if (convDate > lastWeek) {
+                key = "Last 7 days";
+            } else if (convDate > lastMonth) {
+                key = "Last 30 days";
+            } else {
+                key = d.toLocaleDateString([], { month: 'long', year: 'numeric' });
+            }
+
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(conv);
+        });
+
+        // Return ordered groups
+        const order = ["Today", "Yesterday", "Last 7 days", "Last 30 days"];
+        const result = [];
+        order.forEach(key => {
+            if (groups[key]) {
+                result.push({ title: key, conversations: groups[key] });
+                delete groups[key];
+            }
+        });
+        // Add remaining groups (months) sorted by most recent
+        Object.keys(groups)
+            .sort((a, b) => new Date(b) - new Date(a))
+            .forEach(key => {
+                result.push({ title: key, conversations: groups[key] });
+            });
+
+        return result;
+    }
+
     function renderSidebarList() {
         const list = getConversations();
         if (!list.length) {
-            sidebarList.innerHTML = '<p class="sidebar-empty">No conversations yet.</p>';
-            return;
-        }
-        sidebarList.innerHTML = "";
-        list.forEach(conv => {
-            const item = document.createElement("button");
-            item.className = "sidebar-item" + (conv.id === currentConvId ? " active" : "");
-            item.innerHTML = `
-                <div class="sidebar-item-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            sidebarList.innerHTML = `
+                <div class="sidebar-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:24px;height:24px;color:var(--text-muted);margin-bottom:0.5rem;">
                         <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                     </svg>
-                </div>
-                <div class="sidebar-item-content">
-                    <div class="sidebar-item-question">${escapeHtml(conv.title || "New chat")}</div>
-                    <div class="sidebar-item-meta">${formatDate(conv.created_at)}</div>
-                </div>
-                <button class="sidebar-delete-btn" title="Delete conversation" data-id="${conv.id}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                        <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
-                    </svg>
-                </button>
-            `;
-            item.addEventListener("click", e => {
-                if (e.target.closest(".sidebar-delete-btn")) return;
-                loadConversation(conv.id, conv.title);
+                    <span>No conversations yet</span>
+                </div>`;
+            return;
+        }
+
+        sidebarList.innerHTML = "";
+        const grouped = groupConversationsByDate(list);
+
+        grouped.forEach(group => {
+            // Section title
+            const sectionTitle = document.createElement("div");
+            sectionTitle.className = "sidebar-section-title";
+            sectionTitle.textContent = group.title;
+            sidebarList.appendChild(sectionTitle);
+
+            // Conversations in this group
+            group.conversations.forEach(conv => {
+                const item = document.createElement("button");
+                item.className = "sidebar-item" + (conv.id === currentConvId ? " active" : "");
+                item.title = conv.title || "New chat";
+                item.innerHTML = `
+                    <div class="sidebar-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                        </svg>
+                    </div>
+                    <div class="sidebar-item-content">
+                        <div class="sidebar-item-question">${escapeHtml(conv.title || "New chat")}</div>
+                        <div class="sidebar-item-meta">${formatDate(conv.created_at)}</div>
+                    </div>
+                    <button class="sidebar-delete-btn" title="Delete conversation" data-id="${conv.id}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                            <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                        </svg>
+                    </button>
+                `;
+                item.addEventListener("click", e => {
+                    if (e.target.closest(".sidebar-delete-btn")) return;
+                    loadConversation(conv.id, conv.title);
+                });
+                item.querySelector(".sidebar-delete-btn").addEventListener("click", async e => {
+                    e.stopPropagation();
+                    await deleteConversation(conv.id);
+                });
+                sidebarList.appendChild(item);
             });
-            item.querySelector(".sidebar-delete-btn").addEventListener("click", async e => {
-                e.stopPropagation();
-                await deleteConversation(conv.id);
-            });
-            sidebarList.appendChild(item);
         });
     }
 
@@ -292,7 +362,16 @@
     // ── New Chat ───────────────────────────────────────────────────────────
     newChatBtn.addEventListener("click", startNewChat);
 
-    function startNewChat() {
+    async function startNewChat() {
+        // Save current conversation to sidebar if it has messages
+        const currentHasMessages = chatThread.querySelectorAll(".msg").length > 0;
+        if (currentHasMessages && !getConversations().find(c => c.id === currentConvId)) {
+            // Try to get a title from the first user message
+            const firstUserMsg = chatThread.querySelector(".msg-user .msg-bubble");
+            const title = firstUserMsg ? firstUserMsg.textContent.slice(0, 50) : "New chat";
+            addConversationToList(currentConvId, title);
+        }
+
         const id = newConvId();
         setCurrentConv(id);
         topbarTitle.textContent = "New Chat";
@@ -423,9 +502,9 @@
                 const reportId = latestReportId || ("rpt_" + Date.now());
                 _syncReportState(data.report, reportId);
 
-                sessionStorage.setItem(reportId, JSON.stringify(data));
-                sessionStorage.setItem(reportId + "_provider", selectedProvider);
-                sessionStorage.setItem(reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
+                localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(data));
+                localStorage.setItem("sqlbot_report_" + reportId + "_provider", selectedProvider);
+                localStorage.setItem("sqlbot_report_" + reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
 
                 appendAssistantMessage("✅ Report updated successfully! The report tab has been refreshed.");
 
@@ -466,10 +545,10 @@
                 const reportId = "rpt_" + Date.now();
                 _syncReportState(data.report, reportId);
 
-                sessionStorage.setItem(reportId, JSON.stringify(data));
-                sessionStorage.setItem(reportId + "_question", reportQuestion);
-                sessionStorage.setItem(reportId + "_provider", selectedProvider);
-                sessionStorage.setItem(reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
+                localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(data));
+                localStorage.setItem("sqlbot_report_" + reportId + "_question", reportQuestion);
+                localStorage.setItem("sqlbot_report_" + reportId + "_provider", selectedProvider);
+                localStorage.setItem("sqlbot_report_" + reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
 
                 appendReportSuccessMessage(reportQuestion, reportId);
                 reportWindow = window.open(`/report-view?id=${reportId}`, "_blank");
@@ -509,10 +588,10 @@
                 const reportId = "rpt_" + Date.now();
                 _syncReportState(data.report, reportId);
 
-                sessionStorage.setItem(reportId, JSON.stringify(data));
-                sessionStorage.setItem(reportId + "_question", question);
-                sessionStorage.setItem(reportId + "_provider", selectedProvider);
-                sessionStorage.setItem(reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
+                localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(data));
+                localStorage.setItem("sqlbot_report_" + reportId + "_question", question);
+                localStorage.setItem("sqlbot_report_" + reportId + "_provider", selectedProvider);
+                localStorage.setItem("sqlbot_report_" + reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
 
                 appendReportSuccessMessage(question, reportId);
                 reportWindow = window.open(`/report-view?id=${reportId}`, "_blank");
@@ -716,11 +795,11 @@
 
             const reportData = await res.json();
 
-            // Store report data in sessionStorage (for report-view page)
-            sessionStorage.setItem(reportId, JSON.stringify(reportData));
-            sessionStorage.setItem(reportId + "_question", question);
-            sessionStorage.setItem(reportId + "_provider", selectedProvider);
-            sessionStorage.setItem(reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
+            // Store report data in localStorage (for report-view page) - persists across tabs
+            localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(reportData));
+            localStorage.setItem("sqlbot_report_" + reportId + "_question", question);
+            localStorage.setItem("sqlbot_report_" + reportId + "_provider", selectedProvider);
+            localStorage.setItem("sqlbot_report_" + reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
 
             // Store report state for future modifications (chat-side)
             _syncReportState(reportData.report, reportId);
@@ -1082,7 +1161,7 @@
         // Allow spaces in query so multi-word chart/KPI names can be searched
         // Only hide if user typed a closing bracket (completed mention)
         if (after.includes("]")) { _mHide(); return; }
-        // Lazy-load report data from sessionStorage if not in memory
+        // Lazy-load report data from localStorage if not in memory
         if (!latestReportData) { _tryRestoreReportData(); }
         if (!latestReportData) { _mHide(); return; }
         _mAtPos = atIdx; _mQuery = after;
@@ -1108,7 +1187,8 @@
         const savedId = latestReportId || localStorage.getItem("sqlbot_latestReportId");
         if (!savedId) return;
         try {
-            const raw = sessionStorage.getItem(savedId);
+            // Use localStorage with prefixed key (persists across tabs)
+            const raw = localStorage.getItem("sqlbot_report_" + savedId);
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed && parsed.report) {

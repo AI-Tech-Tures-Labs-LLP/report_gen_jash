@@ -176,8 +176,113 @@ def _fix_report_sql(sql: str) -> str:
 
     original = sql
 
+    # Strip SQL comments BEFORE collapsing whitespace.
+    # If we collapse first, '-- comment\nWITH ...' becomes '-- comment WITH ...'
+    # which is a single-line comment that swallows the entire query.
+    sql = re.sub(r'--[^\n]*', '', sql)          # strip -- line comments
+    sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)  # strip /* block */ comments
+
     # Normalize whitespace for easier matching
     sql_oneline = ' '.join(sql.split())
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PASS 0: Auto-fix GROUP BY with AS aliases or aggregate keywords.
+    #
+    # Claude Haiku frequently writes broken GROUP BY clauses like:
+    #   GROUP BY so.order_type AS label, ROUND(SUM(...)), AS, revenue
+    #   GROUP BY territory_id, SUM, total_amount, AS, revenue
+    #   GROUP BY territory_id, SUM(total_amount) rev  <- bare alias, still broken
+    #
+    # Strategy per comma-separated GROUP BY item:
+    #   1. Strip any trailing  AS <alias>
+    #   2. Drop item if it is a bare SQL keyword (AS, SUM, DISTINCT, …)
+    #   3. Drop item if it starts with an aggregate function call SUM(…), ROUND(…)…
+    # ══════════════════════════════════════════════════════════════════════
+    _AGG_FUNCS_P0 = re.compile(
+        r'^\s*(SUM|COUNT|AVG|MIN|MAX|ROUND|COALESCE|NULLIF|CAST|ABS)\s*\(',
+        re.IGNORECASE
+    )
+    _BARE_KW_P0 = re.compile(
+        r'^\s*(SUM|COUNT|AVG|MIN|MAX|ROUND|DISTINCT|COALESCE|NULLIF|AS)\s*$',
+        re.IGNORECASE
+    )
+
+    def _split_top_level(text: str) -> list:
+        """Split text on top-level commas (not inside parentheses)."""
+        items, depth, buf = [], 0, []
+        for ch in text:
+            if ch == '(':
+                depth += 1; buf.append(ch)
+            elif ch == ')':
+                depth -= 1; buf.append(ch)
+            elif ch == ',' and depth == 0:
+                items.append(''.join(buf)); buf = []
+            else:
+                buf.append(ch)
+        if buf:
+            items.append(''.join(buf))
+        return items
+
+    def _clean_gb_items(gb_body: str) -> str | None:
+        """Clean GROUP BY item list; return None if nothing changed."""
+        items = _split_top_level(gb_body)
+        cleaned = []
+        changed = False
+        for raw in items:
+            item = raw.strip()
+            if not item:
+                changed = True; continue
+            # Drop bare SQL keywords
+            if _BARE_KW_P0.match(item):
+                changed = True; continue
+            # Drop aggregate function calls
+            if _AGG_FUNCS_P0.match(item):
+                changed = True; continue
+            # Strip trailing AS <alias>
+            stripped = re.sub(r'\s+AS\s+\w+\s*$', '', item, flags=re.IGNORECASE).strip()
+            if stripped != item:
+                changed = True
+                item = stripped
+            # After stripping alias, item might now be an aggregate
+            if _AGG_FUNCS_P0.match(item):
+                changed = True; continue
+            cleaned.append(item)
+        if not changed:
+            return None
+        return ', '.join(cleaned) if cleaned else None
+
+    # Locate every GROUP BY … end-of-clause span and collect replacements.
+    # We search forward from gb_match.end() to find where the GROUP BY body ends,
+    # then replace only that span.  We collect all replacements and apply them
+    # right-to-left so earlier indices stay valid.
+    _gb_pattern = re.compile(r'\bGROUP\s+BY\b', re.IGNORECASE)
+    _terminator = re.compile(
+        r'(?:\b(?:ORDER\s+BY|HAVING|LIMIT|UNION|EXCEPT|INTERSECT)\b|\))',
+        re.IGNORECASE
+    )
+
+    replacements = []  # list of (start, end, new_text)
+    for gb_match in _gb_pattern.finditer(sql_oneline):
+        body_start = gb_match.end()
+        tail = sql_oneline[body_start:]
+        term = _terminator.search(tail)
+        if term:
+            gb_body = tail[:term.start()]
+            body_end = body_start + term.start()
+        else:
+            gb_body = tail
+            body_end = len(sql_oneline)
+        cleaned = _clean_gb_items(gb_body)
+        if cleaned is not None:
+            logger.info(
+                "[SQL auto-correct PASS 0] Fixed GROUP BY:\n  BEFORE: GROUP BY%s\n  AFTER:  GROUP BY %s",
+                gb_body[:200], cleaned[:200]
+            )
+            replacements.append((gb_match.start(), body_end, 'GROUP BY ' + cleaned))
+
+    # Apply right-to-left so earlier spans aren't shifted
+    for start, end, new_text in sorted(replacements, key=lambda x: -x[0]):
+        sql_oneline = sql_oneline[:start] + new_text + sql_oneline[end:]
 
     # ══════════════════════════════════════════════════════════════════════
     # PASS 1: Fix sub-table (pricing/gold/diamond) alias issues
@@ -504,40 +609,7 @@ def _fix_report_sql(sql: str) -> str:
         )
 
     if _select_label_cid:
-        logger.info("SQL auto-correct PASS 5: customer_id used as chart label — rewriting to cm.customer_name")
-
-        _has_cm = bool(re.search(r'\bcustomer_master\b', sql_oneline, re.IGNORECASE))
-        _cm_alias = 'cm'
-        if not _has_cm:
-            _inject_point = re.search(
-                r'\b(WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT)\b', sql_oneline, re.IGNORECASE
-            )
-            if _inject_point:
-                pos = _inject_point.start()
-                sql_oneline = (
-                    sql_oneline[:pos]
-                    + f'JOIN customer_master {_cm_alias} ON {_so_ref_p5}.customer_id = {_cm_alias}.customer_id '
-                    + sql_oneline[pos:]
-                )
-            else:
-                sql_oneline += f' JOIN customer_master {_cm_alias} ON {_so_ref_p5}.customer_id = {_cm_alias}.customer_id'
-        else:
-            _cm_alias_m = re.search(r'\bcustomer_master\s+(\w+)', sql_oneline, re.IGNORECASE)
-            if _cm_alias_m:
-                _cm_alias = _cm_alias_m.group(1)
-
-        # Replace customer_id with customer_name in SELECT
-        sql_oneline = re.sub(
-            rf'\bSELECT\s+(?:{re.escape(_so_ref_p5)}\.)?customer_id\b',
-            f'SELECT {_cm_alias}.customer_name',
-            sql_oneline, count=1, flags=re.IGNORECASE
-        )
-        # Replace in GROUP BY
-        sql_oneline = re.sub(
-            rf'\bGROUP\s+BY\s+(?:{re.escape(_so_ref_p5)}\.)?customer_id\b',
-            f'GROUP BY {_cm_alias}.customer_name',
-            sql_oneline, flags=re.IGNORECASE
-        )
+        logger.info("SQL auto-correct PASS 5: customer_id as chart label — customer_master not in schema, skipping rewrite")
 
     # ══════════════════════════════════════════════════════════════════════
     # PASS 6: Fix raw vendor_id used as chart label → vendor_name
@@ -668,6 +740,51 @@ def _fix_report_sql(sql: str) -> str:
                             _bad_a, _dcol, _sold_alias7, _dcol)
 
     sql = sql_oneline
+
+    # PASS 8 removed — it incorrectly tokenized aggregate expressions like
+    # SUM(total_amount) AS revenue and added SUM, AS, revenue as GROUP BY items.
+    # PASS 0 handles GROUP BY cleanup correctly.
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PASS 9: Auto-fix duplicate table aliases
+    # If same alias is used for different tables, rename subsequent uses
+    # ══════════════════════════════════════════════════════════════════════
+
+    _from_matches9 = re.findall(r'\bFROM\s+(\w+)\s+(\w+)', sql, re.IGNORECASE)
+    _join_matches9 = re.findall(r'\bJOIN\s+(\w+)\s+(\w+)', sql, re.IGNORECASE)
+
+    _alias_map9 = {}
+    _alias_conflicts9 = []
+
+    for _table9, _alias9 in _from_matches9 + _join_matches9:
+        _alias_lower9 = _alias9.lower()
+        if _alias_lower9 in _alias_map9:
+            # Same alias used for different tables
+            if _alias_map9[_alias_lower9] != _table9:
+                _alias_conflicts9.append((_table9, _alias9, _alias_map9[_alias_lower9]))
+        else:
+            _alias_map9[_alias_lower9] = _table9
+
+    for _table9, _alias9, _first_table9 in _alias_conflicts9:
+        # Generate a new unique alias
+        _base9 = _alias9.rstrip('0123456789')
+        _counter9 = 2
+        _new_alias9 = f"{_base9}{_counter9}"
+        while _new_alias9.lower() in _alias_map9:
+            _counter9 += 1
+            _new_alias9 = f"{_base9}{_counter9}"
+
+        # Replace the conflicting alias (second occurrence only)
+        _pattern9 = rf'(FROM\s+{_table9}\s+){_alias9}\b'
+        if not re.search(_pattern9, sql, re.IGNORECASE):
+            _pattern9 = rf'(JOIN\s+{_table9}\s+){_alias9}\b'
+
+        _sql_before9 = sql
+        sql = re.sub(_pattern9, rf'\g<1>{_new_alias9}', sql, count=1, flags=re.IGNORECASE)
+
+        if sql != _sql_before9:
+            logger.info("SQL auto-correct PASS 9: Renamed duplicate alias '%s' → '%s' for table '%s'",
+                       _alias9, _new_alias9, _table9)
 
     if sql != original:
         logger.info("SQL auto-corrected:\n  BEFORE: %s\n  AFTER:  %s",

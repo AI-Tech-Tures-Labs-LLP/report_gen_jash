@@ -509,6 +509,65 @@ def check_sql_patterns(sql: str) -> list[dict[str, Any]]:
                 })
                 break  # one report per query is enough
 
+    # ── Pattern 3d ───────────────────────────────────────────────────────────
+    # GROUP BY contains aggregate functions, AS keyword, or DISTINCT —
+    # a very common Claude Haiku hallucination where the SELECT list is copied
+    # verbatim into GROUP BY.
+    # Examples of the broken pattern:
+    #   GROUP BY category, SUM(total_amount), AS, revenue
+    #   GROUP BY payment_status, COUNT, DISTINCT, sinv_id
+    #   GROUP BY hunter_id, SUM, total_amount, AS, revenue
+    group_by_match = re.search(
+        r'\bGROUP\s+BY\b(.*?)(?:\bORDER\s+BY\b|\bHAVING\b|\bLIMIT\b|$)',
+        sql, re.IGNORECASE | re.DOTALL
+    )
+    if group_by_match:
+        group_by_clause = group_by_match.group(1)
+        # Check for aggregate keywords or bare AS/DISTINCT tokens inside GROUP BY
+        bad_tokens_in_group = re.search(
+            r'\b(SUM|COUNT|AVG|MIN|MAX|ROUND|DISTINCT|COALESCE|NULLIF)\s*[,(]'
+            r'|\bAS\b'
+            r'|\bDISTINCT\b',
+            group_by_clause, re.IGNORECASE
+        )
+        # Also catch the double-comma DATE_TRUNC bug: GROUP BY DATE_TRUNC('month',, col)
+        double_comma = ',,' in group_by_clause.replace(' ', '')
+        if bad_tokens_in_group or double_comma:
+            issues.append({
+                "pattern_name": "group_by_contains_aggregates_or_aliases",
+                "description": (
+                    "SYNTAX ERROR — GROUP BY clause contains aggregate functions, column aliases "
+                    "(AS keyword), DISTINCT, or a double-comma. "
+                    "GROUP BY must only contain raw column names or positional integers. "
+                    "You cannot put SUM(), COUNT(), ROUND(), AS, or DISTINCT inside GROUP BY. "
+                    f"Problematic GROUP BY clause: {group_by_clause.strip()[:200]}"
+                ),
+                "correction": (
+                    "Rewrite using ONLY column names or positional numbers in GROUP BY. Examples:\n"
+                    "\n"
+                    "WRONG:   GROUP BY category, SUM(total_amount), AS, revenue\n"
+                    "CORRECT: GROUP BY category\n"
+                    "\n"
+                    "WRONG:   GROUP BY payment_status, COUNT, DISTINCT, sinv_id\n"
+                    "CORRECT: GROUP BY payment_status\n"
+                    "\n"
+                    "WRONG:   GROUP BY DATE_TRUNC('month',, order_date)\n"
+                    "CORRECT: GROUP BY DATE_TRUNC('month', order_date)\n"
+                    "      OR: GROUP BY 1   (using positional reference)\n"
+                    "\n"
+                    "RULE: GROUP BY contains ONLY the non-aggregated columns from your SELECT list.\n"
+                    "Aggregated expressions (SUM, COUNT, AVG, ROUND, etc.) and their aliases NEVER go in GROUP BY.\n"
+                    "\n"
+                    "Best practice — use CTE pattern to avoid confusion:\n"
+                    "WITH base AS (\n"
+                    "    SELECT category, SUM(total_amount) AS revenue\n"
+                    "    FROM sales_order WHERE status='closed'\n"
+                    "    GROUP BY category\n"
+                    ")\n"
+                    "SELECT category, revenue FROM base ORDER BY revenue DESC"
+                ),
+            })
+
     # ── Pattern 4 ────────────────────────────────────────────────────────────
     # Schema-aware: detect alias.column where column doesn't exist in that table.
     # Generic — works for gold_kt on pricing table, or any future similar mistake.
