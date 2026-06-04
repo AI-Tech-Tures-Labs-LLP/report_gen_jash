@@ -18,6 +18,10 @@
 - **Decision:** ditch all Groq/DSPy, standardize on **Anthropic (Claude) only**.
 - **Status:** app runs locally (venv on Python 3.14.5 in repo root, all deps installed, `.env` filled).
   Internet-facing in production.
+- **Priority 1 (Groq removal) = DONE** (uncommitted on `joelsrgv1exp1`). Telemetry added. 5-query
+  measurement study done. Architecture decided: **Option T (complexity-tiered routing)**.
+  See companion docs: **`ARCHITECTURE.md`** (target design + sequenced plan) and
+  **`OPTIMIZATION_PLAYBOOK.md`** (5 run logs + measured findings).
 
 ---
 
@@ -62,39 +66,60 @@ schema validation, filter injection. Only the thin LLM-call layer needs porting 
 
 ## PRIORITY LIST (Joel's chosen order)
 
-### Priority 1 — 🗑️ Dead code removal: ditch all Groq/DSPi, Anthropic only
+### Priority 1 — 🗑️ Dead code removal: ditch all Groq/DSPy, Anthropic only ✅ DONE (uncommitted)
 **Goal:** one LLM stack (Claude), smaller codebase, legible token path.
-Steps:
-1. Salvage engine-agnostic logic from `report_generator.py` (SQL fixers, validation, `classify_intent`).
-2. Re-point `/chat/stream` to a thin Claude call.
-3. Delete unused endpoints: `/chat`, `/generate-sql`, `/execute-sql`, and the `/report` legacy `else` branch.
-4. Delete DSPy files: `pipeline.py`, `signatures.py`, `groq_setup.py`, `report_signatures.py`, legacy `ReportPipeline` class.
-5. Clean `requirements.txt` (drop `dspy`, `litellm`, `groq`) and `config.py` (drop `GROQ_*`, `OPENAI_*` if unused).
-6. Test: app boots, `/report` + `/chat/stream` work.
-**Scope:** ~1 day. Tangle is shallow. Do it on branch `joelsrgv1exp1`, review diff before commit.
+DONE 2026-06-04: deleted DSPy files (pipeline/signatures/groq_setup/report_signatures), backup file,
+api_enhanced.py; salvaged plain-Python helpers; re-pointed /chat/stream to Claude (reuses the SQL Agent);
+deleted /chat,/generate-sql,/execute-sql + legacy /report branch; cleaned requirements + config.
+App boots, /report + /chat/stream verified vs live DB. Also added telemetry (token/cost/timing per agent,
+logged to DevTools console). On branch `joelsrgv1exp1`, awaiting Joel's commit.
 
-### Priority 2 — ⚡ Token optimization
-- Turn on **Claude prompt caching** (`cache_control`) for the schema/relationships/profile context.
-  Biggest easy win: ~90% input-token savings on repeated context. Easy once #1 collapses to one stack.
-- Stop re-sending full schema in repair loops.
-- Right-size model tiers (Haiku for light agents, Sonnet for heavy).
+---
 
-### Priority 3 — 🔍 Schema-RAG (Joel's idea — do it the RIGHT way)
-- **YES:** RAG for SCHEMA/CONTEXT retrieval. Embed each table's schema + description + the 8 canonical
-  join paths; at query time retrieve only the 5-8 relevant tables instead of dumping all ~40.
-  Big token AND accuracy win.
-- **NO:** RAG for ANSWERING the question. Analytical questions need precise aggregation over fact tables
-  (e.g. summing 491k diamond lines, period-over-period margin). RAG retrieves similar text, can't do the
-  math — would give confident WRONG numbers. **Keep SQL generation for the actual computation.**
+> **2026-06-04 — Post-measurement update.** After P1, we ran a 5-query measurement study (logged in
+> `OPTIMIZATION_PLAYBOOK.md`) and wrote `ARCHITECTURE.md`. Headline findings:
+> - Report cost/time is QUERY-INDEPENDENT (~$0.42 / ~280s for ANY query) → overhead dominates.
+> - ~85% of report time = the 4 non-SQL agents (BA/DataAnalyst/ReportWriter/QA), not the data.
+> - Caching half-works: SQL agent cached, but Context/DataAnalyst/ReportWriter/QA all cache=0.
+> - Fan-out bug is REAL & intermittent: category revenue used line_total (correct) one run, total_amount
+>   via line joins (DOUBLE-COUNT) another — luck-dependent.
+> - DataAnalyst & QA do redundant validation; QA's verdict is then discarded (1 retry, auto-approve).
+> - Chat path answers the SAME analytical question in ~34s (Sonnet) vs report's ~280s (Haiku).
+> **DECISION: Option T — complexity-tiered routing.** Simple/factual queries → fast 2-3 agent path (~30-40s);
+> dashboard requests → full pipeline (optimized to ~150-180s). Frontend already supports this via the
+> "Generate full report" offer card (script.js:669). Results only improve (simple Qs get Sonnet; dashboards
+> keep full richness + get caching/fan-out fixes). Only risk = router misroutes, mitigated by the offer-card
+> fallback + tuning + reversibility. **Full sequenced plan in `ARCHITECTURE.md` §4-§5.**
 
-### Priority 4 — ✅ Accuracy hardening (Joel chose to do this last)
-- Verify the 8 canonical join paths and data-quality landmines are encoded in prompts/guards:
+### Priority 2 — ⚡ Token optimization + pipeline speed  (now driven by ARCHITECTURE.md)
+This priority now ABSORBS the architecture work. Sequenced steps (detail in `ARCHITECTURE.md`):
+1. **Caching fix** — fix `cache_control` on the 4 cache=0 agents (Context/DataAnalyst/ReportWriter/QA).
+   Lowest-risk pure win; do FIRST as the confidence-builder. Re-run the 5 queries to prove it.
+2. **np.float64 logging bug** — cast `float()` before insert (or delete logging_agent). Stops log spam.
+3. **Merge DataAnalyst + QA → one Validator** — removes redundant validation, ~1 fewer LLM call (~40-50s).
+4. **Model policy** — Sonnet for SQL-gen + Report Writer, Haiku for router/validator (decide after step 3).
+5. **Merge Context + BA → one Design agent** — ~25-35s.
+6. **Tiered router (Option T)** — route FACTUAL→fast path, DASHBOARD→full pipeline; wire the offer card.
+Target: common factual query ~30-40s; dashboards ~150-180s; cheaper; cleaner.
+
+### Priority 3 — 🔍 Schema-RAG (Joel's idea — still valid, RE-EVALUATE after caching)
+- **YES:** RAG for SCHEMA/CONTEXT retrieval — retrieve only the 5-8 relevant tables + canonical join paths
+  instead of dumping all ~40 (Context agent currently sends 64.5k uncached tokens every run).
+- **NO:** RAG for ANSWERING — keep SQL generation for the actual math (RAG would give confident wrong numbers).
+- **NOTE:** Do this AFTER P2 step 1 (caching). If caching already makes the 64k context cheap, RAG's token
+  win shrinks and it becomes mainly an ACCURACY play (fewer tables = fewer wrong-table joins). Decide then.
+
+### Priority 4 — ✅ Accuracy hardening  (partly pulled FORWARD into P2)
+- **Fan-out reliability (pulled into ARCHITECTURE.md step 3, do EARLY):** bake the 8 canonical join paths
+  into the SQL agent prompt + add a fan-out guard to the validator (never SUM(order_total) across line joins).
+  This is your #1 goal and the 5-run study PROVED it's broken intermittently — don't leave it for last.
+- Data-quality landmines in prompts/guards:
   - `sales_invoices.discount_amount` is ALL ZERO → must use `discount_exceptions` instead.
-  - Negative fulfillment lead-times exist → filter before any avg/threshold.
+  - Negative fulfillment lead-times → filter before any avg/threshold.
   - Use non-null key counts, not Excel used-range row counts.
-- Build a **golden test set** (~20-30 question → expected-SQL / expected-number) across easy/medium/hard,
-  ESPECIALLY fan-out cases. There are currently ZERO tests — biggest accuracy risk for a fan-out domain.
-- Check generated SQL uses the documented join paths.
+- Build a **golden test set** (~20-30 question → expected-SQL/number), ESPECIALLY fan-out cases. ZERO tests today.
+- **DATA QUESTION (D5):** margin came back ~26% flat across all 11 categories — likely a seed-data constant-markup
+  artifact. Confirm cost basis with data team before building margin analytics. (See ARCHITECTURE.md §6.)
 
 ### Priority 5 — 🔒 Security (DEFERRED by Joel, but flagged — app is internet-facing NOW)
 - 🔴 Hardcoded DB password fallback in `config.py`.
@@ -123,4 +148,14 @@ Steps:
 ## Progress log
 
 - 2026-06-04: Full audit done. Architecture verified. Priorities set. Env set up & app running.
-  Next action: begin Priority 1 (dead code removal) on branch `joelsrgv1exp1`.
+- 2026-06-04: **Priority 1 DONE** — Groq/DSPy fully removed, Anthropic-only. Telemetry added
+  (per-agent token/cost/timing → DevTools console). All uncommitted on `joelsrgv1exp1`.
+- 2026-06-04: **5-query measurement study DONE** (logged in `OPTIMIZATION_PLAYBOOK.md`).
+  Architecture decided = **Option T (tiered routing)**, documented in `ARCHITECTURE.md`.
+- **NEXT ACTION:** Priority 2, Step 1 — fix prompt caching on the 4 cache=0 agents (lowest-risk pure win),
+  then re-run the 5-query set to prove the gain before any structural change.
+
+## Companion docs
+- `ARCHITECTURE.md` — current state, T-vs-S tradeoff (chose T), target design, sequenced build plan.
+- `OPTIMIZATION_PLAYBOOK.md` — the 5 measured run logs + universal levers + run-by-run findings.
+- `STACKHUNTER_DATA_FAMILIARIZATION.md` — the real DB data model, grains, join paths, landmines.

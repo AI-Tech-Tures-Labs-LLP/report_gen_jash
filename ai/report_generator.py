@@ -2812,8 +2812,16 @@ class ReportPipeline:
             lean_json = current_report_json  # fallback to original if stripping fails
 
         from ai.claude_report_llm import modify_report as _claude_modify_report
+        from ai.claude_client import ClaudeClient
+        import time as _time
 
-        updated_json_str = _claude_modify_report(lean_json, modification, schema_str)
+        # Shared client so all LLM calls in this modify (main + any retry) accumulate
+        # into one usage_log we can surface as telemetry to the frontend console.
+        _mod_client = ClaudeClient()
+        _mod_client.reset_usage()
+        _mod_start = _time.time()
+
+        updated_json_str = _claude_modify_report(lean_json, modification, schema_str, client=_mod_client)
 
         try:
             report = self._extract_json(updated_json_str)
@@ -2831,6 +2839,7 @@ class ReportPipeline:
                         "Every key and string value MUST use double quotes."
                     ),
                     schema_str,
+                    client=_mod_client,
                 )
                 report = self._extract_json(retry_json_str)
             except (json.JSONDecodeError, ValueError) as exc2:
@@ -2916,9 +2925,18 @@ class ReportPipeline:
 
         applicable_filters = self._detect_applicable_filters(report)
 
+        # Telemetry — surface token/cost/timing of the modify LLM call(s) to the
+        # frontend console, same shape as report/chat metrics.
+        try:
+            from ai.claude_multi_agent import _build_metrics
+            _mod_metrics = _build_metrics(_mod_client.usage_log, _time.time() - _mod_start)
+        except Exception:
+            _mod_metrics = None
+
         return {
             "mode": "report",
             "report": report,
+            "metrics": _mod_metrics,
             "applicable_filters": applicable_filters,
             "ui_instructions": {
                 "create_new_section": True,
