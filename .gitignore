@@ -18,6 +18,8 @@ venv/
 Thumbs.db
 .idea/
 .vscode/
+.windsurf/
+.claude/
 
 # Runtime caches
 .report_cache/

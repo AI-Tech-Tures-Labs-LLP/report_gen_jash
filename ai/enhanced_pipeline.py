@@ -143,17 +143,24 @@ class EnhancedReportPipeline:
             # Calculate performance metrics
             total_time = time.time() - pipeline_start
             
+            # Telemetry from the base Claude pipeline (token/cost/per-agent metrics)
+            base_metrics = base_result.get('metrics', {})
+
             # Build enhanced response
             response = {
                 'trace_id': trace_id,
                 'mode': base_result.get('mode', 'report'),
                 'intent_mode': intent_mode,
                 'report': enhanced_report,
+                'metrics': base_metrics,
                 'applicable_filters': base_result.get('applicable_filters', []),
                 'ui_instructions': base_result.get('ui_instructions', {}),
                 'performance': {
                     'total_time_ms': int(total_time * 1000),
-                    'cache_enabled': self.cache_manager is not None,
+                    'pipeline_time_ms': base_metrics.get('total_time_ms'),
+                    'estimated_cost_usd': base_metrics.get('estimated_cost_usd'),
+                    'total_tokens': base_metrics.get('total_tokens'),
+                    'cache_hit_rate_pct': base_metrics.get('cache_hit_rate_pct'),
                     'signals_enabled': self.signal_engine is not None,
                 }
             }

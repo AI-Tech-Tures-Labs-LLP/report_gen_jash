@@ -17,10 +17,6 @@ logger = logging.getLogger("api")
 
 app = FastAPI(title="AI SQL Analyst", version="2.0.0")
 
-# ── Enhanced API Routes (Enterprise Features) ────────────────────────────────
-from api_enhanced import router as enhanced_router
-app.include_router(enhanced_router)
-
 
 def _warm_caches():
     """Pre-build schema, relationship, and data-profile caches at startup.
@@ -70,38 +66,11 @@ app.add_middleware(
 
 class QuestionRequest(BaseModel):
     question: str
-    provider: str = "claude"     # "claude" | "groq" | "openai"
     conversation_id: str | None = None
-
-
-class GenerateSQLResponse(BaseModel):
-    sql: str
-
-
-class ExecuteSQLRequest(BaseModel):
-    sql: str
-
-
-class ExecuteSQLResponse(BaseModel):
-    sql: str
-    data: list
-    row_count: int
-    error: str | None = None
-
-
-class ChatResponse(BaseModel):
-    mode: str = "chat"
-    sql: str
-    data: list
-    row_count: int
-    answer: str
-    insights: str
-    report_eligible: bool = False  # Hint: frontend should offer report generation
 
 
 class ReportRequest(BaseModel):
     question: str
-    provider: str = "claude"    # "claude" | "groq" | "openai"
     conversation_id: str | None = None
     force_refresh: bool = False  # bypass cache for fresh report
     # Filters
@@ -134,142 +103,22 @@ class ReportModifyRequest(BaseModel):
 
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
-@app.post("/generate-sql", response_model=GenerateSQLResponse)
-def generate_sql_endpoint(req: QuestionRequest):
-    """Generate SQL for a question without executing it."""
-    from ai.pipeline import SQLAnalystPipeline
-
-    pipeline = SQLAnalystPipeline(provider=req.provider)
-    sql = pipeline.generate_sql_only(req.question)
-    return GenerateSQLResponse(sql=sql)
-
-
-@app.post("/execute-sql", response_model=ExecuteSQLResponse)
-def execute_sql_endpoint(req: ExecuteSQLRequest):
-    """Execute a raw SQL SELECT query and return the results."""
-    from ai.validator import validate_sql
-    from db.executor import execute_sql
-
-    is_safe, reason = validate_sql(req.sql)
-    if not is_safe:
-        return ExecuteSQLResponse(
-            sql=req.sql,
-            data=[],
-            row_count=0,
-            error=f"Query rejected: {reason}",
-        )
-
-    result = execute_sql(req.sql)
-    if not result["success"]:
-        return ExecuteSQLResponse(
-            sql=req.sql,
-            data=[],
-            row_count=0,
-            error=result["error"],
-        )
-
-    data = result["data"]
-    return ExecuteSQLResponse(
-        sql=req.sql,
-        data=data,
-        row_count=len(data),
-    )
-
-
-@app.post("/chat", response_model=ChatResponse)
-def chat_endpoint(req: QuestionRequest):
-    from ai.pipeline import SQLAnalystPipeline
-    from ai.report_generator import classify_intent
-    from db.memory import get_recent_history, add_turn
-
-    logger.info(
-        "CHAT request | provider=%s | conversation_id=%s | question=%s",
-        req.provider,
-        req.conversation_id or "default",
-        req.question,
-    )
-
-    # Classify intent — deterministic, no LLM call
-    intent = classify_intent(req.question)
-    logger.info("CHAT intent classified as: %s", intent)
-
-    # Determine if this question is report-eligible (intent OR significant data)
-    report_eligible_by_intent = intent == "report"
-
-    conversation_id = req.conversation_id or "default"
-
-    history = get_recent_history(conversation_id, limit=5)
-
-    # Augment the question with recent conversation context
-    if history:
-        logger.info(
-            "CHAT context | conversation_id=%s | history_turns=%d",
-            conversation_id,
-            len(history),
-        )
-        history_lines: list[str] = ["You are in a multi-turn conversation. Here are the recent exchanges:"]
-        for turn in history:
-            history_lines.append(f"User: {turn['question']}")
-            history_lines.append(f"Assistant: {turn['answer']}")
-        history_lines.append(f"Now the user asks: {req.question}")
-        question_with_context = "\n".join(history_lines)
-    else:
-        logger.info(
-            "CHAT context | conversation_id=%s | history_turns=0 (no prior context used)",
-            conversation_id,
-        )
-        question_with_context = req.question
-
-    pipeline = SQLAnalystPipeline(provider=req.provider)
-    result = pipeline.run(question_with_context)
-
-    logger.info(
-        "CHAT result | conversation_id=%s | used_context=%s | sql_preview=%s",
-        conversation_id,
-        "yes" if history else "no",
-        (result.get("sql") or "").replace("\n", " ")[:200],
-    )
-
-    # Persist this turn for future context (store up to 200 rows so modal can show them)
-    add_turn(
-        conversation_id,
-        req.question,
-        result["answer"],
-        result["sql"],
-        query_result=(result["data"][:200] if result.get("data") else None),
-    )
-
-    # Report-eligible if intent says so, or if query returned 3+ rows of data
-    data_rows = len(result.get("data") or [])
-    report_eligible = report_eligible_by_intent or data_rows >= 3
-
-    return ChatResponse(
-        mode="chat",
-        sql=result["sql"],
-        data=result["data"],
-        row_count=data_rows,
-        answer=result["answer"],
-        insights=result["insights"],
-        report_eligible=report_eligible,
-    )
-
-
 @app.post("/chat/stream")
 def chat_stream_endpoint(req: QuestionRequest):
     """Stream chat progress via Server-Sent Events (SSE).
 
-    Sends real-time progress updates as each pipeline stage completes,
-    then sends the final result as the last event.
+    Runs on Claude via the shared SQL Agent (same brain as report generation).
+    Sends real-time progress updates as each stage completes, then the final
+    result as the last event.
     """
     import json as _json
-    from ai.pipeline import SQLAnalystPipeline
     from ai.report_generator import classify_intent
+    from ai.claude_report_llm import answer_chat_question
     from db.memory import get_recent_history, add_turn
 
     def event_generator():
         logger.info(
-            "STREAM request | provider=%s | conversation_id=%s | question=%s",
-            req.provider,
+            "STREAM request | conversation_id=%s | question=%s",
             req.conversation_id or "default",
             req.question,
         )
@@ -289,10 +138,8 @@ def chat_stream_endpoint(req: QuestionRequest):
         else:
             question_with_context = req.question
 
-        pipeline = SQLAnalystPipeline(provider=req.provider)
-
         try:
-            for event in pipeline.run_staged(question_with_context):
+            for event in answer_chat_question(question_with_context):
                 if event["stage"] == "complete":
                     result = event["data"]
                     # Persist this turn
@@ -366,35 +213,28 @@ def report_endpoint(req: ReportRequest):
 
     question_with_filters = req.question + filter_ctx
 
-    logger.info("REPORT request | provider=%s | question=%s | filters=%s",
-                req.provider, req.question, filter_ctx or "none")
+    logger.info("REPORT request | question=%s | filters=%s",
+                req.question, filter_ctx or "none")
 
-    if req.provider == "claude":
-        from ai.enhanced_pipeline import EnhancedReportPipeline
-        pipeline = EnhancedReportPipeline(
-            enable_logging=True,
-            enable_signals=True,
-            enable_caching=True,
-            enable_optimization=True,
-        )
-        result = asyncio.run(pipeline.generate(
-            question=question_with_filters,
-            provider=req.provider,
-            force_refresh=req.force_refresh,
-        ))
-        if result.get("status") == "failed":
-            from fastapi import HTTPException
-            raise HTTPException(status_code=500, detail=result.get("error", "Report generation failed"))
-        # Return via JSONResponse with default=str to handle numpy/datetime types
-        # from signal detection that would otherwise break FastAPI's serializer.
-        return JSONResponse(
-            content=_json.loads(_json.dumps(result, default=str))
-        )
-    else:
-        # Legacy DSPy pipeline (Groq/OpenAI)
-        from ai.report_generator import ReportPipeline
-        pipeline = ReportPipeline(provider=req.provider)
-        return pipeline.generate(question_with_filters, force_refresh=req.force_refresh)
+    from ai.enhanced_pipeline import EnhancedReportPipeline
+    pipeline = EnhancedReportPipeline(
+        enable_logging=True,
+        enable_signals=True,
+        enable_optimization=True,
+    )
+    result = asyncio.run(pipeline.generate(
+        question=question_with_filters,
+        provider="claude",
+        force_refresh=req.force_refresh,
+    ))
+    if result.get("status") == "failed":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=result.get("error", "Report generation failed"))
+    # Return via JSONResponse with default=str to handle numpy/datetime types
+    # from signal detection that would otherwise break FastAPI's serializer.
+    return JSONResponse(
+        content=_json.loads(_json.dumps(result, default=str))
+    )
 
 
 @app.post("/report/apply-filters")
@@ -404,7 +244,7 @@ def report_apply_filters_endpoint(req: ReportApplyFiltersRequest):
     This does NOT call the LLM — it modifies the existing SQL queries directly,
     making it much faster and more reliable than regenerating the entire report.
     """
-    from ai.report_generator import ReportPipeline
+    from ai.report_generator import apply_filters
 
     filters = {}
     if req.date_from:
@@ -421,18 +261,16 @@ def report_apply_filters_endpoint(req: ReportApplyFiltersRequest):
         filters["product"] = req.product
 
     logger.info("REPORT APPLY-FILTERS | filters=%s", filters)
-    pipeline = ReportPipeline(provider=req.provider)
-    return pipeline.apply_filters(req.report, filters)
+    return apply_filters(req.report, filters)
 
 
 @app.post("/report/modify")
 def report_modify_endpoint(req: ReportModifyRequest):
-    """Modify an existing report based on a natural-language command."""
-    from ai.report_generator import ReportPipeline
+    """Modify an existing report based on a natural-language command (Claude)."""
+    from ai.report_generator import modify_report
 
     logger.info("REPORT MODIFY | command=%s", req.modification)
-    pipeline = ReportPipeline(provider=req.provider)
-    result = pipeline.modify(req.report_json, req.modification)
+    result = modify_report(req.report_json, req.modification)
     # Safe serialization — SQL results may contain numpy/Decimal/datetime types
     return JSONResponse(content=_json.loads(_json.dumps(result, default=str)))
 

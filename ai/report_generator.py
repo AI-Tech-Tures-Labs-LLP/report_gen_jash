@@ -11,13 +11,8 @@ import re
 from datetime import date
 from typing import Any
 
-import dspy
-
-from ai.groq_setup import get_lm
-from ai.report_signatures import ReportGeneration, ReportModification
 from ai.validator import validate_sql, check_sql_against_schema
 from ai.sql_pattern_checker import check_sql_patterns, format_issues_for_repair
-from ai.signatures import SQLRepair, AnalyzeAndPlan, SQLGeneration
 from db.schema import format_schema, get_schema
 from db.relationships import format_relationships
 from db.profiler import get_data_profile
@@ -969,18 +964,19 @@ def _inject_filters(sql: str, filters: dict) -> str:
 # ── Report generation ──────────────────────────────────────────────────────
 
 class ReportPipeline:
-    """Generates a complete analytics report from a natural-language request."""
+    """Helper for report filtering/modification post-processing.
 
-    def __init__(self, provider: str = "groq"):
-        self.provider = provider
-        self._lm = get_lm(provider)
-        self.report_gen = dspy.Predict(ReportGeneration)
-        self.report_mod = dspy.Predict(ReportModification)
-        self.repair = dspy.Predict(SQLRepair)
-        # Chat pipeline modules for SQL quality improvement
-        self.analyze = dspy.Predict(AnalyzeAndPlan)
-        self.sql_gen = dspy.Predict(SQLGeneration)
-        # Per-report regeneration counter to prevent getting stuck
+    NOTE: This was the legacy DSPy/Groq report generator. The main report
+    pipeline is now Claude-based (see ai/claude_multi_agent.py via
+    ai/enhanced_pipeline.py). What remains here are the engine-agnostic
+    plain-Python helpers used by `/report/apply-filters` and `/report/modify`
+    (SQL filter injection, KPI/chart execution, dedup, formatting). No LLM is
+    used in this class; SQL repair/regeneration fallbacks have been removed
+    along with the Groq stack.
+    """
+
+    def __init__(self):
+        # Per-report regeneration counter (retained for method compatibility).
         self._regen_count = 0
         self._MAX_REGEN_PER_REPORT = 3
 
@@ -1045,62 +1041,14 @@ class ReportPipeline:
         if not is_safe:
             return sql, {"success": False, "data": [], "error": f"Query rejected: {reason}"}
 
-        # Step 5: Execute with repair loop
+        # Step 5: Execute. (LLM-based SQL repair/regeneration was removed with the
+        # Groq/DSPy stack. SQL still goes through the full regex auto-fix + schema
+        # + pattern + safety validation above; on failure it degrades gracefully
+        # rather than attempting an LLM repair. A Claude-based repair can be added
+        # later if needed.)
         result = execute_sql(sql)
-
-        for attempt in range(MAX_REPAIR_RETRIES):
-            if result["success"]:
-                break
-            logger.warning(
-                "[%s] SQL error (attempt %d): %s", context, attempt + 1, result["error"]
-            )
-            try:
-                schema_str = format_schema()
-                # Build a context-aware repair question
-                repair_question = f"Fix this SQL for a {context} query"
-                if "GroupingError" in result["error"] or "ungrouped column" in result["error"]:
-                    repair_question += (
-                        ". The error is a correlated subquery GroupingError. "
-                        "Do NOT use correlated subqueries that reference outer query aliases. "
-                        "Rewrite as a simple flat aggregate: "
-                        "SELECT SUM(solp.line_total) AS value FROM ... JOIN ... WHERE ..."
-                    )
-                repair_result = self.repair(
-                    sql_query=sql,
-                    error_message=result["error"],
-                    schema_info=schema_str,
-                    question=repair_question,
-                )
-                sql = self._clean_sql(repair_result.corrected_sql)
-                sql = _fix_report_sql(sql)  # re-apply regex fixes after repair
-
-                is_safe, reason = validate_sql(sql)
-                if not is_safe:
-                    return sql, {"success": False, "data": [], "error": f"Repaired query rejected: {reason}"}
-
-                result = execute_sql(sql)
-            except Exception as exc:
-                logger.error("[%s] Repair attempt %d failed: %s", context, attempt + 1, exc)
-                break
-
-        # ── Final fallback: full SQL regeneration via chat pipeline ─────
-        if not result["success"] and sql_description and self._regen_count < self._MAX_REGEN_PER_REPORT:
-            self._regen_count += 1
-            logger.info("[%s] Repair failed — attempting full SQL regeneration (%d/%d)",
-                        context, self._regen_count, self._MAX_REGEN_PER_REPORT)
-            new_sql = self._regenerate_sql(sql_description)
-            if new_sql:
-                is_safe, reason = validate_sql(new_sql)
-                if is_safe:
-                    regen_result = execute_sql(new_sql)
-                    if regen_result["success"]:
-                        logger.info("[%s] SQL regeneration succeeded", context)
-                        return new_sql, regen_result
-                    else:
-                        logger.warning("[%s] Regenerated SQL also failed: %s", context, regen_result["error"])
-        elif not result["success"] and sql_description and self._regen_count >= self._MAX_REGEN_PER_REPORT:
-            logger.warning("[%s] Skipping regeneration — limit reached (%d/%d)",
-                           context, self._regen_count, self._MAX_REGEN_PER_REPORT)
+        if not result["success"]:
+            logger.warning("[%s] SQL execution failed (no LLM repair): %s", context, result["error"])
 
         return sql, result
 
@@ -1116,50 +1064,6 @@ class ReportPipeline:
             f"'This year' = {current_year} ({current_year}-01-01 to {current_year}-12-31).]\n\n"
             f"{question}"
         )
-
-    def _pre_analyze_query(self, question: str, schema_str: str,
-                           rels_str: str, profile_str: str) -> str:
-        """Use the chat pipeline's AnalyzeAndPlan to produce a SQL generation guide.
-
-        This gives the report LLM concrete, schema-verified guidance for
-        writing correct SQL queries without affecting the report structure.
-        Returns a text block to append to the LLM prompt.
-        """
-        try:
-            question_with_date = self._build_question_with_context(question)
-            plan = self.analyze(
-                question=question_with_date,
-                schema_info=schema_str,
-                relationships=rels_str,
-                data_profile=profile_str,
-            )
-
-            guide = [
-                "",
-                "══════════════════════════════════════════════════",
-                "📋 SQL GENERATION GUIDE (use for ALL SQL queries in the report)",
-                "══════════════════════════════════════════════════",
-                f"Analysis intent: {plan.intent}",
-                f"Relevant tables: {plan.relevant_tables}",
-                f"Relevant columns: {plan.relevant_columns}",
-                f"Join conditions: {plan.join_conditions}",
-                f"Where conditions: {plan.where_conditions}",
-                f"Aggregations: {plan.aggregations}",
-                f"Group by: {plan.group_by}",
-                "",
-                "⚠ Use ONLY the tables and columns listed above in your SQL.",
-                "⚠ Follow the join conditions EXACTLY as specified.",
-                "⚠ Apply the where conditions in ALL SQL queries.",
-                "⚠ Adapt these for each KPI/chart but keep tables and joins correct.",
-                "══════════════════════════════════════════════════",
-            ]
-
-            result = "\n".join(guide)
-            logger.info("Pre-analysis SQL guide generated (%d chars)", len(result))
-            return result
-        except Exception as exc:
-            logger.warning("Pre-analysis failed (non-fatal, continuing without guide): %s", exc)
-            return ""
 
     @staticmethod
     def _get_analytical_framework(question: str) -> str:
@@ -1465,52 +1369,6 @@ class ReportPipeline:
 
         return "\n".join(result_parts)
 
-    def _regenerate_sql(self, sql_description: str) -> str | None:
-        """Regenerate a SQL query using the chat pipeline's full chain.
-
-        Used as a last resort when auto-fix and repair both fail.
-        Uses AnalyzeAndPlan → SQLGeneration (same chain as SQL chat).
-        """
-        try:
-            schema_str = getattr(self, '_report_schema_str', None) or format_schema()
-            rels_str = getattr(self, '_report_rels_str', None) or format_relationships()
-            profile_str = getattr(self, '_report_profile_str', None) or get_data_profile()
-
-            question_with_date = self._build_question_with_context(sql_description)
-
-            plan = self.analyze(
-                question=question_with_date,
-                schema_info=schema_str,
-                relationships=rels_str,
-                data_profile=profile_str,
-            )
-
-            plan_text = (
-                f"Intent: {plan.intent}\n"
-                f"Tables: {plan.relevant_tables}\n"
-                f"Columns: {plan.relevant_columns}\n"
-                f"Joins: {plan.join_conditions}\n"
-                f"Where: {plan.where_conditions}\n"
-                f"Aggregations: {plan.aggregations}\n"
-                f"Group By: {plan.group_by}\n"
-                f"Order By: {plan.order_by}\n"
-                f"Limit: {plan.limit_val}"
-            )
-
-            sql_result = self.sql_gen(
-                question=question_with_date,
-                schema_info=schema_str,
-                query_plan=plan_text,
-            )
-
-            sql = self._clean_sql(sql_result.sql_query)
-            sql = _fix_report_sql(sql)
-            logger.info("SQL regenerated via chat pipeline: %s", sql[:200])
-            return sql
-        except Exception as exc:
-            logger.warning("SQL regeneration via chat pipeline failed: %s", exc)
-            return None
-
     @staticmethod
     def _repair_json(text: str) -> str:
         """Best-effort repair of common LLM JSON generation errors.
@@ -1751,34 +1609,6 @@ class ReportPipeline:
         if abs_num >= 1e5:
             return f"₹{num / 1e5:.2f} lakhs"
         return f"₹{num:,.2f}"
-
-    def _regenerate_summary(self, original_summary: str, kpis: list) -> str:
-        """Prepend actual KPI values to the report summary so the displayed
-        text matches the SQL query results instead of LLM-estimated values."""
-        valid_kpis = [
-            k for k in kpis
-            if isinstance(k.get("value"), (int, float))
-        ]
-        if not valid_kpis:
-            return original_summary
-
-        lines = ["Actual values from the database:"]
-        for k in valid_kpis:
-            label = k.get("label") or k.get("id") or "Metric"
-            val = k["value"]
-            fmt = k.get("format", "")
-            if fmt == "percent":
-                display = f"{val:.1f}%"
-            elif fmt == "currency" or abs(val) >= 1e5:
-                display = self._format_indian(val)
-            elif isinstance(val, float):
-                display = f"{val:,.2f}"
-            else:
-                display = f"{val:,}"
-            lines.append(f"• {label}: {display}")
-
-        actual_block = "\n".join(lines)
-        return actual_block + "\n\n" + original_summary
 
     # ── Bad KPI label patterns (chart-type metrics, not single values) ──
     _BAD_KPI_RE = re.compile(
@@ -2247,62 +2077,7 @@ class ReportPipeline:
         return kpi
 
     def _try_regenerate_kpi(self, kpi: dict) -> dict:
-        """Attempt to regenerate a KPI's SQL using the chat pipeline when the
-        original SQL returned zero, null, or errored.
-
-        This bridges the accuracy gap between the report pipeline (single LLM call
-        generating all SQL at once) and the chat pipeline (2-step guided chain).
-        """
-        if self._regen_count >= self._MAX_REGEN_PER_REPORT:
-            return kpi
-
-        kpi_label = kpi.get("label", kpi.get("id", "?"))
-        logger.info("KPI '%s' returned zero/null/error — attempting chat-pipeline regeneration", kpi_label)
-
-        self._regen_count += 1
-        regen_sql = self._regenerate_sql(
-            f"Calculate a single numeric value for the KPI: '{kpi_label}'. "
-            f"The SQL MUST return exactly ONE row with ONE numeric column named 'value'. "
-            f"Do NOT use GROUP BY. Do NOT use LIMIT > 1. Return a scalar aggregate."
-        )
-        if not regen_sql:
-            return kpi
-
-        # Validate and execute the regenerated SQL
-        regen_sql = _fix_report_sql(regen_sql)
-        regen_sql = self._fix_kpi_sql(regen_sql)
-        from ai.validator import validate_sql as _val_sql
-        is_safe, _ = _val_sql(regen_sql)
-        if not is_safe:
-            return kpi
-
-        regen_result = execute_sql(regen_sql)
-        if not regen_result["success"] or not regen_result["data"]:
-            return kpi
-
-        # Extract the value from the regenerated result
-        data = regen_result["data"]
-        if data and len(data) > 0:
-            first_row = data[0]
-            values = list(first_row.values())
-            numeric_val = None
-            for v in reversed(values):
-                if v is not None and isinstance(v, (int, float)):
-                    numeric_val = v
-                    break
-                try:
-                    numeric_val = float(v)
-                    break
-                except (TypeError, ValueError):
-                    continue
-
-            if numeric_val is not None and (numeric_val != 0 or kpi.get("value") == "N/A"):
-                logger.info("KPI '%s' regenerated successfully: %s → %s",
-                            kpi_label, kpi.get("value"), numeric_val)
-                kpi["value"] = numeric_val
-                kpi["sql"] = regen_sql
-                kpi.pop("error", None)
-
+        """No-op: LLM-based KPI regeneration was removed with the Groq/DSPy stack."""
         return kpi
 
     def _execute_chart_sql(self, chart: dict) -> dict:
@@ -2375,49 +2150,7 @@ class ReportPipeline:
         return chart
 
     def _try_regenerate_chart(self, chart: dict) -> dict:
-        """Attempt to regenerate a chart's SQL using the chat pipeline when the
-        original SQL returned empty, errored, or bad data.
-        """
-        if self._regen_count >= self._MAX_REGEN_PER_REPORT:
-            return chart
-
-        chart_title = chart.get("title", chart.get("id", "?"))
-        chart_type = chart.get("type", "bar")
-        logger.info("Chart '%s' — attempting chat-pipeline SQL regeneration", chart_title)
-
-        self._regen_count += 1
-        regen_sql = self._regenerate_sql(
-            f"Query data for a {chart_type} chart titled '{chart_title}'. "
-            f"Return rows with a label column (text/name) and a numeric value column. "
-            f"Use GROUP BY to get multiple data points. Return at least 3 rows."
-        )
-        if not regen_sql:
-            return chart
-
-        # Validate and execute
-        regen_sql = _fix_report_sql(regen_sql)
-        from ai.validator import validate_sql as _val_sql
-        is_safe, _ = _val_sql(regen_sql)
-        if not is_safe:
-            return chart
-
-        regen_result = execute_sql(regen_sql)
-        if not regen_result["success"] or not regen_result["data"]:
-            logger.warning("Chart '%s' regeneration failed: %s",
-                           chart_title, regen_result.get("error", "empty"))
-            return chart
-
-        # Validate regenerated data has 2+ columns and multiple rows
-        regen_data = regen_result["data"]
-        if regen_data and len(regen_data) >= 1:
-            row_keys = list(regen_data[0].keys())
-            if len(row_keys) >= 2:
-                logger.info("Chart '%s' regenerated successfully (%d rows, %d cols)",
-                            chart_title, len(regen_data), len(row_keys))
-                chart["data"] = regen_data
-                chart["sql"] = regen_sql
-                chart.pop("error", None)
-
+        """No-op: LLM-based chart regeneration was removed with the Groq/DSPy stack."""
         return chart
 
     def _execute_table_sql(self, table: dict) -> dict:
@@ -2547,276 +2280,6 @@ class ReportPipeline:
         q = re.sub(r'\[context:.*?\]', '', q, flags=re.IGNORECASE)
         q = re.sub(r'\s+', ' ', q).strip()
         return hashlib.md5(q.encode()).hexdigest()
-
-    def generate(self, question: str, force_refresh: bool = False) -> dict[str, Any]:
-        """Generate a complete report with real data.
-
-        Uses a blueprint cache so the SAME question always produces the
-        SAME report structure (titles, chart types, SQL queries).  Data
-        values are re-executed fresh from the database each call.
-
-        Set force_refresh=True to bypass the cache and regenerate.
-        """
-        schema_str = format_schema()
-        rels_str = format_relationships()
-        profile_str = get_data_profile()
-
-        # Store context for SQL regeneration fallback
-        self._report_schema_str = schema_str
-        self._report_rels_str = rels_str
-        self._report_profile_str = profile_str
-        self._regen_count = 0  # reset per-report regeneration counter
-
-        cache_key = self._cache_key(question)
-
-        # ── Per-key lock: prevents duplicate LLM calls when two users
-        #    request the same report simultaneously ─────────────────────
-        lock = _get_cache_lock(cache_key)
-        with lock:
-            # ── Check blueprint cache first ───────────────────────────
-            if not force_refresh and cache_key in _blueprint_cache:
-                logger.info("Blueprint cache HIT for key %s — reusing cached structure", cache_key[:8])
-                report = json.loads(json.dumps(_blueprint_cache[cache_key]))  # deep copy
-            else:
-                # ── Dynamic subject extraction & enforcement ──────────
-                subject_lock = self._extract_subject_lock(question, schema_str, profile_str)
-                question_with_date = self._build_question_with_context(question)
-                if subject_lock:
-                    question_with_date = subject_lock + "\n\n" + question_with_date
-                    logger.info("Subject lock prepended to question (%d chars)", len(subject_lock))
-
-                # ── Pre-analyze query using chat pipeline for SQL guidance ──
-                sql_guide = self._pre_analyze_query(
-                    question, schema_str, rels_str, profile_str
-                )
-                if sql_guide:
-                    question_with_date = question_with_date + "\n" + sql_guide
-                    logger.info("SQL guide appended to question (%d chars)", len(sql_guide))
-
-                # ── Analytical framework for report-type-specific guidance ──
-                analytical_guide = self._get_analytical_framework(question)
-                if analytical_guide:
-                    question_with_date = question_with_date + "\n" + analytical_guide
-                    logger.info("Analytical framework appended to question")
-
-                logger.info("Report generation — calling LLM for report blueprint (cache MISS)")
-                logger.info("Question sent to LLM (first 500 chars): %s", question_with_date[:500])
-
-                # Call LLM to generate report blueprint
-                result = self.report_gen(
-                    question=question_with_date,
-                    schema_info=schema_str,
-                    relationships=rels_str,
-                    data_profile=profile_str,
-                )
-
-                # Parse the JSON output
-                try:
-                    report = self._extract_json(result.report_json)
-                except (json.JSONDecodeError, ValueError) as exc:
-                    logger.error("Failed to parse report JSON: %s", exc)
-                    return {
-                        "mode": "report",
-                        "error": f"Failed to generate report structure: {str(exc)}",
-                        "report": None,
-                    }
-
-                # ── Store blueprint in cache (structure only, no data)
-                _blueprint_cache[cache_key] = json.loads(json.dumps(report))
-                _save_blueprint_cache(_blueprint_cache)
-                logger.info("Blueprint cached with key %s (%d entries total)",
-                            cache_key[:8], len(_blueprint_cache))
-
-        logger.info("Report blueprint received — executing SQL queries")
-
-        # Execute all KPI SQLs
-        for kpi in report.get("kpis", []):
-            self._execute_kpi_sql(kpi)
-
-        # Execute all chart SQLs
-        for chart in report.get("charts", []):
-            self._execute_chart_sql(chart)
-
-        # Execute table SQL
-        if "table" in report and report["table"]:
-            self._execute_table_sql(report["table"])
-
-        # ── Post-processing: remove failed KPIs and empty charts ──────
-        if "kpis" in report:
-            report["kpis"] = self._clean_kpis(report["kpis"])
-
-        # Remove charts with empty data, errors, single-column data, or all-zero values
-        # but guarantee at least MIN_CHARTS survive
-        MIN_CHARTS = 6
-        if "charts" in report:
-            all_charts = report["charts"]
-            if len(all_charts) < 6:
-                logger.warning("LLM generated only %d charts (expected 6)", len(all_charts))
-
-            valid_charts = []
-            fallback_charts = []   # errored/zero charts kept as fallback
-            for chart in all_charts:
-                if chart.get("error"):
-                    logger.info("Chart '%s' has error: %s", chart.get("title", "?"), chart.get("error"))
-                    fallback_charts.append(chart)
-                    continue
-                if not chart.get("data") or len(chart["data"]) == 0:
-                    logger.info("Chart '%s' has empty data", chart.get("title", "?"))
-                    fallback_charts.append(chart)
-                    continue
-                # Check column count — need at least label + value
-                row_keys = list(chart["data"][0].keys()) if chart["data"] else []
-                if len(row_keys) < 2:
-                    # Attempt to salvage: if it's a single-aggregate (KPI-style) result,
-                    # convert it into a displayable chart with a label column
-                    if len(row_keys) == 1 and len(chart["data"]) == 1:
-                        # Single value — convert to a bar with the chart title as label
-                        val_key = row_keys[0]
-                        chart["data"] = [{"label": chart.get("title", "Value"), val_key: chart["data"][0][val_key]}]
-                        chart["type"] = "bar"
-                        logger.info("Salvaged chart '%s' — converted single-value to bar", chart.get("title", "?"))
-                    elif len(row_keys) == 1 and len(chart["data"]) > 1:
-                        # Multiple rows but only one column — add row index as label
-                        val_key = row_keys[0]
-                        for i, row in enumerate(chart["data"]):
-                            row["label"] = f"Item {i+1}"
-                        logger.info("Salvaged chart '%s' — added index labels to %d rows", chart.get("title", "?"), len(chart["data"]))
-                    else:
-                        logger.info("Chart '%s' — only %d columns (need 2+)", chart.get("title", "?"), len(row_keys))
-                        fallback_charts.append(chart)
-                        continue
-                # Check if all numeric values are zero
-                value_keys = row_keys[1:]
-                all_zero = all(
-                    all((v := row.get(k)) is None or v == 0 or v == "" for k in value_keys)
-                    for row in chart["data"]
-                )
-                if all_zero:
-                    logger.info("Chart '%s' — all values are zero/null", chart.get("title", "?"))
-                    fallback_charts.append(chart)
-                    continue
-
-                # ── Per-row zero filtering for categorical charts ──────
-                # Remove individual rows where every numeric value is 0/null
-                # (e.g. "New: 0" in "New vs Returning" chart).
-                # Only applied to small charts (≤30 rows) so time-series
-                # charts with legitimate zero months are not affected.
-                if len(chart["data"]) <= 30:
-                    _def_zero = {None, 0, "", "0", 0.0}
-                    non_zero_rows = [
-                        row for row in chart["data"]
-                        if any(row.get(k) not in _def_zero for k in value_keys)
-                    ]
-                    if len(non_zero_rows) >= 1 and len(non_zero_rows) < len(chart["data"]):
-                        logger.info(
-                            "Chart '%s': dropped %d zero-value row(s) (kept %d)",
-                            chart.get("title", "?"),
-                            len(chart["data"]) - len(non_zero_rows),
-                            len(non_zero_rows),
-                        )
-                        chart["data"] = non_zero_rows
-
-                valid_charts.append(chart)
-
-            # ── Regenerate failed charts via chat pipeline ─────────────
-            # If we have fewer than 6 valid charts, try to regenerate SQL
-            # for failed charts using the chat pipeline's full chain.
-            if len(valid_charts) < MIN_CHARTS and fallback_charts:
-                for fb in fallback_charts[:]:
-                    if len(valid_charts) >= MIN_CHARTS:
-                        break
-                    chart_title = fb.get("title", "Chart")
-                    chart_type = fb.get("type", "bar")
-                    logger.info(
-                        "Attempting to regenerate chart '%s' via chat pipeline (%d/%d)",
-                        chart_title, len(valid_charts) + 1, MIN_CHARTS
-                    )
-                    regen_sql = self._regenerate_sql(
-                        f"Query data for a {chart_type} chart titled '{chart_title}'. "
-                        f"Return rows with a label column and a numeric value column. "
-                        f"Use GROUP BY to get multiple data points."
-                    )
-                    if regen_sql:
-                        fb["sql"] = regen_sql
-                        fb.pop("error", None)
-                        fb["data"] = []
-                        self._execute_chart_sql(fb)
-                        if fb.get("data") and len(fb["data"]) > 0:
-                            row_keys = list(fb["data"][0].keys())
-                            if len(row_keys) >= 2:
-                                valid_charts.append(fb)
-                                fallback_charts.remove(fb)
-                                logger.info(
-                                    "Chart '%s' regenerated successfully (%d rows)",
-                                    chart_title, len(fb["data"])
-                                )
-                                continue
-                    # Regeneration failed — keep as fallback
-                    logger.warning("Chart '%s' regeneration failed", chart_title)
-
-            # Fill remaining slots from fallbacks if still short
-            if len(valid_charts) < MIN_CHARTS and fallback_charts:
-                needed = MIN_CHARTS - len(valid_charts)
-                # Prefer fallback charts that have data (even with errors) over empty ones
-                fallback_charts.sort(
-                    key=lambda c: (len(c.get("data", [])) > 0, not c.get("error")),
-                    reverse=True,
-                )
-                for fb in fallback_charts[:needed]:
-                    fb.pop("error", None)  # remove error flag so it renders
-                    if not fb.get("data"):
-                        fb["data"] = [{"label": "No data available", "value": 0}]
-                        fb["type"] = "bar"
-                    valid_charts.append(fb)
-                    logger.info("Kept fallback chart '%s' to meet minimum (%d/%d)",
-                                fb.get("title", "?"), len(valid_charts), MIN_CHARTS)
-
-            if valid_charts:
-                report["charts"] = valid_charts
-            logger.info("Charts after cleanup: %d valid, %d fallback (%d total of %d original)",
-                        len([c for c in valid_charts if c not in fallback_charts]),
-                        len([c for c in valid_charts if c in fallback_charts]),
-                        len(valid_charts), len(all_charts))
-
-        # ── Smart chart-type auto-correction based on actual data ──────
-        if "charts" in report:
-            for chart in report["charts"]:
-                self._smart_fix_chart_type(chart)
-
-        # ── Enforce chart type diversity (no duplicate types) ─────────
-        if "charts" in report and len(report["charts"]) > 1:
-            report["charts"] = self._enforce_chart_diversity(report["charts"])
-
-        logger.info("Report generation complete — all SQL executed")
-
-        # ── Rewrite summary using actual KPI values ────────────────────
-        report["summary"] = self._regenerate_summary(
-            report.get("summary", ""), report.get("kpis", [])
-        )
-
-        # ── Detect applicable filters based on SQL content ────────────
-        applicable_filters = self._detect_applicable_filters(report)
-
-        return {
-            "mode": "report",
-            "report": report,
-            "applicable_filters": applicable_filters,
-            "ui_instructions": {
-                "create_new_section": True,
-                "open_in_new_tab": True,
-                "enable_streaming": True,
-                "stream_once": True,
-                "include_report_ai": True,
-                "report_ai": {
-                    "type": "chat_like",
-                    "position": "below_report",
-                },
-                "explanation_feature": {
-                    "enabled": True,
-                    "trigger": "eye_button",
-                },
-            },
-        }
 
     def _smart_fix_chart_type(self, chart: dict) -> None:
         """Auto-correct chart type based on actual data patterns.
@@ -3348,30 +2811,28 @@ class ReportPipeline:
         except Exception:
             lean_json = current_report_json  # fallback to original if stripping fails
 
-        result = self.report_mod(
-            current_report=lean_json,
-            modification=modification,
-            schema_info=schema_str,
-        )
+        from ai.claude_report_llm import modify_report as _claude_modify_report
+
+        updated_json_str = _claude_modify_report(lean_json, modification, schema_str)
 
         try:
-            report = self._extract_json(result.updated_report_json)
+            report = self._extract_json(updated_json_str)
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning("Failed to parse modified report JSON (attempt 1): %s — retrying", exc)
             # ── Retry: ask the LLM to fix its own output ──────────────────
             try:
-                retry_result = self.report_mod(
-                    current_report=lean_json,
-                    modification=(
+                retry_json_str = _claude_modify_report(
+                    lean_json,
+                    (
                         f"{modification}\n\n"
                         "CRITICAL: Your previous response was not valid JSON. "
                         "Output ONLY a raw JSON object. "
                         "No markdown, no code fences, no single quotes, no trailing commas. "
                         "Every key and string value MUST use double quotes."
                     ),
-                    schema_info=schema_str,
+                    schema_str,
                 )
-                report = self._extract_json(retry_result.updated_report_json)
+                report = self._extract_json(retry_json_str)
             except (json.JSONDecodeError, ValueError) as exc2:
                 logger.error("Failed to parse modified report JSON (attempt 2): %s", exc2)
                 return {
@@ -3475,3 +2936,14 @@ class ReportPipeline:
                 },
             },
         }
+
+
+# ── Module-level entry points for the report endpoints ──────────────────────
+def modify_report(report_json: str, modification: str) -> dict:
+    """Modify an existing report via natural language (Claude-backed)."""
+    return ReportPipeline().modify(report_json, modification)
+
+
+def apply_filters(report: dict, filters: dict) -> dict:
+    """Apply filters to an existing report by re-injecting WHERE clauses (no LLM)."""
+    return ReportPipeline().apply_filters(report, filters)

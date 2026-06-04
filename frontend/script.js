@@ -891,6 +891,22 @@
 
     let _sectionIdCounter = 0; // Unique ID counter for section toggles
 
+    function renderChatMetricsBadge(metrics) {
+        if (!metrics || !metrics.agent_calls) return "";
+        const cost = metrics.estimated_cost_usd != null ? "$" + metrics.estimated_cost_usd.toFixed(4) : "—";
+        const secs = metrics.total_time_ms != null ? (metrics.total_time_ms / 1000).toFixed(1) + "s" : "—";
+        const tin = (metrics.total_input_tokens || 0).toLocaleString();
+        const tout = (metrics.total_output_tokens || 0).toLocaleString();
+        const cacheRead = (metrics.total_cache_read_tokens || 0).toLocaleString();
+        const tip = `Input ${tin} · Output ${tout} · Cache-read ${cacheRead} · Cache hit ${metrics.cache_hit_rate_pct || 0}% · ${metrics.agent_calls} LLM call(s)`;
+        return `<div class="chat-metrics" title="${escapeHtml(tip)}">
+            <span title="estimated cost">${cost}</span>
+            <span title="time">${secs}</span>
+            <span title="tokens in/out">${tin}↓ / ${tout}↑</span>
+            <span title="cache hit rate">cache ${metrics.cache_hit_rate_pct || 0}%</span>
+        </div>`;
+    }
+
     function appendAIMessage(data) {
         const el = document.createElement("div");
         el.className = "msg msg-ai";
@@ -915,6 +931,7 @@
             </div>
             <div class="ai-body">
                 ${hasAnswer ? `<div class="ai-answer">${escapeHtml(data.answer)}</div>` : ""}
+                ${renderChatMetricsBadge(data.metrics)}
                 ${hasSql ? `
                 <div class="ai-section">
                     <button class="section-toggle" data-target="${sqlId}">

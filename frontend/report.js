@@ -1652,21 +1652,59 @@
     const thoughtBtn = document.getElementById("reportThoughtBtn");
 
     thoughtBtn.addEventListener("click", () => {
-        const meta = currentReport && currentReport.meta;
-        const steps = (meta && meta.thought_process) || [];
-
-        if (steps.length === 0) {
-            thoughtBody.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;">No reasoning data available.</p>';
-        } else {
-            let html = '<ul class="thought-steps">';
-            steps.forEach((step, i) => {
-                html += `<li class="thought-step"><span class="thought-step-num">${i + 1}</span><span class="thought-step-text">${escapeHtml(step)}</span></li>`;
-            });
-            html += "</ul>";
-            thoughtBody.innerHTML = html;
-        }
+        thoughtBody.innerHTML = renderMetricsPanel(reportData.metrics);
         thoughtOverlay.classList.remove("hidden");
     });
+
+    function _fmtNum(n) { return (n == null ? 0 : n).toLocaleString(); }
+
+    function renderMetricsPanel(metrics) {
+        if (!metrics || !metrics.agents || metrics.agents.length === 0) {
+            return '<p style="color:var(--text-muted);font-size:0.82rem;">No generation metrics available for this report.</p>';
+        }
+        const cost = metrics.estimated_cost_usd != null ? ("$" + metrics.estimated_cost_usd.toFixed(4)) : "—";
+        const secs = metrics.total_time_ms != null ? (metrics.total_time_ms / 1000).toFixed(1) + "s" : "—";
+
+        // Summary cards
+        let html = '<div class="metrics-cards">';
+        html += metricCard("Estimated Cost", cost, "accent");
+        html += metricCard("Total Time", secs);
+        html += metricCard("Input Tokens", _fmtNum(metrics.total_input_tokens));
+        html += metricCard("Output Tokens", _fmtNum(metrics.total_output_tokens));
+        html += metricCard("Cache Hit Rate", (metrics.cache_hit_rate_pct ?? 0) + "%", "good");
+        html += metricCard("Agent Calls", _fmtNum(metrics.agent_calls));
+        html += '</div>';
+
+        // Per-agent timeline (bar = relative time)
+        const maxMs = Math.max(...metrics.agents.map(a => a.elapsed_ms || 0), 1);
+        html += '<h4 class="metrics-h4">Per-Agent Breakdown</h4><div class="agent-rows">';
+        metrics.agents.forEach(a => {
+            const pct = Math.round((a.elapsed_ms || 0) / maxMs * 100);
+            const aCost = a.cost_usd != null ? "$" + a.cost_usd.toFixed(4) : "—";
+            html += `
+              <div class="agent-row">
+                <div class="agent-row-name">${escapeHtml(a.agent || "?")}</div>
+                <div class="agent-row-bar"><div class="agent-row-fill" style="width:${pct}%"></div></div>
+                <div class="agent-row-meta">
+                  <span title="time">${a.elapsed_ms || 0}ms</span>
+                  <span title="input tokens">in ${_fmtNum(a.input_tokens)}</span>
+                  <span title="output tokens">out ${_fmtNum(a.output_tokens)}</span>
+                  <span title="cache read tokens">cache ${_fmtNum(a.cache_read_tokens)}</span>
+                  <span title="estimated cost" class="agent-row-cost">${aCost}</span>
+                </div>
+              </div>`;
+        });
+        html += '</div>';
+        html += `<p class="metrics-note">Model: ${escapeHtml((metrics.agents[0] || {}).model || "?")} · `
+              + `Cache-read tokens are billed at ~10% of input. Higher cache hit rate = lower cost. `
+              + `Tune via prompt caching & schema trimming.</p>`;
+        return html;
+    }
+
+    function metricCard(label, value, variant) {
+        const cls = variant ? "metric-card metric-card-" + variant : "metric-card";
+        return `<div class="${cls}"><div class="metric-card-val">${escapeHtml(value)}</div><div class="metric-card-label">${escapeHtml(label)}</div></div>`;
+    }
 
     thoughtClose.addEventListener("click", () => thoughtOverlay.classList.add("hidden"));
     thoughtOverlay.addEventListener("click", e => { if (e.target === thoughtOverlay) thoughtOverlay.classList.add("hidden"); });

@@ -2349,6 +2349,58 @@ textarea::placeholder { color:var(--text-muted); }
 
 
 
+/* ── Generation Metrics Panel ──────────────────────────────────────────── */
+
+.metrics-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+    margin-bottom: 1.1rem;
+}
+.metric-card {
+    background: var(--bg-card, rgba(255,255,255,0.04));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-radius: 10px;
+    padding: 0.7rem 0.8rem;
+    text-align: center;
+}
+.metric-card-val { font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
+.metric-card-label { font-size: 0.68rem; color: var(--text-muted, #94a3b8); margin-top: 0.2rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.metric-card-accent .metric-card-val { color: #8b5cf6; }
+.metric-card-good .metric-card-val { color: #22c55e; }
+
+.metrics-h4 { font-size: 0.8rem; font-weight: 600; margin: 0.4rem 0 0.6rem; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 0.04em; }
+.agent-rows { display: flex; flex-direction: column; gap: 0.5rem; }
+.agent-row { display: flex; align-items: center; gap: 0.6rem; }
+.agent-row-name { width: 120px; font-size: 0.74rem; font-weight: 600; flex-shrink: 0; }
+.agent-row-bar { flex: 1; height: 18px; background: rgba(139,92,246,0.12); border-radius: 4px; overflow: hidden; min-width: 60px; }
+.agent-row-fill { height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 4px; }
+.agent-row-meta { display: flex; gap: 0.7rem; font-size: 0.68rem; color: var(--text-muted, #94a3b8); flex-shrink: 0; }
+.agent-row-cost { color: #8b5cf6; font-weight: 600; }
+.metrics-note { font-size: 0.7rem; color: var(--text-muted, #94a3b8); margin-top: 1rem; line-height: 1.5; }
+
+/* Chat metrics badge (under each AI answer) */
+.chat-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 0.35rem 0 0.5rem;
+    font-size: 0.68rem;
+    color: var(--text-muted, #94a3b8);
+}
+.chat-metrics span {
+    background: rgba(139,92,246,0.10);
+    border: 1px solid rgba(139,92,246,0.18);
+    border-radius: 5px;
+    padding: 0.12rem 0.45rem;
+    cursor: default;
+}
+
+@media (max-width: 640px) {
+    .metrics-cards { grid-template-columns: repeat(2, 1fr); }
+    .agent-row-meta { display: none; }
+}
+
 /* ── Thought Process Steps ─────────────────────────────────────────────── */
 
 .thought-steps {

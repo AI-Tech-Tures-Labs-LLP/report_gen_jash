@@ -49,6 +49,50 @@ logger = logging.getLogger(__name__)
 _SONNET = config.CLAUDE_MODEL        # Available for complex tasks if needed
 _HAIKU  = config.CLAUDE_HAIKU_MODEL  # All agents — fast & cost-effective
 
+
+# ── Telemetry aggregation ─────────────────────────────────────────────────────
+
+def _build_metrics(usage_log: list[dict], total_elapsed: float) -> dict:
+    """Aggregate per-agent usage into a frontend-friendly metrics object.
+
+    Returns totals (tokens, cost, time), a per-agent breakdown, and a cache
+    hit-rate — everything needed to drive optimization decisions in the UI.
+    """
+    agents = []
+    tot_in = tot_out = tot_cache_read = tot_cache_create = 0
+    tot_cost = 0.0
+    for u in usage_log:
+        cost = config.estimate_cost(
+            u.get("model", ""),
+            u.get("input_tokens", 0),
+            u.get("output_tokens", 0),
+            u.get("cache_read_tokens", 0),
+            u.get("cache_creation_tokens", 0),
+        )
+        tot_in           += u.get("input_tokens", 0)
+        tot_out          += u.get("output_tokens", 0)
+        tot_cache_read   += u.get("cache_read_tokens", 0)
+        tot_cache_create += u.get("cache_creation_tokens", 0)
+        tot_cost         += cost
+        agents.append({**u, "cost_usd": cost})
+
+    billed_input = tot_in + tot_cache_read + tot_cache_create
+    cache_hit_rate = round(tot_cache_read / billed_input * 100, 1) if billed_input else 0.0
+
+    return {
+        "agent_calls": len(agents),
+        "total_input_tokens": tot_in,
+        "total_output_tokens": tot_out,
+        "total_cache_read_tokens": tot_cache_read,
+        "total_cache_creation_tokens": tot_cache_create,
+        "total_tokens": tot_in + tot_out + tot_cache_read + tot_cache_create,
+        "cache_hit_rate_pct": cache_hit_rate,
+        "estimated_cost_usd": round(tot_cost, 6),
+        "total_time_ms": round(total_elapsed * 1000),
+        "agents": agents,
+    }
+
+
 # ── Agent display config ─────────────────────────────────────────────────────
 _AGENTS_STANDARD = [
     ("1", "CONTEXT AGENT",        "🔍", "Analyzing question & gathering database context"),
@@ -137,6 +181,7 @@ class ClaudeReportPipeline:
         logger.info("Claude pipeline START — question: %s", question[:120])
 
         self._retry_count = 0
+        self.client.reset_usage()  # clear telemetry for this run
 
         try:
             # ── Agent 1: Context + Signal Classification ───────────────────
@@ -264,11 +309,14 @@ class ClaudeReportPipeline:
             _pipeline_complete(total_elapsed, final_report)
             logger.info("Claude pipeline COMPLETE — %.1fs", total_elapsed)
 
+            metrics = _build_metrics(self.client.usage_log, total_elapsed)
+
             # Build response based on intent mode
             response_payload = {
                 "mode": "report",
                 "intent_mode": intent_mode,
                 "report": final_report,
+                "metrics": metrics,
                 "applicable_filters": applicable_filters,
                 "ui_instructions": {
                     "create_new_section": True,

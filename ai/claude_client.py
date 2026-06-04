@@ -64,6 +64,13 @@ class ClaudeClient:
             )
         self._client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
         self._model = config.CLAUDE_MODEL
+        # Telemetry: one entry per call_agent() invocation. Read by the pipeline
+        # after a run to surface token/timing/cost metrics in the frontend.
+        self.usage_log: list[dict] = []
+
+    def reset_usage(self) -> None:
+        """Clear the usage log (call at the start of a fresh pipeline run)."""
+        self.usage_log = []
 
     # ── Core agent call ─────────────────────────────────────────────────
 
@@ -90,6 +97,13 @@ class ClaudeClient:
         messages: list[dict] = [{"role": "user", "content": user_message}]
         agent_start = time.time()
         active_model = model or self._model
+
+        # ── Per-call token accumulators (summed across all tool rounds) ──
+        _tok_in = 0
+        _tok_out = 0
+        _tok_cache_read = 0
+        _tok_cache_create = 0
+        _api_calls = 0
 
         _tee(
             f"  {_c('MODEL', _DIM, _GREY)}: {_c(active_model, _DIM)}  "
@@ -161,11 +175,16 @@ class ClaudeClient:
                     else:
                         raise
 
-            # Log cache usage if available
+            # Capture token usage for telemetry (summed across rounds)
             usage = getattr(response, "usage", None)
             if usage:
+                _api_calls += 1
+                _tok_in          += getattr(usage, "input_tokens",  0) or 0
+                _tok_out         += getattr(usage, "output_tokens", 0) or 0
                 cache_read   = getattr(usage, "cache_read_input_tokens",   0) or 0
                 cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
+                _tok_cache_read   += cache_read
+                _tok_cache_create += cache_create
                 if cache_read or cache_create:
                     _tee(
                         f"  {_c('  cache', _DIM, _GREY)}: "
@@ -190,7 +209,8 @@ class ClaudeClient:
                     f"  {_c('◉ DONE', _GREEN, _BOLD)}  "
                     f"{_c(f'{len(final_text):,} chars', _CYAN)}  "
                     f"{_c(f'{round_num + 1} round(s)', _DIM)}  "
-                    f"{_c(f'{total_elapsed:.1f}s', _YELLOW)}"
+                    f"{_c(f'{total_elapsed:.1f}s', _YELLOW)}  "
+                    f"{_c(f'in={_tok_in:,} out={_tok_out:,} cache_hit={_tok_cache_read:,}', _MAGENTA, _DIM)}"
                 )
                 # Short preview of final text
                 preview = final_text[:250].replace("\n", " ").strip()
@@ -199,9 +219,23 @@ class ClaudeClient:
                 _tee(f"  {_c('   ' + preview, _DIM)}")
 
                 logger.info(
-                    "%s responded — %d chars, %d tool rounds, %.1fs",
+                    "%s responded — %d chars, %d tool rounds, %.1fs, in=%d out=%d cache=%d",
                     agent_name, len(final_text), round_num + 1, total_elapsed,
+                    _tok_in, _tok_out, _tok_cache_read,
                 )
+
+                # ── Record telemetry for this agent call ──
+                self.usage_log.append({
+                    "agent": agent_name,
+                    "model": active_model,
+                    "elapsed_ms": round(total_elapsed * 1000),
+                    "tool_rounds": round_num + 1,
+                    "api_calls": _api_calls,
+                    "input_tokens": _tok_in,
+                    "output_tokens": _tok_out,
+                    "cache_read_tokens": _tok_cache_read,
+                    "cache_creation_tokens": _tok_cache_create,
+                })
                 return final_text
 
             # ── Tool call round ──────────────────────────────────────────
