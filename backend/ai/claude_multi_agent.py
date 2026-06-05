@@ -22,7 +22,7 @@ import time
 from datetime import date
 from typing import Any
 
-import config
+from core import config
 
 from ai.claude_client import ClaudeClient, _c, _tee, _BOLD, _DIM, _CYAN, _GREEN, _YELLOW, _RED, _BLUE, _MAGENTA, _WHITE, _GREY, _R
 from ai.claude_tools import (

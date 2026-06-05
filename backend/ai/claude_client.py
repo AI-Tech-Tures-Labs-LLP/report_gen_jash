@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 import anthropic
 
-import config
+from core import config
 
 logger = logging.getLogger(__name__)
 

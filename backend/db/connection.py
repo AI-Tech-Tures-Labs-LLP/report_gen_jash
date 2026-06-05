@@ -3,7 +3,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-import config
+from core import config
 
 _engine: Engine | None = None
 

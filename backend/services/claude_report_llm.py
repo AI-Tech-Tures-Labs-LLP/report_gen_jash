@@ -27,7 +27,7 @@ from db.executor import execute_sql
 
 logger = logging.getLogger(__name__)
 
-import config as _config
+from core import config as _config
 
 
 # ── Intent router (decide: full report vs fast chat answer) ──────────────────

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _get_fix_report_sql():
     """Lazy import of _fix_report_sql to avoid circular imports."""
-    from ai.report_generator import _fix_report_sql
+    from services.report_generator import _fix_report_sql
     return _fix_report_sql
 
 
