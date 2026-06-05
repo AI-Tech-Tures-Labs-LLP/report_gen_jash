@@ -145,17 +145,53 @@ Target: common factual query ~30-40s; dashboards ~150-180s; cheaper; cleaner.
 
 ---
 
-## Progress log
+## ✅ WORK DONE — MASTER STATUS (this is the source of truth)
 
-- 2026-06-04: Full audit done. Architecture verified. Priorities set. Env set up & app running.
-- 2026-06-04: **Priority 1 DONE** — Groq/DSPy fully removed, Anthropic-only. Telemetry added
-  (per-agent token/cost/timing → DevTools console). All uncommitted on `joelsrgv1exp1`.
-- 2026-06-04: **5-query measurement study DONE** (logged in `OPTIMIZATION_PLAYBOOK.md`).
-  Architecture decided = **Option T (tiered routing)**, documented in `ARCHITECTURE.md`.
-- **NEXT ACTION:** Priority 2, Step 1 — fix prompt caching on the 4 cache=0 agents (lowest-risk pure win),
-  then re-run the 5-query set to prove the gain before any structural change.
+All changes below are on branch `joelsrgv1exp1`, UNCOMMITTED (Joel commits/pushes himself).
+Baseline before any optimization: a report took ~280s, ~$0.42, QA ~8-9/12.
 
-## Companion docs
-- `ARCHITECTURE.md` — current state, T-vs-S tradeoff (chose T), target design, sequenced build plan.
-- `OPTIMIZATION_PLAYBOOK.md` — the 5 measured run logs + universal levers + run-by-run findings.
-- `STACKHUNTER_DATA_FAMILIARIZATION.md` — the real DB data model, grains, join paths, landmines.
+| # | Change | Type | Result (measured) | Status |
+|---|---|---|---|---|
+| 0 | **Priority 1: Groq/DSPy removal** — Anthropic-only; deleted DSPy files + api_enhanced; re-pointed /chat/stream | cleanup | smaller codebase, one LLM stack | ✅ DONE |
+| 0b | **Telemetry** — per-agent token/cost/timing → DevTools console ([Report/Chat/Modify Metrics]) | observability | drives all decisions | ✅ DONE |
+| 1 | **np.float64 logging bug** — coerce numpy floats before SQL insert | bugfix | log spam gone | ✅ DONE |
+| 2 | **Shared cached context** — build schema/profile once, cache, share across Context/BA/SQL agents | speed/cost | input tokens **−58-64%**; Context agent 64k→54 tokens | ✅ DONE |
+| 3 | **Fan-out accuracy fix** — prompt rule + validator guard + non-blocking warning on execute | **ACCURACY** | prevents double-counted revenue; verified uses line_total for breakdowns, total_amount for grand totals; no false positives | ✅ DONE |
+| 4 | **Cheaper QA retry** — on low score re-run only Report Writer, not whole pipeline | speed (rare path) | ~110s saved when retry fires (rare) | ✅ DONE |
+| 5 | **MOVE 1: Parallelize Data Analyst ∥ Report Writer** (STANDARD mode; DA validate-only; thread-safe) | speed | **~34s reliably saved**; total ~280s→~140-165s | ✅ DONE + verified |
+| 6 | **MOVE 2: Parallelize Report Writer internally** — split into 2 concurrent calls (explanations ∥ summary+insights), IDENTICAL output | speed | writer ~halved; verified both sub-agents run concurrent, all output present | ✅ DONE + verified |
+
+**Cumulative result: ~280s → ~140-165s (≈2× faster), cost ~$0.42 → ~$0.33, QA 8-12/12.**
+
+### Where latency stands now
+All WITHIN-pipeline trims done (caching, DA∥Writer, writer-internal-parallel, cheaper retry). Remaining
+per-agent squeezing = diminishing returns. **SQL agent variance (35-65s, depends on query + self-correcting
+retries) now swings the total more than further trims would.** Note: SQL agent sometimes writes imperfect SQL
+(e.g. GROUP BY/ORDER BY on a CASE alias) and SELF-CORRECTS over a couple tool rounds — that's the LLM, not a
+code bug; report still completes. Could add a pattern-checker guard for that recurring mistake during accuracy
+hardening (saves wasted retries) — Joel said skip for now.
+
+### NEXT ACTION (Joel to choose)
+Two big levers left:
+- **MOVE 4 — Tiered router (Option T):** simple/factual Qs skip the 6-agent pipeline → ~30s vs ~140s (8× on
+  common case). Biggest USER-FACING speed win. Design in `ARCHITECTURE.md`.
+- **Accuracy hardening (Joel's #1 goal, still mostly untouched):** encode data-quality landmines
+  (discount_amount=0 → use discount_exceptions; negative lead-times; non-null counts), build a GOLDEN TEST SET
+  (~20-30 Q→expected), resolve flat-26%-margin data question, optional GROUP-BY-alias guard.
+- **Claude's recommendation:** do ACCURACY HARDENING next (speed is already ~2× better; accuracy is the stated
+  #1 priority and the 5-run study showed real gaps: flat margin, two revenue definitions, "1 warehouse").
+  Lock accuracy with tests BEFORE the router so the router can't mask regressions. Router after.
+
+### Accuracy impact of the work so far (Joel asked):
+- Speed changes (caching, MOVE 1 parallelism, cheaper retry) are designed ACCURACY-NEUTRAL — same info, faster.
+- Fan-out fix IMPROVES accuracy (prevents double-counting).
+- ONE watch-item: MOVE 1 made the Data Analyst VALIDATE-ONLY in standard mode (it flags issues, no longer
+  silently auto-fixes data). Low risk (DA almost always just "PASS"ed; upstream guards catch errors), but if
+  a wrong KPI that used to be auto-corrected appears, that's the cause.
+
+## Companion docs (detail behind this master)
+- `OPTIMIZATION_PLAYBOOK.md` — detailed before/after run logs for every change + the 5-query study.
+- `LATENCY_PLAN.md` — the committed latency analysis + MOVE order (1/2/3/4) + what we will NOT do.
+- `WRITER_PARALLELIZATION_PLAN.md` — design for the next step (parallelize the writer).
+- `ARCHITECTURE.md` — tiered-routing (Option T) decision + target design.
+- `STACKHUNTER_DATA_FAMILIARIZATION.md` (shared in chat, not in repo) — DB data model, join paths, landmines.

@@ -19,6 +19,19 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
+def _num(v, default=0.0):
+    """Coerce numpy/Decimal/None to a plain Python float for psycopg2.
+
+    Signal/drift values arrive as numpy.float64 (from the detectors), which
+    psycopg2 cannot adapt — it was emitting them as literal `np.float64(...)`
+    text into the SQL, causing 'schema "np" does not exist'. Plain float fixes it.
+    """
+    try:
+        return float(v) if v is not None else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 class LoggingAgent(BaseAgent):
     """Agent responsible for logging all pipeline activities
     
@@ -404,12 +417,12 @@ class LoggingAgent(BaseAgent):
                         'category': signal_data.get('signal_category', 'TACTICAL'),
                         'trigger': signal_data.get('trigger_condition', ''),
                         'metric': signal_data.get('primary_metric', ''),
-                        'metric_value': signal_data.get('metric_value', 0),
-                        'baseline': signal_data.get('baseline_value', 0),
-                        'variance': signal_data.get('variance_pct', 0),
+                        'metric_value': _num(signal_data.get('metric_value', 0)),
+                        'baseline': _num(signal_data.get('baseline_value', 0)),
+                        'variance': _num(signal_data.get('variance_pct', 0)),
                         'severity': signal_data.get('severity', 'MEDIUM'),
-                        'severity_score': signal_data.get('severity_score', 0.5),
-                        'impact': signal_data.get('impact_amount', 0),
+                        'severity_score': _num(signal_data.get('severity_score', 0.5), 0.5),
+                        'impact': _num(signal_data.get('impact_amount', 0)),
                         'affected_areas': json.dumps(signal_data.get('affected_areas', {})),
                         'causal_chain': signal_data.get('causal_chain', ''),
                         'drivers': json.dumps(signal_data.get('suspected_drivers', []))
@@ -453,10 +466,10 @@ class LoggingAgent(BaseAgent):
                         'drift_type': drift_data.get('drift_type', 'DATA_DRIFT'),
                         'drift_subtype': drift_data.get('drift_subtype', ''),
                         'method': drift_data.get('detection_method', 'statistical'),
-                        'confidence': drift_data.get('confidence', 0.5),
+                        'confidence': _num(drift_data.get('confidence', 0.5), 0.5),
                         'stat_test': drift_data.get('statistical_test', ''),
-                        'p_value': drift_data.get('p_value', 1.0),
-                        'effect_size': drift_data.get('effect_size', 0),
+                        'p_value': _num(drift_data.get('p_value', 1.0), 1.0),
+                        'effect_size': _num(drift_data.get('effect_size', 0)),
                         'description': drift_data.get('drift_description', ''),
                         'columns': drift_data.get('affected_columns', []),
                         'action': drift_data.get('recommended_action', '')

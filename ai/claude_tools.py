@@ -229,6 +229,19 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
                 corrected_sql[:200],
             )
 
+        # Step 1b: Non-blocking accuracy guard — surface known correctness
+        # anti-patterns (esp. revenue fan-out / double-counting) WITH the result so
+        # the agent + downstream validator are warned even if they skipped the
+        # validate_sql_query tool. We warn, not block (heuristic shouldn't hard-fail).
+        try:
+            _pattern_issues = check_sql_patterns(corrected_sql)
+        except Exception:
+            _pattern_issues = []
+        _accuracy_warnings = [
+            f"{pi['pattern_name']}: {pi.get('description', '')}"
+            for pi in _pattern_issues
+        ]
+
         # Step 2: Pre-validation (catch errors before DB execution)
         is_valid, corrected_sql, validation_error = _prevalidate_sql(corrected_sql)
         if not is_valid:
@@ -259,14 +272,22 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
             else:
                 truncated = False
 
-            return json.dumps({
+            _payload = {
                 "success": True,
                 "data": data,
                 "row_count": len(result["data"]),
                 "columns": result.get("columns", []),
                 "truncated": truncated,
                 "executed_sql": corrected_sql,
-            }, default=str)
+            }
+            if _accuracy_warnings:
+                _payload["accuracy_warnings"] = _accuracy_warnings
+                _payload["warning"] = (
+                    "⚠️ This query matched a known correctness anti-pattern "
+                    "(see accuracy_warnings) — the result may be WRONG (e.g. "
+                    "double-counted revenue). Review and fix before trusting it."
+                )
+            return json.dumps(_payload, default=str)
         else:
             return json.dumps({
                 "success": False,

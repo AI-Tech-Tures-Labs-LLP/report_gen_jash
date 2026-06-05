@@ -625,6 +625,49 @@ def check_sql_patterns(sql: str) -> list[dict[str, Any]]:
             ),
         })
 
+    # ── Pattern: sales_order.total_amount fan-out via line join ──────────────
+    # The #1 silent-accuracy bug (caught live in measurement): when sales_order is
+    # JOINed to sales_order_line, SUM(total_amount) repeats the order total for
+    # every line → inflated revenue. Correct = SUM(sales_order_line_pricing.line_total).
+    # Only fires when BOTH conditions hold (so grand-total queries on sales_order
+    # alone are NOT flagged).
+    if (
+        "sales_order_line" in sql_lower
+        and re.search(r"\bsum\s*\(\s*[^)]*total_amount", sql_lower)
+    ):
+        # Confirm total_amount belongs to the sales_order header (not some other table)
+        # by checking it's summed while the line table is joined in.
+        issues.append({
+            "pattern_name": "sales_order_total_amount_fanout",
+            "description": (
+                "CRITICAL BUG — revenue fan-out / double-counting: the query JOINs "
+                "sales_order to sales_order_line (or a line table) AND does "
+                "SUM(...total_amount...). sales_order.total_amount is the ORDER-LEVEL "
+                "total; one order has MANY lines, so SUM(total_amount) across a line "
+                "join repeats the order total once per line and INFLATES revenue. "
+                "(This is the same class of bug as fanout_po_link.)"
+            ),
+            "correction": (
+                "Revenue across a line join MUST use line-level pricing, never the "
+                "order header total:\n"
+                "\n"
+                "WRONG:  SELECT pm.category, SUM(so.total_amount) AS revenue\n"
+                "        FROM sales_order so\n"
+                "        JOIN sales_order_line sol ON so.so_id = sol.so_id ...\n"
+                "\n"
+                "CORRECT: SELECT pm.category, SUM(solp.line_total) AS revenue\n"
+                "        FROM sales_order so\n"
+                "        JOIN sales_order_line sol           ON so.so_id  = sol.so_id\n"
+                "        JOIN sales_order_line_pricing solp  ON sol.sol_id = solp.sol_id\n"
+                "        JOIN product_master pm              ON sol.product_id = pm.product_id\n"
+                "        WHERE so.status = 'closed'\n"
+                "        GROUP BY pm.category\n"
+                "\n"
+                "Only use SUM(sales_order.total_amount) when querying sales_order ALONE "
+                "(grand total or time trend), with NO join to sales_order_line."
+            ),
+        })
+
     return issues
 
 

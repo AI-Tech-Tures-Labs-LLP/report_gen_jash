@@ -26,8 +26,6 @@ import config
 
 from ai.claude_client import ClaudeClient, _c, _tee, _BOLD, _DIM, _CYAN, _GREEN, _YELLOW, _RED, _BLUE, _MAGENTA, _WHITE, _GREY, _R
 from ai.claude_tools import (
-    CONTEXT_AGENT_TOOLS,
-    BA_AGENT_TOOLS,
     SQL_AGENT_TOOLS,
     TOOL_HANDLERS,
 )
@@ -163,6 +161,7 @@ class ClaudeReportPipeline:
     def __init__(self):
         self.client = ClaudeClient()
         self._retry_count = 0
+        self._shared_context: str | None = None  # set per-run in generate()
 
     # ═══════════════════════════════════════════════════════════════════════
     # PUBLIC API
@@ -182,6 +181,15 @@ class ClaudeReportPipeline:
 
         self._retry_count = 0
         self.client.reset_usage()  # clear telemetry for this run
+
+        # Build the SHARED database-context block ONCE for this run. Passed as a
+        # cached prefix to every agent: agent 1 creates the cache, agents 2-6 read
+        # it at ~10% cost (well within the 5-min TTL). Replaces per-agent uncached
+        # schema/profile tool-fetches. (DB calls themselves are already memo-cached.)
+        from ai.claude_prompts import get_shared_db_context
+        self._shared_context = get_shared_db_context(
+            format_schema(), format_relationships(), get_data_profile()
+        )
 
         try:
             # ── Agent 1: Context + Signal Classification ───────────────────
@@ -246,23 +254,39 @@ class ClaudeReportPipeline:
             # ── SQL Traceability Log ──────────────────────────────────────
             self._log_sql_traceability(report_with_data)
 
-            # ── Agent 4: Data Analyst Agent ───────────────────────────────
+            # ── Agents 4 & 5: Data Analyst + Report Writer ────────────────
+            # STANDARD mode: DA is validate-only (does NOT mutate data), so DA and
+            # the Report Writer can run CONCURRENTLY from the same SQL output — the
+            # narrative always matches the (stable) data. We then take the Writer's
+            # output (data preserved + narrative added) and attach DA's quality notes.
+            # DRIFT mode: DA mutates data (severity/contributions) so it MUST run
+            # before the writer — kept serial there.
             _agent_header(*_AGENTS[3])
-            t0 = time.time()
-            cleaned_report = self._run_data_analyst_agent(report_with_data)
-            notes = cleaned_report.get("data_quality_notes", "No issues found")
-            notes_str = notes if isinstance(notes, str) else json.dumps(notes)[:100]
-            _agent_result("DATA ANALYST", time.time() - t0, [
-                f"Quality notes: {notes_str[:100]}",
-            ])
-
-            # ── Agent 5: Report Writer Agent ──────────────────────────────
             _agent_header(*_AGENTS[4])
             t0 = time.time()
-            final_report = self._run_report_writer_agent(cleaned_report, context)
+
+            if intent_mode == 'DRIFT_INVESTIGATION':
+                cleaned_report = self._run_data_analyst_agent(report_with_data)
+                final_report = self._run_report_writer_agent(cleaned_report, context)
+            else:
+                import concurrent.futures as _futures
+                with _futures.ThreadPoolExecutor(max_workers=2) as _ex:
+                    _da_future = _ex.submit(self._run_data_analyst_agent, report_with_data)
+                    _rw_future = _ex.submit(self._run_report_writer_agent, report_with_data, context)
+                    cleaned_report = _da_future.result()
+                    writer_report = _rw_future.result()
+                # Merge: Writer output is the base (data preserved + narrative added).
+                # Graft DA's validation notes onto it (data itself is unchanged in STANDARD mode).
+                final_report = writer_report
+                if isinstance(cleaned_report, dict) and cleaned_report.get("data_quality_notes"):
+                    final_report["data_quality_notes"] = cleaned_report["data_quality_notes"]
+
+            notes = cleaned_report.get("data_quality_notes", "No issues found")
+            notes_str = notes if isinstance(notes, str) else json.dumps(notes)[:100]
             summary_preview = final_report.get("summary", "")[:120].replace("\n", " ")
             ins_count = len(final_report.get("insights", []))
-            _agent_result("REPORT WRITER", time.time() - t0, [
+            _agent_result("DATA ANALYST ∥ REPORT WRITER", time.time() - t0, [
+                f"Quality notes: {notes_str[:80]}",
                 f"Summary   : {summary_preview}...",
                 f"Insights  : {ins_count} generated",
             ])
@@ -291,15 +315,22 @@ class ClaudeReportPipeline:
             _tee(f"  {_c(f'  Feedback: {feedback}', _DIM)}\n")
 
             # ── QA retry if rejected ───────────────────────────────────────
+            # On a low QA score, re-run ONLY the Report Writer (with QA feedback),
+            # not the whole BA→SQL→DA→Writer chain. Rationale: QA failures are almost
+            # always NARRATIVE-quality issues (insight depth, summary specificity,
+            # template compliance) — the DATA was already validated by the Data Analyst.
+            # Re-running just the writer costs ~90s instead of ~200s, and the data
+            # (KPIs/charts) stays stable. (If a future QA failure is truly data-level,
+            # that's caught by the Data Analyst / fan-out guard upstream, not here.)
             if not approved and self._retry_count < 1:
                 self._retry_count += 1
-                _tee(f"\n  {_c('QA REJECTED — retrying pipeline with feedback...', _YELLOW, _BOLD)}\n")
-                logger.info("QA rejected — retrying (attempt %d)", self._retry_count)
+                _tee(f"\n  {_c('QA REJECTED — regenerating narrative with feedback...', _YELLOW, _BOLD)}\n")
+                logger.info("QA rejected — retrying Report Writer only (attempt %d)", self._retry_count)
                 fb_msg = qa_result.get("feedback", "Quality issues")
-                blueprint          = self._run_ba_agent(question, context, qa_feedback=fb_msg)
-                report_with_data   = self._run_sql_agent(question, blueprint, context)
-                cleaned_report     = self._run_data_analyst_agent(report_with_data)
-                final_report       = self._run_report_writer_agent(cleaned_report, context)
+                # Pass QA feedback into the writer via the context so it addresses the gaps.
+                _ctx_with_fb = dict(context)
+                _ctx_with_fb["qa_feedback"] = fb_msg
+                final_report = self._run_report_writer_agent(cleaned_report, _ctx_with_fb)
 
             # ── Post-processing ────────────────────────────────────────────
             final_report = self._post_process(final_report)
@@ -373,11 +404,12 @@ class ClaudeReportPipeline:
                 f"or a DRIFT_INVESTIGATION, and produce the appropriate context object.\n\n"
                 f"USER QUERY: {question}"
             ),
-            tools=CONTEXT_AGENT_TOOLS,
-            tool_handlers=TOOL_HANDLERS,
+            # Schema/relationships/profile now come via the shared cached prefix —
+            # no need for schema-fetch tools (removes ~50k uncached tokens per run).
             agent_name="Context + Signal Agent",
             model=_HAIKU,
             use_cache=True,
+            cached_prefix=self._shared_context,
         )
 
         try:
@@ -435,11 +467,11 @@ class ClaudeReportPipeline:
         response = self.client.call_agent(
             system_prompt=BUSINESS_ANALYST_SYSTEM,
             user_message=user_msg,
-            tools=BA_AGENT_TOOLS,
-            tool_handlers=TOOL_HANDLERS,
+            # Schema/profile via shared cached prefix — schema-fetch tools removed.
             agent_name="Drift Architect" if intent_mode == 'DRIFT_INVESTIGATION' else "Business Analyst",
             model=_HAIKU,
             use_cache=True,
+            cached_prefix=self._shared_context,
         )
 
         try:
@@ -468,11 +500,9 @@ class ClaudeReportPipeline:
         """Agent 3: Write and execute SQL for all KPIs, charts, and drift data.
         For DRIFT_INVESTIGATION, executes 4-phase query cycle with more tool rounds.
         """
-        schema_str  = format_schema()
-        rels_str    = format_relationships()
-        profile_str = get_data_profile()
-
-        system_prompt = get_sql_agent_system(schema_str, rels_str, profile_str)
+        # Schema/rels/profile now arrive via the shared cached prefix (self._shared_context),
+        # not embedded here — get_sql_agent_system no longer injects them.
+        system_prompt = get_sql_agent_system("", "", "")
         intent_mode = context.get('intent_mode', 'STANDARD_REPORT')
 
         if intent_mode == 'DRIFT_INVESTIGATION':
@@ -515,6 +545,7 @@ class ClaudeReportPipeline:
             agent_name="Drift Detective" if intent_mode == 'DRIFT_INVESTIGATION' else "SQL Agent",
             model=_HAIKU,
             use_cache=True,
+            cached_prefix=self._shared_context,
         )
 
         try:
@@ -569,71 +600,162 @@ class ClaudeReportPipeline:
             return report
 
     def _run_report_writer_agent(self, report: dict, context: dict) -> dict:
-        """Agent 5: Write narratives - McKinsey-style for drift, executive for standard."""
+        """Agent 5: Write narratives - McKinsey-style for drift, executive for standard.
+
+        STANDARD mode splits the writing into TWO CONCURRENT calls (explanations ∥
+        summary+insights) to cut wall-clock ~in half with IDENTICAL output coverage —
+        the two halves write disjoint fields from the same data. DRIFT mode (9 tightly
+        coupled narrative components) stays a single call.
+        """
         intent_mode = context.get('intent_mode', 'STANDARD_REPORT')
 
         if intent_mode == 'DRIFT_INVESTIGATION':
-            user_msg = (
-                f"Write the DRIFT INVESTIGATION narrative. intent_mode=DRIFT_INVESTIGATION.\n\n"
-                f"You must write ALL components:\n"
-                f"1. Issue Overview (3-sentence template, <=60 words)\n"
-                f"2. Why This Was Surfaced\n"
-                f"3. Suspected Drivers (ranked by contribution)\n"
-                f"4. Affected Areas narrative\n"
-                f"5. KPI explanations (what/how/why/insight)\n"
-                f"6. Chart explanations\n"
-                f"7. Investigation Checklist (6 items)\n"
-                f"8. Decision Options (expand templates)\n"
-                f"9. Insights (6-8 non-obvious findings)\n\n"
-                f"SIGNAL CONTEXT:\n{json.dumps(context, indent=2, default=str)}\n\n"
-                f"REPORT DATA:\n{json.dumps(report, indent=2, default=str)}"
-            )
-        else:
-            user_msg = (
-                f"Write ALL narrative components for this STANDARD_REPORT. "
-                f"intent_mode=STANDARD_REPORT.\n\n"
-                f"You MUST write ALL of the following:\n"
-                f"1. Executive summary (5-8 sentences with actual data values)\n"
-                f"2. KPI explanations (what/how/why/insight for EVERY KPI)\n"
-                f"3. Chart explanations (what/how/why/insight for EVERY chart)\n"
-                f"4. Insights — 6-8 data-driven findings. EACH insight MUST be a JSON object with:\n"
-                f"   - \"title\": 5-8 word directional claim\n"
-                f"   - \"body\": 2-3 sentences with SPECIFIC numbers from the data\n"
-                f"   - \"type\": \"positive\" | \"negative\" | \"neutral\" | \"warning\"\n"
-                f"   At least 2 insights must be \"warning\" or \"negative\" type.\n\n"
-                f"BUSINESS CONTEXT: {context.get('subject', 'General report')}, "
-                f"domain: {context.get('business_domain', 'sales')}\n\n"
-                f"REPORT DATA:\n{json.dumps(report, indent=2, default=str)}"
-            )
+            return self._run_report_writer_drift(report, context)
 
-        response = self.client.call_agent(
-            system_prompt=REPORT_WRITER_SYSTEM,
-            user_message=user_msg,
-            agent_name="Drift Narrator" if intent_mode == 'DRIFT_INVESTIGATION' else "Report Writer",
-            model=_HAIKU,
-            use_cache=True,
-        )
+        # ── STANDARD mode: parallel writer (explanations ∥ narrative) ──
+        import concurrent.futures as _futures
+        with _futures.ThreadPoolExecutor(max_workers=2) as _ex:
+            _expl_future = _ex.submit(self._write_explanations, report, context)
+            _narr_future = _ex.submit(self._write_summary_insights, report, context)
+            expl = _expl_future.result()      # {kpi_expl: {label: {...}}, chart_expl: {title: {...}}}
+            narr = _narr_future.result()      # {summary: str, insights: [...]}
 
-        try:
-            result = self.client.extract_json(response)
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning("Report writer parse failed: %s", exc)
-            for kpi in report.get('kpis', []):
-                if 'explanation' not in kpi:
-                    kpi['explanation'] = {'what': kpi.get('label',''), 'how': '', 'why': '', 'insight': ''}
-            for chart in report.get('charts', []):
-                if 'explanation' not in chart:
-                    chart['explanation'] = {'what': chart.get('title',''), 'how': '', 'why': '', 'insight': ''}
-            if 'insights' not in report:
-                report['insights'] = []
-            return report
+        # Assemble: start from the data report, graft narrative fields onto it.
+        import copy as _copy
+        result = _copy.deepcopy(report)
 
-        # If report writer returned empty insights, generate them in a focused follow-up call
+        kpi_expl   = (expl or {}).get("kpi_explanations", {})
+        chart_expl = (expl or {}).get("chart_explanations", {})
+        for kpi in result.get("kpis", []):
+            key = kpi.get("label") or kpi.get("id") or ""
+            kpi["explanation"] = kpi_expl.get(key) or kpi.get("explanation") or {
+                "what": kpi.get("label", ""), "how": "", "why": "", "insight": ""}
+        for chart in result.get("charts", []):
+            key = chart.get("title") or chart.get("id") or ""
+            chart["explanation"] = chart_expl.get(key) or chart.get("explanation") or {
+                "what": chart.get("title", ""), "how": "", "why": "", "insight": ""}
+        if result.get("table") and (expl or {}).get("table_explanation"):
+            result["table"]["explanation"] = expl["table_explanation"]
+
+        result["summary"] = (narr or {}).get("summary", "")
+        result["insights"] = (narr or {}).get("insights", []) or []
+
+        # Insights fallback (unchanged behavior)
         if not result.get("insights"):
             logger.info("Report writer returned 0 insights — running focused insight generation")
             result["insights"] = self._generate_insights_fallback(result, context)
 
         return result
+
+    def _run_report_writer_drift(self, report: dict, context: dict) -> dict:
+        """DRIFT_INVESTIGATION narrative — single call (9 coupled components)."""
+        user_msg = (
+            f"Write the DRIFT INVESTIGATION narrative. intent_mode=DRIFT_INVESTIGATION.\n\n"
+            f"You must write ALL components:\n"
+            f"1. Issue Overview (3-sentence template, <=60 words)\n"
+            f"2. Why This Was Surfaced\n"
+            f"3. Suspected Drivers (ranked by contribution)\n"
+            f"4. Affected Areas narrative\n"
+            f"5. KPI explanations (what/how/why/insight)\n"
+            f"6. Chart explanations\n"
+            f"7. Investigation Checklist (6 items)\n"
+            f"8. Decision Options (expand templates)\n"
+            f"9. Insights (6-8 non-obvious findings)\n\n"
+            f"SIGNAL CONTEXT:\n{json.dumps(context, indent=2, default=str)}\n\n"
+            f"REPORT DATA:\n{json.dumps(report, indent=2, default=str)}"
+        )
+        qa_feedback = context.get("qa_feedback")
+        if qa_feedback:
+            user_msg += (
+                f"\n\n⚠️ QA REJECTED THE PREVIOUS NARRATIVE. Fix these issues (keep data unchanged):\n{qa_feedback}"
+            )
+        response = self.client.call_agent(
+            system_prompt=REPORT_WRITER_SYSTEM, user_message=user_msg,
+            agent_name="Drift Narrator", model=_HAIKU, use_cache=True,
+            cached_prefix=self._shared_context,
+        )
+        try:
+            result = self.client.extract_json(response)
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("Drift narrator parse failed: %s", exc)
+            return report
+        if not result.get("insights"):
+            result["insights"] = self._generate_insights_fallback(result, context)
+        return result
+
+    def _write_explanations(self, report: dict, context: dict) -> dict:
+        """Writer sub-call A: per-KPI + per-chart + table explanations (no summary/insights).
+
+        Returns explanations keyed by KPI label / chart title so they map back reliably
+        regardless of ordering.
+        """
+        kpi_labels   = [k.get("label") or k.get("id") or "" for k in report.get("kpis", [])]
+        chart_titles = [c.get("title") or c.get("id") or "" for c in report.get("charts", [])]
+        has_table = bool(report.get("table"))
+
+        user_msg = (
+            "Write ONLY the explanations for this STANDARD_REPORT's KPIs, charts, and table. "
+            "Do NOT write a summary or insights (another writer handles those).\n\n"
+            "For EACH KPI and EACH chart, write a 4-part explanation: "
+            "what / how / why / insight (1 sentence each, citing the actual data value).\n\n"
+            f"KPI labels: {json.dumps(kpi_labels)}\n"
+            f"Chart titles: {json.dumps(chart_titles)}\n"
+            f"Table present: {has_table}\n\n"
+            "Return ONLY this JSON shape (key explanations by the EXACT label/title given):\n"
+            "{\n"
+            '  "kpi_explanations":   { "<kpi label>":   {"what":"","how":"","why":"","insight":""}, ... },\n'
+            '  "chart_explanations": { "<chart title>": {"what":"","how":"","why":"","insight":""}, ... }'
+            + (',\n  "table_explanation": {"what":"","how":"","why":"","insight":""}\n' if has_table else "\n")
+            + "}\n\n"
+            f"BUSINESS CONTEXT: {context.get('subject', 'General report')}, "
+            f"domain: {context.get('business_domain', 'sales')}\n\n"
+            f"REPORT DATA:\n{json.dumps(report, indent=2, default=str)}"
+        )
+        response = self.client.call_agent(
+            system_prompt=REPORT_WRITER_SYSTEM, user_message=user_msg,
+            agent_name="Report Writer (explanations)", model=_HAIKU, use_cache=True,
+            cached_prefix=self._shared_context,
+        )
+        try:
+            return self.client.extract_json(response)
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("Writer explanations parse failed: %s", exc)
+            return {}
+
+    def _write_summary_insights(self, report: dict, context: dict) -> dict:
+        """Writer sub-call B: executive summary + insights (no per-element explanations)."""
+        user_msg = (
+            "Write ONLY the executive summary and insights for this STANDARD_REPORT. "
+            "Do NOT write per-KPI or per-chart explanations (another writer handles those).\n\n"
+            "1. Executive summary: 5-8 sentences citing actual data values (scope+period, top 3 findings, "
+            "key risk/opportunity, recommendation). No placeholder text.\n"
+            "2. Insights: 6-8 data-driven findings. EACH insight is a JSON object with:\n"
+            '   - "title": 5-8 word directional claim\n'
+            '   - "body": 2-3 sentences with SPECIFIC numbers/entities from the data, answering "so what?"\n'
+            '   - "type": "positive" | "negative" | "neutral" | "warning"\n'
+            "   At least 2 insights must be \"warning\" or \"negative\". Go beyond restating KPIs — "
+            "synthesize across dimensions.\n\n"
+            "Return ONLY this JSON shape:\n"
+            '{ "summary": "...", "insights": [ {"title":"","body":"","type":""}, ... ] }\n\n'
+            f"BUSINESS CONTEXT: {context.get('subject', 'General report')}, "
+            f"domain: {context.get('business_domain', 'sales')}\n\n"
+            f"REPORT DATA:\n{json.dumps(report, indent=2, default=str)}"
+        )
+        qa_feedback = context.get("qa_feedback")
+        if qa_feedback:
+            user_msg += (
+                f"\n\n⚠️ QA REJECTED THE PREVIOUS NARRATIVE. Fix these issues in summary/insights:\n{qa_feedback}"
+            )
+        response = self.client.call_agent(
+            system_prompt=REPORT_WRITER_SYSTEM, user_message=user_msg,
+            agent_name="Report Writer (summary+insights)", model=_HAIKU, use_cache=True,
+            cached_prefix=self._shared_context,
+        )
+        try:
+            return self.client.extract_json(response)
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("Writer summary/insights parse failed: %s", exc)
+            return {}
 
     def _run_qa_agent(self, question: str, report: dict) -> dict:
         """Agent 6: Quality assurance - 12-point for drift, 8-point for standard."""

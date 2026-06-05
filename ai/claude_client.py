@@ -10,6 +10,7 @@ Provides a reusable `call_agent()` function that handles:
 import json
 import logging
 import re
+import threading as _threading
 import time
 from typing import Any, Callable
 
@@ -66,11 +67,15 @@ class ClaudeClient:
         self._model = config.CLAUDE_MODEL
         # Telemetry: one entry per call_agent() invocation. Read by the pipeline
         # after a run to surface token/timing/cost metrics in the frontend.
+        # A lock guards appends because agents may run on parallel threads
+        # (e.g. Data Analyst ∥ Report Writer).
         self.usage_log: list[dict] = []
+        self._usage_lock = _threading.Lock()
 
     def reset_usage(self) -> None:
         """Clear the usage log (call at the start of a fresh pipeline run)."""
-        self.usage_log = []
+        with self._usage_lock:
+            self.usage_log = []
 
     # ── Core agent call ─────────────────────────────────────────────────
 
@@ -86,11 +91,17 @@ class ClaudeClient:
         agent_name: str = "Agent",
         model: str | None = None,
         use_cache: bool = True,
+        cached_prefix: str | None = None,
     ) -> str:
         """Call Claude with a system prompt, user message, and optional tools.
 
         Executes tool calls in a loop until Claude returns a final text response.
         Prints rich ANSI-colored logging at every step.
+
+        `cached_prefix`: a large, STATIC block (e.g. the DB schema/profile) shared
+        across many agents in a run. It is placed as the FIRST system block with its
+        own cache_control breakpoint, so the first agent creates the cache and every
+        later agent (within the 5-min TTL) reads it at ~10% cost instead of re-sending.
 
         Returns the final text response from Claude.
         """
@@ -120,17 +131,39 @@ class ClaudeClient:
             round_start = time.time()
 
             # Build system prompt — wrap in list with cache_control when caching is on.
-            # Claude will serve cached tokens at ~10% of normal cost after first call.
+            # Claude serves cached tokens at ~10% of normal cost after the first call.
+            #
+            # When a `cached_prefix` (the big shared schema/profile block) is given, it
+            # becomes the FIRST block with its own cache breakpoint — created once by the
+            # first agent, then read from cache by every later agent in the run. The
+            # agent-specific prompt is a second cached block (cheap, enables cross-report
+            # reuse of the per-agent instructions too).
             if use_cache:
-                system_block = [
-                    {
-                        "type": "text",
-                        "text": system_prompt,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ]
+                if cached_prefix:
+                    system_block = [
+                        {
+                            "type": "text",
+                            "text": cached_prefix,
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                        {
+                            "type": "text",
+                            "text": system_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                    ]
+                else:
+                    system_block = [
+                        {
+                            "type": "text",
+                            "text": system_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ]
             else:
-                system_block = system_prompt
+                system_block = (
+                    (cached_prefix + "\n\n" + system_prompt) if cached_prefix else system_prompt
+                )
 
             kwargs: dict[str, Any] = {
                 "model": active_model,
@@ -224,18 +257,19 @@ class ClaudeClient:
                     _tok_in, _tok_out, _tok_cache_read,
                 )
 
-                # ── Record telemetry for this agent call ──
-                self.usage_log.append({
-                    "agent": agent_name,
-                    "model": active_model,
-                    "elapsed_ms": round(total_elapsed * 1000),
-                    "tool_rounds": round_num + 1,
-                    "api_calls": _api_calls,
-                    "input_tokens": _tok_in,
-                    "output_tokens": _tok_out,
-                    "cache_read_tokens": _tok_cache_read,
-                    "cache_creation_tokens": _tok_cache_create,
-                })
+                # ── Record telemetry for this agent call (thread-safe) ──
+                with self._usage_lock:
+                    self.usage_log.append({
+                        "agent": agent_name,
+                        "model": active_model,
+                        "elapsed_ms": round(total_elapsed * 1000),
+                        "tool_rounds": round_num + 1,
+                        "api_calls": _api_calls,
+                        "input_tokens": _tok_in,
+                        "output_tokens": _tok_out,
+                        "cache_read_tokens": _tok_cache_read,
+                        "cache_creation_tokens": _tok_cache_create,
+                    })
                 return final_text
 
             # ── Tool call round ──────────────────────────────────────────

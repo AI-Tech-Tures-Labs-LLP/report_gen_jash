@@ -105,6 +105,122 @@ Each stresses something different: inventory grouping, simple aggregate, categor
 
 ---
 
+## OPTIMIZATION RESULTS
+
+### Step 1 — Shared cached context block + np.float64 fix (DONE, kept) — 2026-06-04
+Removed per-agent uncached schema/profile tool-fetches; inject ONE cached schema block (cached_prefix)
+shared by Context/BA/SQL agents. Also fixed np.float64 logging bug.
+
+**Measured (re-ran 2 baseline queries):**
+| Query | Metric | Baseline | After | Δ |
+|---|---|---|---|---|
+| Inventory (#1) | input tokens | 131,554 | 47,325 | **−64%** |
+| Inventory | cache hit | 48.4% | 63.3% | +15pt |
+| Inventory | time | 279.5s | 217.5s | **−62s (−22%)** |
+| Inventory | cost | $0.4220 | $0.3929 | −7% |
+| Inventory | Context agent input | 64,504 (cache=0) | **54** | schema dump GONE |
+| Category (#3) | input tokens | 128,927 | 54,616 | **−58%** |
+| Category | cache hit | 48.7% | 61.8% | +13pt |
+| Category | cost | $0.4028 | $0.4446 | +10% (query variance: more CTEs+retries this run) |
+
+**HONEST VERDICT:** The schema-dump elimination is REAL and confirmed (input tokens −58-64%, Context 64k→54).
+BUT cross-report cost savings DON'T materialize in real usage because the cache TTL is 5 min and reports run
+far apart — both test runs started COLD (Context showed cache_creation, not cache_read, each time). So:
+- WITHIN a report: caching works (BA reads the block Context created).
+- REPORT-TO-REPORT: only if back-to-back <5min (rare in real use). A 1h extended-TTL option exists but Joel
+  chose NOT to pursue it now — diminishing returns vs structural wins.
+- Net: fewer tokens + faster Context agent + no regression (QA 8/12 and 12/12). KEPT. Move to structural wins.
+- Reminder: per-report cost (~$0.40) is dominated by the 6 sequential agents, NOT input tokens → the real
+  cost/latency levers are the agent MERGES and tiered ROUTING, not caching.
+
+**No regression:** reports identical in shape (6 KPI/6 chart/8 insight, same titles, same KPI values e.g.
+RING ₹2.49B top revenue, EARRINGS 52,871 units). np.float64 log spam GONE.
+
+### Step 2 — Fan-out accuracy fix (DONE, verified) — 2026-06-04
+Three-layer defense against revenue double-counting (the #1 silent-accuracy bug):
+1. Explicit ⚠️ prompt rule in SQL agent: `SUM(so.total_amount)` OK on sales_order ALONE; the moment you
+   JOIN sales_order_line, revenue MUST be `SUM(solp.line_total)`. Canonical join path written out.
+2. New validator detector `sales_order_total_amount_fanout` in sql_pattern_checker.py — fires ONLY when
+   sales_order_line is joined AND total_amount is summed. Unit-tested: fires on bad pattern, NOT on grand
+   totals / monthly trends / correct line_total queries (zero false positives).
+3. Non-blocking `accuracy_warnings` surfaced on execute_sql_query results (so the agent + Data Analyst are
+   warned even if they skip the validate tool). Verified live: fan-out query returns the warning.
+
+**Test run — category query (#3), trace 274f9451:** 233.2s · $0.4147 · 57.1% cache · QA **11/12**.
+RESULT: ✅ fan-out bug did NOT occur. Per-category revenue used `SUM(solp.line_total)` in ALL charts + table.
+Grand-total KPIs correctly used `SUM(so.total_amount)` on sales_order alone (KPI2 Total Revenue, KPI4 AOV) —
+the legitimate use; guard correctly did NOT flag them. No false-positive warnings. Threaded the needle.
+The prompt rule is working; the model now distinguishes grand-total (total_amount) vs breakdown (line_total).
+
+MINOR NOTE (not a bug): grand-total revenue (total_amount, ₹1.24B) and summed per-category revenue
+(line_total) come from DIFFERENT columns and may not reconcile exactly if line_total ≠ order total for some
+orders. Worth a ground-truth reconcile during accuracy hardening, but not a fan-out error.
+
+NOTE on run timing: this was again a COLD cache start (Context cache_creation=59,422, read=0) — confirms the
+5-min TTL means most real-usage runs start cold (as documented in Step 1). Cost/time ~baseline; the win here
+is ACCURACY, not speed.
+
+### Step 3 — MOVE 3 cheaper retry (DONE) — 2026-06-04
+On QA score <4, re-run ONLY the Report Writer (with QA feedback) instead of BA→SQL→DA→Writer.
+Saves ~110s on the (rare) retry; data stays stable. Not separately measurable (QA scored 8-12 in all runs,
+retry never fired) — verified compile+boot only. Accuracy effect: neutral-to-slightly-better (re-fixes
+narrative, not data). The "slim QA prompt" half was DROPPED (not worth it — see LATENCY_PLAN.md).
+
+### Step 4 — MOVE 1: Parallelize Data Analyst ∥ Report Writer (DONE, verified) — 2026-06-04
+STANDARD mode: DA is now VALIDATE-ONLY (flags issues in data_quality_notes, does NOT mutate data), so DA
+and Report Writer run CONCURRENTLY (ThreadPoolExecutor) from the same SQL output. Merge = Writer output
+(data preserved + narrative) + DA's quality notes. Usage logging made thread-safe. DRIFT mode stays serial.
+
+**Test run — inventory query (#1), trace b27c0485:** **138.7s** · $0.3309 · 60% cache · QA **11/12**.
+
+| Metric | Baseline (Run#2) | After caching | After MOVE 1 | Total Δ |
+|---|---:|---:|---:|---:|
+| Total time | 279.5s | 217.5s | **138.7s** | **−50%** |
+| Cost | $0.4220 | $0.3929 | **$0.3309** | −22% |
+| QA score | 9/12 | 8/12 | **11/12** | better |
+
+**Verified working + safe:**
+- Terminal showed both agents' headers together → one combined "DATA ANALYST ∥ REPORT WRITER" completion.
+  DA=34.2s + Writer=59.3s ran concurrently → pair took 59.3s instead of ~93s serial = **~34s saved (reliable)**.
+- DA quality notes confirmed "VALIDATION MODE: read-only inspection — no data mutation" (as designed).
+- NO orphaned narrative: Writer summary cites ₹532.18Cr/506 SKUs/80.5% — matches SQL KPIs exactly.
+- Thread-safe telemetry held (all 6 agents logged despite 2 concurrent).
+
+**HONEST attribution:** MOVE 1 reliably saves ~34s. This run's extra drop (to 139s) was partly a lighter SQL
+run (35.6s vs usual 53-60s — query variance, not our change). Steady-state expectation: ~160-175s.
+**Accuracy note:** MOVE 1 traded DA's rarely-used silent data-correction for speed (DA now flags, doesn't fix).
+Low risk (DA almost always just "PASS"ed; upstream fan-out/SQL guards catch most errors), but if a wrong KPI
+that used to be auto-corrected appears, this is why.
+
+NOTE: report SHAPE varies run-to-run (this run BA added raw-material gold/diamond KPIs that Run#2 lacked) —
+normal LLM blueprint variability, not caused by our changes. Time is the clean comparison metric.
+
+### Step 5 — MOVE 2: Parallelize Report Writer internally (DONE, verified) — 2026-06-04
+STANDARD mode: Report Writer split into 2 CONCURRENT calls — "explanations" (per-KPI+chart+table) ∥
+"summary+insights" — assembled into one report (explanations matched back by KPI label / chart title).
+IDENTICAL output coverage, no content cut. DRIFT mode stays single-call.
+
+**Test run — inventory query (#1), trace 43d803d1:** **143.9s** · $0.3796 · 69.2% cache · QA 8/12.
+- ✅ Both writer sub-agents ran concurrently: "summary+insights" 16.9s ∥ "explanations" 24.8s → pair ~25s
+  (vs ~42s if serial). All 6 KPIs/charts got explanations, summary present, 8 insights generated.
+- Total 143.9s (vs 138.7s prior MOVE 1 run) looks flat ONLY because this run's SQL Agent took 51s (5 rounds,
+  including 2 self-corrected "GROUP BY label" errors) vs ~35s prior. SQL variance, not the writer change.
+  The writer itself got faster (~25s vs ~59s). Net: writer-parallel is a real win, masked this run by SQL variance.
+- NOTE: SQL agent hit `column "label" does not exist` (GROUP BY/ORDER BY on a CASE alias) twice, then
+  self-corrected with a CTE on round 4 — LLM error, NOT a code bug; report completed fine. Candidate for a
+  pattern-checker guard during accuracy hardening (Joel: skip for now).
+
+**Latency progression so far (inventory query #1, same query each time — the clean comparison):**
+| Version | Change | Time | Cost | Cache |
+|---|---|---:|---:|---:|
+| v0 baseline (Run #2) | intern original | 279.5s | $0.4220 | 48.4% |
+| v1 | + shared caching | 217.5s | $0.3929 | 63.3% |
+| v2 | + parallel DA∥Writer | 138.7s | $0.3309 | 60.0% |
+| v3 | + parallel Writer internal | 143.9s* | $0.3796 | 69.2% |
+*v3 time inflated by a 51s SQL agent this run (variance); writer itself dropped ~59s→~25s.
+
+---
+
 ## Run Log (append a block per run)
 
 ### Run #1 — baseline (see table above)

@@ -20,6 +20,26 @@ def _date_context() -> str:
     )
 
 
+def get_shared_db_context(schema_str: str, rels_str: str, profile_str: str) -> str:
+    """Build the SHARED database-context block injected (cached) into every agent.
+
+    This is the single large static block (schema + relationships + data profile)
+    that every agent in a report run needs. By passing it as `cached_prefix` to
+    call_agent(), the first agent creates the cache and all later agents read it
+    at ~10% cost — instead of each agent re-fetching it via uncached tool calls.
+    Format matches what the SQL agent prompt previously embedded, so behavior is
+    unchanged — only the delivery mechanism (cached system block vs tool result).
+    """
+    return (
+        "DATABASE SCHEMA:\n"
+        f"{schema_str}\n\n"
+        "TABLE RELATIONSHIPS:\n"
+        f"{rels_str}\n\n"
+        "DATA PROFILE:\n"
+        f"{profile_str}\n"
+    )
+
+
 # ===========================================================================
 # AGENT 1 - CONTEXT_AGENT_SYSTEM
 # ===========================================================================
@@ -605,7 +625,21 @@ FORMATTING:
 
 BUSINESS RULES:
 - status = 'closed' filter ONLY on sales_order table
-- Revenue = SUM(sales_order_line_pricing.line_total) via JOIN sales_order → sales_order_line → sales_order_line_pricing
+
+⚠️ CRITICAL — FAN-OUT / DOUBLE-COUNTING RULE (most common error, READ CAREFULLY):
+  `sales_order.total_amount` is the ORDER-LEVEL total. One order has MANY order lines.
+  • CORRECT for a grand total or time-trend (querying sales_order ALONE, no line join):
+        SELECT SUM(total_amount) FROM sales_order WHERE status='closed'
+  • WRONG whenever sales_order is JOINED to sales_order_line (e.g. revenue BY category,
+    BY product, BY any line attribute): SUM(so.total_amount) then REPEATS the order total
+    for every line in the order → inflated/double-counted revenue.
+  • RULE: The moment you JOIN sales_order → sales_order_line, revenue MUST be
+    SUM(sales_order_line_pricing.line_total), NEVER SUM(sales_order.total_amount).
+  • Canonical revenue-by-dimension path:
+        sales_order so → sales_order_line sol (so.so_id = sol.so_id)
+                       → sales_order_line_pricing solp (sol.sol_id = solp.sol_id)
+        revenue = SUM(solp.line_total)
+  • Volume/units = SUM(sales_order_line.quantity) on the same join.
 - Discount % = SUM(discount_amount) / SUM(invoice_total) × 100 from sales_invoice
 - DSO = (outstanding_amount / annual_revenue × 365) computed per customer
 - Gold cost = gold_weight_grams × gold_rate_per_gm (from sales_order_line_gold × Metal Rate Reference)
@@ -616,14 +650,8 @@ BASELINE PERIOD CONSTRUCTION:
 - "current period" = WHERE order_date >= NOW() - INTERVAL '1 week' (or as specified by context agent)
 - For multi-week baselines, compute the AVERAGE of weekly values, not the raw sum
 
-DATABASE SCHEMA:
-_SCHEMA_STR_PLACEHOLDER_
-
-TABLE RELATIONSHIPS:
-_RELS_STR_PLACEHOLDER_
-
-DATA PROFILE:
-_PROFILE_STR_PLACEHOLDER_
+The full DATABASE SCHEMA, TABLE RELATIONSHIPS, and DATA PROFILE are provided in the
+shared context block at the top of this system prompt. Use them as the source of truth.
 
 ---
 
@@ -754,11 +782,11 @@ For DRIFT_INVESTIGATION:
 ```
 
 '''
+    # NOTE: schema/rels/profile are no longer embedded here — they are supplied
+    # via the SHARED cached context block (see get_shared_db_context) passed as
+    # call_agent(cached_prefix=...). Args kept for backward-compatible callers.
     result = _template
     result = result.replace('_DATE_CONTEXT_PLACEHOLDER_', _date_context())
-    result = result.replace('_SCHEMA_STR_PLACEHOLDER_', schema_str)
-    result = result.replace('_RELS_STR_PLACEHOLDER_', rels_str)
-    result = result.replace('_PROFILE_STR_PLACEHOLDER_', profile_str)
     return result
 
 
@@ -829,15 +857,20 @@ Update the `severity` field in the output if the computed severity differs from 
 
 ---
 
-## MODE B — STANDARD_REPORT validation
+## MODE B — STANDARD_REPORT validation  (VALIDATE-ONLY — DO NOT MUTATE DATA)
 
-**Chart data checks:**
-1. X-axis must be categorical (text/dates); Y-axis must be numeric — swap if reversed
-2. Remove rows where ALL values are null or zero
-3. KPI values must be meaningful scalars (not lists, not null)
-4. Chart labels must be human-readable — flag raw IDs (PROD-001, C001 format)
-5. At least 4 different chart types across 6 charts — reassign types if not met
-6. Zero-value KPIs: keep but flag in data_quality_notes
+You run CONCURRENTLY with the Report Writer in STANDARD mode, so you MUST NOT delete,
+rewrite, reorder, or re-type any KPI/chart/table data — doing so would desync the
+narrative. Instead, INSPECT and report findings in `data_quality_notes`. Return the
+input report's data EXACTLY as received (only append data_quality_notes).
+
+**Chart data checks (report findings — do NOT modify the data):**
+1. X-axis should be categorical (text/dates); Y-axis numeric — if reversed, NOTE it (don't swap)
+2. Rows where ALL values are null/zero — NOTE them (don't remove)
+3. KPI values should be meaningful scalars (not lists, not null) — NOTE any that aren't
+4. Chart labels should be human-readable — NOTE any raw IDs (PROD-001, C001 format)
+5. Chart-type diversity (≥4 types across 6 charts) — NOTE if not met (don't reassign)
+6. Zero-value KPIs — NOTE in data_quality_notes
 
 ---
 
