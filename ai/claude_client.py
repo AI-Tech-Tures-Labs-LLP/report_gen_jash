@@ -40,8 +40,21 @@ def _c(text: Any, *codes: str) -> str:
 
 
 def _tee(msg: str) -> None:
-    """Print to terminal (visible alongside uvicorn logs)."""
-    print(msg, flush=True)
+    """Print to terminal (visible alongside uvicorn logs).
+
+    Must NEVER raise — on a non-UTF-8 console (e.g. Windows cp1252) the ANSI/Unicode
+    decorations (◉ ✓ box-drawing) would otherwise throw UnicodeEncodeError and kill
+    the agent call. We degrade to an ASCII-safe print instead of crashing.
+    """
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        try:
+            print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 
 # ── Tool icon map ─────────────────────────────────────────────────────────────

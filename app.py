@@ -185,6 +185,90 @@ def chat_stream_endpoint(req: QuestionRequest):
     )
 
 
+@app.post("/ask")
+def ask_endpoint(req: QuestionRequest):
+    """Smart entry point for the main input box.
+
+    Classifies the question's INTENT (backend-owned), then routes:
+      - intent=report → run the full report pipeline, stream a 'report' result.
+      - intent=chat   → run the fast chat answer, stream a 'chat' result (always
+                        report_eligible=True so the UI always offers 'Generate Report').
+    Streams SSE in BOTH cases so the frontend has one contract; the frontend branches
+    on the final event's `mode` ("report" | "chat").
+    """
+    import json as _json
+    from ai.claude_report_llm import classify_query_intent, answer_chat_question
+    from ai.report_generator import classify_intent
+    from db.memory import get_recent_history, add_turn
+
+    def event_generator():
+        conversation_id = req.conversation_id or "default"
+        logger.info("ASK request | conversation_id=%s | question=%s", conversation_id, req.question)
+
+        # ── Step 1: classify intent (cheap Haiku) ──
+        yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
+        intent = classify_query_intent(req.question)
+        mode = intent.get("mode", "chat")
+        logger.info("ASK routed → %s (%s)", mode, intent.get("reason", ""))
+        yield f"data: {_json.dumps({'stage': 'routed', 'data': {'mode': mode, 'reason': intent.get('reason', '')}})}\n\n"
+
+        # ── Step 2a: REPORT intent → full pipeline ──
+        if mode == "report":
+            try:
+                import asyncio
+                from ai.enhanced_pipeline import EnhancedReportPipeline
+                yield f"data: {_json.dumps({'stage': 'report_generating', 'data': {'message': 'Generating full report...'}})}\n\n"
+                pipeline = EnhancedReportPipeline(
+                    enable_logging=True, enable_signals=True, enable_optimization=True,
+                )
+                result = asyncio.run(pipeline.generate(
+                    question=req.question, provider="claude", force_refresh=False,
+                ))
+                result["mode"] = "report"
+                yield f"data: {_json.dumps({'stage': 'complete', 'data': _json.loads(_json.dumps(result, default=str))})}\n\n"
+            except Exception as exc:
+                logger.error("ASK report error: %s", exc)
+                yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': f'Report generation failed: {exc}', 'sql': '', 'data': [], 'insights': '', 'report_eligible': True, 'row_count': 0}})}\n\n"
+            return
+
+        # ── Step 2b: CHAT intent → fast answer (with history) ──
+        history = get_recent_history(conversation_id, limit=5)
+        if history:
+            lines = ["You are in a multi-turn conversation. Here are the recent exchanges:"]
+            for turn in history:
+                lines.append(f"User: {turn['question']}")
+                lines.append(f"Assistant: {turn['answer']}")
+            lines.append(f"Now the user asks: {req.question}")
+            question_with_context = "\n".join(lines)
+        else:
+            question_with_context = req.question
+
+        try:
+            for event in answer_chat_question(question_with_context):
+                if event["stage"] == "complete":
+                    result = event["data"]
+                    add_turn(
+                        conversation_id, req.question, result["answer"], result["sql"],
+                        query_result=(result["data"][:200] if result.get("data") else None),
+                    )
+                    result["row_count"] = len(result.get("data") or [])
+                    result["mode"] = "chat"
+                    # Per Joel's goal: ALWAYS offer a report on the fast-chat path.
+                    result["report_eligible"] = True
+                    yield f"data: {_json.dumps(event, default=str)}\n\n"
+                else:
+                    yield f"data: {_json.dumps(event)}\n\n"
+        except Exception as exc:
+            logger.error("ASK chat error: %s", exc)
+            yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': f'An error occurred: {exc}', 'sql': '', 'data': [], 'insights': '', 'report_eligible': True, 'row_count': 0}})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/report")
 def report_endpoint(req: ReportRequest):
     """Generate a full analytics report from a natural-language question."""

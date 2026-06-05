@@ -27,6 +27,55 @@ from db.executor import execute_sql
 
 logger = logging.getLogger(__name__)
 
+import config as _config
+
+
+# ── Intent router (decide: full report vs fast chat answer) ──────────────────
+
+_INTENT_SYSTEM = """You are an intent classifier for an analytics assistant. Decide whether a user's
+question wants a FULL REPORT/DASHBOARD or a quick CHAT answer.
+
+Return "report" when the user wants a comprehensive, multi-metric dashboard/report — e.g. they say
+"create/build/generate/show a report/dashboard", ask for an "overview/analysis/breakdown" of an area,
+or ask a broad question that naturally needs multiple KPIs + charts (e.g. "how is inventory health",
+"analyze product category performance", "give me a sales overview").
+
+Return "chat" when the user wants a single specific fact or a short answer — e.g. "what is total
+revenue this year", "how many orders are open", "top 10 customers by value", "which vendor is largest".
+These are direct lookups answerable with one query + a sentence.
+
+When ambiguous, prefer "chat" (the UI always offers a 'Generate Report' button as a fallback, so a
+chat answer is the safe default — it's cheap and the user can escalate).
+
+Output ONLY a JSON object: {"mode": "report" | "chat", "reason": "<one short phrase>"}"""
+
+
+def classify_query_intent(question: str, client: ClaudeClient | None = None) -> dict:
+    """Classify a main-input question as wanting a full 'report' or a fast 'chat' answer.
+
+    Uses a cheap, fast Haiku call. Returns {"mode": "report"|"chat", "reason": str}.
+    Falls back to "chat" (the safe default) on any error — the UI always offers a
+    'Generate Report' button, so defaulting to chat never traps the user.
+    """
+    client = client or ClaudeClient()
+    try:
+        response = client.call_agent(
+            system_prompt=_INTENT_SYSTEM,
+            user_message=f"USER QUESTION: {question}\n\nClassify intent.",
+            agent_name="Intent Router",
+            model=_config.CLAUDE_HAIKU_MODEL,
+            max_tokens=200,
+            use_cache=True,
+        )
+        parsed = client.extract_json(response)
+        mode = (parsed.get("mode") or "chat").strip().lower()
+        if mode not in ("report", "chat"):
+            mode = "chat"
+        return {"mode": mode, "reason": parsed.get("reason", "")}
+    except Exception as exc:
+        logger.warning("Intent classification failed (%s) — defaulting to chat", exc)
+        return {"mode": "chat", "reason": "classifier error — safe default"}
+
 
 # ── Report modification (replaces DSPy ReportModification) ───────────────────
 

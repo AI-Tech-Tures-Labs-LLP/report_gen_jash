@@ -570,62 +570,19 @@
             return;
         }
 
-        // ── Route 3: Direct report intent ──
-        if (isReportIntent(question)) {
-            const typingEl = appendTypingIndicator();
-            scrollToBottom();
-
-            try {
-                const res = await fetch("/report", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ question, provider: selectedProvider }),
-                });
-                typingEl.remove();
-                if (!res.ok) throw new Error("Report generation failed");
-                const data = await res.json();
-                if (data.error) throw new Error(data.error);
-
-                const reportId = "rpt_" + Date.now();
-                _syncReportState(data.report, reportId);
-
-                localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(data));
-                localStorage.setItem("sqlbot_report_" + reportId + "_question", question);
-                localStorage.setItem("sqlbot_report_" + reportId + "_provider", selectedProvider);
-                localStorage.setItem("sqlbot_report_" + reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
-
-                appendReportSuccessMessage(question, reportId);
-                reportWindow = window.open(`/report-view?id=${reportId}`, "_blank");
-            } catch (err) {
-                typingEl.remove();
-                appendErrorMessage(err.message || "Report generation failed.");
-            }
-
-            // Update sidebar
-            const convs = getConversations();
-            if (!convs.find(c => c.id === currentConvId)) {
-                addConversationToList(currentConvId, question);
-                topbarTitle.textContent = question.length > 40 ? question.slice(0, 40) + "..." : question;
-            }
-
-            isLoading = false;
-            submitBtn.disabled = false;
-            scrollToBottom();
-            return;
-        }
-
-        // ── Route 4: Normal chat flow (SSE streaming) ──
+        // ── Route 3+4: Smart /ask — backend classifies intent, returns mode ──
+        // The backend (NOT this JS) decides report-vs-chat. We stream, then branch on
+        // the final event's `mode`. On chat, we ALWAYS offer "Generate Report".
         lastChatQuestion = question; // Track for potential "yes" follow-up
         const streamingEl = appendStreamingStatus();
         scrollToBottom();
 
         try {
-            const res = await fetch("/chat/stream", {
+            const res = await fetch("/ask", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     question,
-                    provider: selectedProvider,
                     conversation_id: currentConvId,
                 }),
             });
@@ -639,6 +596,7 @@
                 const decoder = new TextDecoder();
                 let buffer = "";
                 let finalData = null;
+                let routedMode = null;
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -654,9 +612,15 @@
                             const event = JSON.parse(line.slice(6));
                             if (event.stage === "complete") {
                                 finalData = event.data;
+                            } else if (event.stage === "routed") {
+                                routedMode = (event.data && event.data.mode) || null;
+                                updateStreamingStatus(streamingEl,
+                                    routedMode === "report"
+                                        ? "Generating full report…"
+                                        : "Finding your answer…");
                             } else {
-                                // Update the streaming status text
-                                updateStreamingStatus(streamingEl, event.text);
+                                updateStreamingStatus(streamingEl,
+                                    event.text || (event.data && event.data.message) || "Working…");
                             }
                         } catch (_) {}
                     }
@@ -664,20 +628,28 @@
 
                 streamingEl.remove();
 
-                if (finalData) {
+                if (finalData && finalData.mode === "report" && finalData.report) {
+                    // ── Report path: open the full dashboard ──
+                    const reportId = "rpt_" + Date.now();
+                    _syncReportState(finalData.report, reportId);
+                    localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(finalData));
+                    localStorage.setItem("sqlbot_report_" + reportId + "_question", question);
+                    localStorage.setItem("sqlbot_report_" + reportId + "_provider", selectedProvider);
+                    localStorage.setItem("sqlbot_report_" + reportId + "_theme", document.documentElement.getAttribute("data-theme") || "light");
+                    appendReportSuccessMessage(question, reportId);
+                    reportWindow = window.open(`/report-view?id=${reportId}`, "_blank");
+                } else if (finalData) {
+                    // ── Chat path: show answer + ALWAYS offer a report ──
                     appendAIMessage(finalData);
-
-                    if (finalData.report_eligible) {
-                        appendReportOfferCard(question);
-                    }
-
-                    const convs = getConversations();
-                    if (!convs.find(c => c.id === currentConvId)) {
-                        addConversationToList(currentConvId, question);
-                        topbarTitle.textContent = question.length > 40 ? question.slice(0, 40) + "..." : question;
-                    }
+                    appendReportOfferCard(question);
                 } else {
                     appendErrorMessage("No response received from server.");
+                }
+
+                const convs = getConversations();
+                if (!convs.find(c => c.id === currentConvId)) {
+                    addConversationToList(currentConvId, question);
+                    topbarTitle.textContent = question.length > 40 ? question.slice(0, 40) + "..." : question;
                 }
             }
         } catch (err) {
