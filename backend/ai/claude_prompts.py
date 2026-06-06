@@ -256,7 +256,8 @@ When `intent_mode` is DRIFT_INVESTIGATION, produce a drift card blueprint with A
 
 ### 1. HEADER SPEC
 - Title: "{signal_name} in {scope_reference or 'All Territories'}" — human-readable, specific
-- Severity: use `default_severity` from context; escalate to CRITICAL if scope affects >₹5L revenue
+- Severity: pass through `default_severity` from context as a placeholder only (the final
+  severity is computed by deterministic code downstream from the real impact/concentration numbers)
 - Status: always "NEW" for first detection
 - Consecutive periods: design a query to count how many trailing periods the trigger has fired
 
@@ -266,8 +267,10 @@ Design the multi-dimensional investigation plan. For each dimension in `decompos
 - Specify: how to calculate this dimension's contribution to the total drift (delta for this dim / total drift × 100)
 - Order dimensions by expected explanatory power (highest-signal dimension first)
 
-Decomposition rule: contributions across all dimensions must account for ≈100% of total drift 
+Decomposition rule: contributions across all dimensions must account for ≈100% of total drift
 (with cross-effects as a balancing line). Design queries so the sum of top-N contributors ≈ total drift.
+(Note: final contribution_pct normalization to exactly 100% is done by deterministic code downstream —
+your job is only to design the SQL that produces per-entity delta / contribution_pct values.)
 
 ### 3. SUSPECTED DRIVER HYPOTHESES
 Generate 3–5 testable hypotheses about WHY this drift is occurring. Format each as:
@@ -303,8 +306,11 @@ Specify exactly how to compute the ₹ impact:
 - Tailor this formula to the specific signal
 
 ### 6. SEVERITY SCORING
-Compute severity_score = (impact_₹_normalized × 0.40) + (consecutive_periods × 0.025) + (concentration_index × 0.20) + (cross_signal_count × 0.10) + (is_high_priority_scope × 0.05)
-Classify: ≥0.75 → CRITICAL | 0.50–0.74 → HIGH | 0.25–0.49 → MEDIUM | <0.25 → LOW
+Do NOT compute a severity_score. The numeric severity_score and final severity
+label are computed later by deterministic code (after the SQL Agent fetches the
+real numbers) — anything you compute here would be discarded. Just pass through a
+rough `default_severity` label (CRITICAL/HIGH/MEDIUM/LOW) as a placeholder based
+on the signal's importance; code will overwrite it with the data-driven value.
 
 ### 7. AFFECTED AREAS TAGS
 Identify 3–6 tag pills that describe the affected population:
@@ -807,53 +813,36 @@ You operate in two modes. Read `intent_mode` from the input.
 
 ## MODE A — DRIFT_INVESTIGATION validation
 
-### CAUSAL MATH CHECKS (run in order)
+⚠️ IMPORTANT — ALL ARITHMETIC IS DONE BY CODE, NOT BY YOU.
+Before you receive this report, deterministic Python has ALREADY computed:
+  • `severity_score` and the `severity` label
+  • `contribution_pct` normalization (each dimension scaled to sum to 100%)
+  • `variance_absolute` consistency (current − baseline)
+Do NOT recompute, change, or "correct" any of those numbers — they are authoritative.
+The code's actions are already recorded in `data_quality_notes`. Your job is the
+JUDGMENT checks below, which require reasoning rather than arithmetic.
 
-**Check 1 — Contribution sum integrity**
-Sum all `contribution_pct` values across ALL dimension entities for EACH dimension.
-- PASS: sum is within ±10% of 100% (allows for cross-effects and rounding)
-- FAIL: sum is <80% or >120% — flag as "decomposition incomplete" and note missing mass
-- Adjustment: if contributions don't sum correctly, scale them proportionally so they sum to 100%, 
-  and note the adjustment in data_quality_notes
+### JUDGMENT CHECKS (run in order)
 
-**Check 2 — No single-entity monopoly (unless justified)**
-- Flag if any single entity has contribution_pct > 90%
-- Note: this may be legitimate (e.g., a single inactive hunter), so flag but don't reject
+**Check 1 — Baseline sanity**
+- Look at the baseline period values in the trend/metrics data.
+- If the baseline looks noisy or itself anomalous (wild swings, a single spike
+  dominating the mean), flag: "Baseline period is noisy — threshold may need manual review".
+- This protects against the case where the baseline itself was anomalous.
 
-**Check 3 — Baseline sanity**
-- Compute coefficient of variation (CV) for the baseline period: std / mean
-- If CV > 0.5, flag: "Baseline period is noisy — threshold may need manual review"
-- This protects against the case where the baseline itself was anomalous
+**Check 2 — Consecutive periods consistency**
+- Verify the `consecutive_periods` value is consistent with the trend data.
+- If the trend shows only 1 breach but consecutive_periods = 3, flag as an inconsistency.
+- Do NOT change the number — just flag the inconsistency in data_quality_notes.
 
-**Check 4 — Consecutive periods count**
-- Verify consecutive_periods value is consistent with the trend data
-- If trend shows only 1 breach but consecutive_periods = 3, flag as inconsistency
+**Check 3 — Affected areas validation**
+- Confirm that each tag in `affected_areas_tags` is supported by actual data.
+- Remove any tag that is not corroborated by at least one dimensional cut.
+- Add tags for the top-2 contributing entities by dimension if not already present.
 
-**Check 5 — Impact calculation audit**
-- Re-compute impact_₹ from first principles using drift_metrics
-- If computed value differs from SQL Agent's value by >15%, flag and use your computed value
-- Log the recomputation in data_quality_notes
-
-**Check 6 — Severity score computation**
-Compute the final severity_score:
-  severity_score = (impact_normalized × 0.40) + (consecutive_periods_factor × 0.25) + (concentration_index × 0.20) + (related_signals_firing_count × 0.10) + (is_top_scope × 0.05)
-
-Where:
-  impact_normalized = MIN(1.0, LOG10(MAX(1, impact_inr)) / 7)  — log-scaled, maxes out at ₹10Cr
-  consecutive_periods_factor = MIN(1.0, consecutive_periods × 0.10)
-  concentration_index = as computed by SQL Agent (0–1)
-  related_signals_firing_count = MIN(1.0, count_of_firing_related_signals × 0.25)
-  is_top_scope = 1 if scope involves top-10 customer, top-5 hunter, or top-3 territory; else 0
-
-Map score to severity:
-  ≥0.75 → CRITICAL | 0.50–0.74 → HIGH | 0.25–0.49 → MEDIUM | <0.25 → LOW
-
-Update the `severity` field in the output if the computed severity differs from the estimated one.
-
-**Check 7 — Affected areas validation**
-- Confirm that each tag in `affected_areas_tags` is supported by actual data
-- Remove any tag that is not corroborated by at least one dimensional cut
-- Add tags for the top-2 contributing entities by dimension if not already present
+**Check 4 — Single-entity monopoly (informational)**
+- If any single entity has contribution_pct > 90%, note it (the code already flags
+  this too). It may be legitimate (e.g., a single inactive hunter) — flag, don't reject.
 
 ---
 
@@ -876,11 +865,14 @@ input report's data EXACTLY as received (only append data_quality_notes).
 
 ## OUTPUT
 
-Return the COMPLETE input JSON with corrections applied, plus:
-- `severity_score`: computed float
-- `severity`: updated if changed
-- `data_quality_notes`: list of issues found, checks performed, adjustments made
-- All contribution_pct values scaled to sum to 100% within each dimension (if adjusted)
+Return the COMPLETE input JSON. Preserve EXACTLY (do not change):
+- `severity_score`, `severity` — computed by code, authoritative
+- `contribution_pct` on every dimension entity — already normalized by code
+- `drift_metrics` — already consistency-checked by code
+
+You MAY only:
+- Edit `affected_areas_tags` (remove uncorroborated, add top-2 contributors)
+- APPEND new findings to `data_quality_notes` (keep the existing code-written notes)
 
 Return ONLY the JSON object, no other text.
 
@@ -1069,8 +1061,11 @@ You operate in two modes. Read `intent_mode` from the input.
 Run ALL 12 checks. Score 1 point for pass, 0 for fail.
 
 **DATA INTEGRITY (4 checks)**
-1. Contribution sum integrity: Do contribution_pct values across all entities within each dimension sum to 90%–110%? If any dimension fails, FLAG with the actual sum.
-2. Drift math consistency: Does (current_value - baseline_value) ≈ variance_absolute (within 0.01)? Does impact_₹ follow logically from the formula?
+   NOTE: severity_score, contribution_pct normalization, and variance were computed
+   by deterministic code (see data_quality_notes) — you VERIFY they are present and
+   self-consistent; you do NOT recompute them. Pass these unless something is missing.
+1. Contribution presence: Does every dimension have contribution_pct values, and does each dimension sum to ≈100% (the code normalizes to 100%; pass if within 90%–110%)? FAIL only if values are missing entirely.
+2. Severity present & labelled: Is `severity_score` a number in 0–1 and is `severity` one of CRITICAL/HIGH/MEDIUM/LOW consistent with it (≥0.75 CRITICAL, ≥0.50 HIGH, ≥0.25 MEDIUM, else LOW)? FAIL only if absent or label mismatches score.
 3. Trend corroboration: Does the trend data show the drift starting around or before `first_observed_at`? If the trend shows a flat line, question the finding.
 4. Consecutive periods consistency: Does the `consecutive_periods` count match the number of weeks in the trend data that breach the threshold?
 

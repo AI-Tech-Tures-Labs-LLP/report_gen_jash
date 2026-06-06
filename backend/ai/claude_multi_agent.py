@@ -266,7 +266,7 @@ class ClaudeReportPipeline:
             t0 = time.time()
 
             if intent_mode == 'DRIFT_INVESTIGATION':
-                cleaned_report = self._run_data_analyst_agent(report_with_data)
+                cleaned_report = self._run_data_analyst_agent(report_with_data, context)
                 final_report = self._run_report_writer_agent(cleaned_report, context)
             else:
                 import concurrent.futures as _futures
@@ -562,20 +562,35 @@ class ClaudeReportPipeline:
 
         return report
 
-    def _run_data_analyst_agent(self, report: dict) -> dict:
-        """Agent 4: Validate data and drift math integrity."""
+    def _run_data_analyst_agent(self, report: dict, context: dict | None = None) -> dict:
+        """Agent 4: Validate data and drift math integrity.
+
+        DRIFT mode: all arithmetic (severity score, contribution normalization,
+        variance/impact consistency) is done DETERMINISTICALLY in Python via
+        `compute_drift_math` BEFORE the LLM is called — the LLM no longer computes
+        these (it approximates arithmetic unreliably). The LLM then only does the
+        judgment-style checks it is actually good at (baseline noise, affected-area
+        corroboration) on top of the code-computed numbers.
+        """
         intent_mode = report.get('intent_mode', 'STANDARD_REPORT')
 
         if intent_mode == 'DRIFT_INVESTIGATION':
+            # ── Deterministic math first (code, not LLM) ──
+            from ai.intelligence.drift_math import compute_drift_math
+            report = compute_drift_math(report, context)
+
             user_msg = (
-                f"Validate the drift investigation data. Run ALL causal math checks:\n"
-                f"1. Contribution sum integrity (should sum to ~100%)\n"
-                f"2. Single-entity monopoly check\n"
-                f"3. Baseline sanity (CV check)\n"
-                f"4. Consecutive periods consistency\n"
-                f"5. Impact calculation audit\n"
-                f"6. Severity score computation\n"
-                f"7. Affected areas validation\n\n"
+                f"Validate the drift investigation data. NOTE: severity_score, "
+                f"contribution_pct normalization, and variance have ALREADY been "
+                f"computed deterministically by code — do NOT recompute or change "
+                f"them. Only perform these judgment checks:\n"
+                f"1. Baseline sanity — flag if the baseline period looks noisy/anomalous\n"
+                f"2. Affected areas validation — remove tags not corroborated by a "
+                f"dimensional cut; add tags for the top-2 contributing entities\n"
+                f"3. Consecutive periods — flag if inconsistent with the trend data\n\n"
+                f"Preserve severity, severity_score, contribution_pct, and "
+                f"data_quality_notes EXACTLY as given; append any new findings to "
+                f"data_quality_notes.\n\n"
                 f"REPORT DATA:\n{json.dumps(report, indent=2, default=str)}"
             )
         else:
@@ -594,10 +609,29 @@ class ClaudeReportPipeline:
         )
 
         try:
-            return self.client.extract_json(response)
+            validated = self.client.extract_json(response)
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning("Data analyst JSON parse failed: %s - using uncleaned data", exc)
             return report
+
+        # In DRIFT mode, re-assert the code-computed numbers over whatever the LLM
+        # returned: keep its judgment edits (affected-area tags, extra notes) but
+        # lock severity / contributions / drift_metrics to the deterministic values.
+        if intent_mode == 'DRIFT_INVESTIGATION' and isinstance(validated, dict):
+            for locked in ("severity", "severity_score", "causal_decomposition", "drift_metrics"):
+                if locked in report:
+                    validated[locked] = report[locked]
+            # data_quality_notes: keep code notes, append any new LLM notes.
+            code_notes = report.get("data_quality_notes") or []
+            llm_notes = validated.get("data_quality_notes") or []
+            if isinstance(code_notes, list) and isinstance(llm_notes, list):
+                merged = list(code_notes)
+                merged.extend(n for n in llm_notes if n not in code_notes)
+                validated["data_quality_notes"] = merged
+            else:
+                validated["data_quality_notes"] = code_notes
+
+        return validated
 
     def _run_report_writer_agent(self, report: dict, context: dict) -> dict:
         """Agent 5: Write narratives - McKinsey-style for drift, executive for standard.
