@@ -94,57 +94,75 @@ export default function App() {
   const welcome = messages.length === 0;
 
   return (
-    <div style={{ display: "flex", height: "100%", background: t.bg, color: t.text }}>
+    <div style={{ display: "flex", height: "100%", background: t.bg, color: t.text, fontFamily: "'Inter', sans-serif" }}>
       {/* ── Sidebar ── */}
       {sidebarOpen && (
         <aside
           style={{
-            width: 240, flexShrink: 0, background: t.bgPanel,
+            width: 250, flexShrink: 0, background: t.bgPanel,
             borderRight: `1px solid ${t.border}`, display: "flex", flexDirection: "column",
-            backdropFilter: "blur(10px)",
+            backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+            transition: "width 0.3s ease",
           }}
         >
-          <div style={{ padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${t.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 700 }}>
-              <span style={{ color: t.accent }}>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+          <div style={{ padding: "0.85rem 1rem", height: 50, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${t.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontWeight: 700, fontSize: "0.92rem", color: t.text }}>
+              <div style={{
+                width: 28, height: 28, background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+                boxShadow: "0 2px 8px rgba(212,175,55,0.3)"
+              }}>
+                <svg viewBox="0 0 24 24" width="16" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
                 </svg>
-              </span>
-              SQL Analyst
+              </div>
+              <span>SQL Analyst</span>
             </div>
-            <button onClick={newChat} title="New chat" style={iconBtn(t)}>＋</button>
+            <button onClick={newChat} title="New chat" style={iconBtn(t)}>+</button>
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "0.5rem" }}>
+          <div className="sidebar-list" style={{ flex: 1, overflowY: "auto", padding: "0.75rem 0.6rem" }}>
+            <div style={{ fontSize: "0.65rem", fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0.4rem 0.4rem" }}>Conversations</div>
             {convs.length === 0 ? (
-              <p style={{ color: t.textMuted, fontSize: "0.8rem", padding: "0.5rem" }}>No conversations yet.</p>
+              <p style={{ color: t.textMuted, fontSize: "0.78rem", padding: "1rem 0.4rem", textAlign: "center" }}>No chats yet.</p>
             ) : (
-              convs.map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() => { if (c.id === convId) return; newChat(); }}
-                  style={{
-                    padding: "0.55rem 0.7rem", borderRadius: 8, fontSize: "0.83rem",
-                    color: c.id === convId ? t.text : t.textMuted, cursor: "pointer",
-                    background: c.id === convId ? t.bgCard : "transparent",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2,
-                  }}
-                  title={c.title}
-                >
-                  {c.title}
-                </div>
-              ))
+              convs.map((c) => {
+                const isActive = c.id === convId;
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => { if (isActive) return; newChat(); }}
+                    style={{
+                      padding: "0.6rem 0.75rem", borderRadius: 8, fontSize: "0.8rem",
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? "#b8860b" : t.textMuted, cursor: "pointer",
+                      background: isActive ? "linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(184, 134, 11, 0.08) 100%)" : "transparent",
+                      border: isActive ? "1px solid rgba(212, 175, 55, 0.3)" : "1px solid transparent",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 3,
+                      position: "relative",
+                      transition: "all 0.15s ease",
+                    }}
+                    title={c.title}
+                  >
+                    {isActive && (
+                      <div style={{ position: "absolute", left: 0, top: "20%", bottom: "20%", width: 3, background: "linear-gradient(135deg,#d4af37 0%,#b8860b 100%)", borderRadius: "0 3px 3px 0" }} />
+                    )}
+                    {c.title}
+                  </div>
+                );
+              })
             )}
           </div>
         </aside>
       )}
 
       {/* ── Main ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
         {/* Topbar */}
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.7rem 1rem", borderBottom: `1px solid ${t.border}`, background: t.bgPanel }}>
-          <button onClick={() => setSidebarOpen((s) => !s)} title="Toggle sidebar" style={iconBtn(t)}>☰</button>
-          <span style={{ fontWeight: 600, flex: 1 }}>{welcome ? "New Chat" : (convs.find((c) => c.id === convId)?.title || "Chat")}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0 1.25rem", height: 50, borderBottom: `1px solid ${t.border}`, background: t.bgPanel, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", zIndex: 10 }}>
+          <button onClick={() => setSidebarOpen((s) => !s)} title="Toggle sidebar" style={iconBtn(t)}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+          </button>
+          <span style={{ fontWeight: 600, fontSize: "0.88rem", flex: 1, color: t.text }}>{welcome ? "New Chat" : (convs.find((c) => c.id === convId)?.title || "Chat")}</span>
           <Switcher
             t={t}
             label="Theme"
@@ -155,7 +173,7 @@ export default function App() {
         </div>
 
         {/* Thread */}
-        <div ref={threadRef} style={{ flex: 1, overflowY: "auto", padding: "1.2rem", maxWidth: 900, width: "100%", margin: "0 auto" }}>
+        <div ref={threadRef} style={{ flex: 1, overflowY: "auto", padding: "1.5rem", maxWidth: 840, width: "100%", margin: "0 auto", position: "relative" }}>
           {welcome ? (
             <Welcome t={t} onChip={(q) => handleSubmit(q)} />
           ) : (
@@ -173,16 +191,21 @@ export default function App() {
             ))
           )}
           {loading && status && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: t.textMuted, fontSize: "0.85rem", padding: "0.4rem 0" }}>
-              <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: t.accent, borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
-              {status}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", color: t.textMuted, fontSize: "0.82rem", padding: "0.5rem 0.25rem" }}>
+              <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: "#d4af37", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+              <span style={{ fontWeight: 500 }}>{status}</span>
             </div>
           )}
         </div>
 
         {/* Input */}
-        <div style={{ padding: "1rem", maxWidth: 900, width: "100%", margin: "0 auto" }}>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 14, padding: "0.6rem 0.7rem", boxShadow: t.shadow }}>
+        <div style={{ padding: "0.75rem 1.5rem 1rem", maxWidth: 840, width: "100%", margin: "0 auto", flexShrink: 0 }}>
+          <div style={{
+            display: "flex", gap: "0.6rem", alignItems: "flex-end", background: t.bgCard,
+            border: `1px solid ${t.border}`, borderRadius: 16, padding: "0.55rem 0.65rem 0.55rem 1rem",
+            boxShadow: t.shadow, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+            transition: "border-color 0.15s, box-shadow 0.15s",
+          }} className="input-box-focus">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -194,7 +217,7 @@ export default function App() {
               spellCheck={false}
               style={{
                 flex: 1, resize: "none", border: "none", outline: "none", background: "transparent",
-                color: t.text, fontSize: "0.95rem", lineHeight: 1.5, maxHeight: 160,
+                color: t.text, fontSize: "0.92rem", lineHeight: 1.55, maxHeight: 140, padding: "0.4rem 0",
               }}
             />
             <button
@@ -202,19 +225,20 @@ export default function App() {
               disabled={loading || !input.trim()}
               title="Send"
               style={{
-                border: "none", borderRadius: 10, width: 38, height: 38, flexShrink: 0,
+                border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
                 cursor: loading || !input.trim() ? "default" : "pointer",
-                opacity: loading || !input.trim() ? 0.5 : 1, color: "#fff",
-                background: `linear-gradient(135deg, ${t.accent}, ${t.accent2})`,
-                display: "grid", placeItems: "center",
+                opacity: loading || !input.trim() ? 0.45 : 1, color: "#fff",
+                background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
+                boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
               }}
             >
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
           </div>
-          <p style={{ color: t.textMuted, fontSize: "0.72rem", textAlign: "center", marginTop: "0.4rem" }}>
+          <p style={{ color: t.textMuted, fontSize: "0.68rem", textAlign: "center", marginTop: "0.45rem", letterSpacing: "0.01em" }}>
             Press Enter to send · Shift+Enter for new line
           </p>
         </div>
@@ -225,14 +249,22 @@ export default function App() {
 
 function Welcome({ t, onChip }) {
   return (
-    <div style={{ textAlign: "center", marginTop: "8vh" }}>
-      <div style={{ color: t.accent, display: "grid", placeItems: "center", marginBottom: "1rem" }}>
-        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-        </svg>
+    <div style={{ textAlign: "center", marginTop: "8vh", animation: "fadeIn 0.3s ease both" }}>
+      <div style={{ display: "grid", placeItems: "center", marginBottom: "1.25rem" }}>
+        <div style={{
+          width: 60, height: 60,
+          background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+          borderRadius: 14, display: "flex", color: "#fff",
+          boxShadow: "0 4px 20px rgba(212,175,55,0.35)",
+          alignItems: "center", justifyContent: "center",
+        }}>
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+          </svg>
+        </div>
       </div>
-      <h2 style={{ fontSize: "1.6rem", marginBottom: "0.5rem" }}>AI SQL Analyst</h2>
-      <p style={{ color: t.textMuted, fontSize: "0.92rem", maxWidth: 520, margin: "0 auto 1.5rem", lineHeight: 1.6 }}>
+      <h2 style={{ fontSize: "1.65rem", fontWeight: 800, marginBottom: "0.6rem", background: "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI SQL Analyst</h2>
+      <p style={{ color: t.textMuted, fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 1.75rem", lineHeight: 1.65 }}>
         Ask anything about your data. I'll write the SQL, run it, and explain the results — or generate a full analytics report.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center", maxWidth: 640, margin: "0 auto" }}>
@@ -241,11 +273,14 @@ function Welcome({ t, onChip }) {
             key={c.q}
             onClick={() => onChip(c.q)}
             style={{
-              border: `1px solid ${c.report ? t.accent : t.border}`,
-              background: c.report ? `${t.accent}15` : t.bgCard,
-              color: c.report ? t.accent : t.text,
-              borderRadius: 20, padding: "0.45rem 0.9rem", fontSize: "0.82rem", cursor: "pointer",
+              border: `1px solid ${c.report ? "rgba(212, 175, 55, 0.4)" : t.border}`,
+              background: c.report ? "rgba(212, 175, 55, 0.06)" : t.bgCard,
+              color: c.report ? "#b8860b" : t.text,
+              borderRadius: 20, padding: "0.48rem 1rem", fontSize: "0.8rem", cursor: "pointer",
+              fontWeight: 500, boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+              transition: "all 0.15s ease",
             }}
+            className="rpt-welcome-chip"
           >
             {c.label}
           </button>
@@ -257,17 +292,19 @@ function Welcome({ t, onChip }) {
 
 function Switcher({ t, label, value, options, onChange }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-      <span style={{ fontSize: "0.72rem", color: t.textMuted }}>{label}</span>
-      <div style={{ display: "flex", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8, padding: 2 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+      <span style={{ fontSize: "0.72rem", color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{label}</span>
+      <div style={{ display: "flex", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 20, padding: 3 }}>
         {options.map((o) => (
           <button
             key={o.v}
             onClick={() => onChange(o.v)}
             style={{
-              border: "none", borderRadius: 6, padding: "0.3rem 0.7rem", fontSize: "0.78rem", cursor: "pointer",
-              background: value === o.v ? `linear-gradient(135deg, ${t.accent}, ${t.accent2})` : "transparent",
+              border: "none", borderRadius: 16, padding: "0.35rem 0.85rem", fontSize: "0.76rem", cursor: "pointer",
+              background: value === o.v ? "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)" : "transparent",
               color: value === o.v ? "#fff" : t.textMuted, fontWeight: value === o.v ? 600 : 400,
+              boxShadow: value === o.v ? "0 2px 8px rgba(212,175,55,0.25)" : "none",
+              transition: "all 0.15s ease",
             }}
           >
             {o.l}
@@ -280,8 +317,8 @@ function Switcher({ t, label, value, options, onChange }) {
 
 function iconBtn(t) {
   return {
-    border: `1px solid ${t.border}`, background: t.bgCard, color: t.text,
+    border: `1px solid ${t.border}`, background: t.bgCard, color: t.textMuted,
     width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: "1rem",
-    display: "grid", placeItems: "center",
+    display: "grid", placeItems: "center", transition: "all 0.15s ease",
   };
 }
