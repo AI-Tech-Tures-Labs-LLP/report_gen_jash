@@ -74,7 +74,11 @@ export default function App() {
         const reportId = openReport(q, finalData);
         pushMessage({ role: "ai", reportId });
       } else if (finalData) {
-        pushMessage({ role: "ai", data: finalData, showOffer: true, question: q });
+        // Only offer "Generate Report" for real DATA answers. Non-data turns
+        // (greeting/off-topic/refused) set report_eligible=false / non_data=true,
+        // so no report card appears for them.
+        const offerReport = finalData.report_eligible !== false && !finalData.non_data;
+        pushMessage({ role: "ai", data: finalData, showOffer: offerReport, question: q });
       } else {
         pushMessage({ role: "ai", error: "No response received from server." });
       }

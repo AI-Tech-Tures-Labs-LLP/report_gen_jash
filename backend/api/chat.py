@@ -21,7 +21,9 @@ def chat_stream_endpoint(req: QuestionRequest):
     result as the last event.
     """
     from services.report_generator import classify_intent
-    from services.claude_report_llm import answer_chat_question
+    from services.claude_report_llm import (
+        answer_chat_question, classify_query_intent, answer_conversational,
+    )
     from db.memory import get_recent_history, add_turn
 
     def event_generator():
@@ -31,9 +33,21 @@ def chat_stream_endpoint(req: QuestionRequest):
             req.question,
         )
 
+        conversation_id = req.conversation_id or "default"
+
+        # GATEKEEPER: don't run SQL for non-data turns (greetings/off-topic/abuse).
+        route = classify_query_intent(req.question)
+        if route.get("mode") in ("conversational", "out_of_scope", "refuse"):
+            reply = answer_conversational(req.question, mode=route["mode"])
+            try:
+                add_turn(conversation_id, req.question, reply, "", query_result=None)
+            except Exception:
+                pass
+            yield f"data: {_json.dumps({'stage': 'complete', 'data': {'sql': '', 'data': [], 'answer': reply, 'insights': '', 'report_eligible': False, 'row_count': 0, 'mode': 'chat', 'non_data': True}})}\n\n"
+            return
+
         intent = classify_intent(req.question)
         report_eligible_by_intent = intent == "report"
-        conversation_id = req.conversation_id or "default"
         history = get_recent_history(conversation_id, limit=5)
 
         if history:
@@ -104,7 +118,9 @@ def ask_endpoint(req: QuestionRequest):
     Streams SSE in BOTH cases so the frontend has one contract; the frontend branches
     on the final event's `mode` ("report" | "chat").
     """
-    from services.claude_report_llm import classify_query_intent, answer_chat_question
+    from services.claude_report_llm import (
+        classify_query_intent, answer_chat_question, answer_conversational,
+    )
     from services.report_generator import classify_intent  # noqa: F401 (kept for parity)
     from db.memory import get_recent_history, add_turn
 
@@ -112,12 +128,23 @@ def ask_endpoint(req: QuestionRequest):
         conversation_id = req.conversation_id or "default"
         logger.info("ASK request | conversation_id=%s | question=%s", conversation_id, req.question)
 
-        # ── Step 1: classify intent (cheap Haiku) ──
+        # ── Step 1: classify intent (cheap Haiku) — GATEKEEPER: decides if we touch the DB at all ──
         yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
         intent = classify_query_intent(req.question)
-        mode = intent.get("mode", "chat")
+        mode = intent.get("mode", "data")
         logger.info("ASK routed → %s (%s)", mode, intent.get("reason", ""))
         yield f"data: {_json.dumps({'stage': 'routed', 'data': {'mode': mode, 'reason': intent.get('reason', '')}})}\n\n"
+
+        # ── Step 1b: NON-DATA turns → answer directly, NO SQL, NO database ──
+        if mode in ("conversational", "out_of_scope", "refuse"):
+            reply = answer_conversational(req.question, mode=mode)
+            # Persist so multi-turn context still flows, but no SQL/data.
+            try:
+                add_turn(conversation_id, req.question, reply, "", query_result=None)
+            except Exception:
+                pass
+            yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': reply, 'sql': '', 'data': [], 'insights': '', 'report_eligible': False, 'row_count': 0, 'non_data': True}})}\n\n"
+            return
 
         # ── Step 2a: REPORT intent → full pipeline ──
         if mode == "report":
