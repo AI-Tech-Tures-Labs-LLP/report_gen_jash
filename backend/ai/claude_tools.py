@@ -156,6 +156,62 @@ def handle_get_data_profile() -> str:
         return json.dumps({"error": str(exc)})
 
 
+def _detect_line_child_fanout(sql: str) -> str:
+    """Detect the line→diamond/gold second-level fan-out (RT-007).
+
+    Returns a non-empty repair instruction if the query JOINs a *_diamond / *_gold
+    child table (MANY rows per order line) AND sums a line-level / order-level amount
+    (line_total, total_amount) — which repeats the line revenue once per child row,
+    inflating it 2-3×. Returns "" if no fan-out detected.
+
+    This is a HARD gate (block + force repair), not a warning — the prompt rule alone
+    did not stop the model (RT-007b). Code enforces.
+    """
+    s = ' '.join(sql.split()).lower()
+    # A child table that fans out the line is referenced (in FROM or JOIN position):
+    _child_tables = (
+        "sales_order_line_diamond", "sales_order_line_gold",
+        "po_line_diamond", "po_line_gold", "job_card_diamond_lines",
+    )
+    joins_line_child = any(
+        re.search(rf'\b(?:from|join)\s+{t}\b', s) for t in _child_tables
+    )
+    if not joins_line_child:
+        return ""
+    # ...and a line/order-level money column is being SUMmed (the double-count).
+    sums_line_amount = bool(
+        re.search(r'\bsum\s*\(\s*[^)]*\bline_total\b', s)
+        or re.search(r'\bsum\s*\(\s*[^)]*\btotal_amount\b', s)
+        or re.search(r'\bsum\s*\(\s*[^)]*\bfinal_amount\b', s)
+    )
+    if not sums_line_amount:
+        return ""
+    # Allow the correct pattern: pre-aggregating line revenue to one row per line in a
+    # CTE/subquery, then joining the child only for grouping. Heuristic: if the SUM and
+    # the child join are NOT in the same SELECT scope it's likely safe — but to stay safe
+    # we still block the common flat case and tell the agent the correct alternatives.
+    return (
+        "FAN-OUT DOUBLE-COUNTING BLOCKED: this query JOINs a line-child table "
+        "(sales_order_line_diamond / _gold, which has MANY rows per order line) AND "
+        "SUMs a line/order-level amount (line_total / total_amount). That repeats the "
+        "line revenue once per child row → 2-3x inflated (a diamond query summing "
+        "line_total returns ~₹30B vs the true ~₹1.9B). REWRITE using the BEST option:\n"
+        "  (A) BEST for gold/diamond/making COMPONENT VALUE: do NOT join the child table at "
+        "all — sales_order_line_pricing ALREADY has 1:1 (no fan-out) per-unit columns:\n"
+        "      gold value    = SUM(solp.gold_amount_per_unit    * solp.quantity)\n"
+        "      diamond value = SUM(solp.diamond_amount_per_unit * solp.quantity)\n"
+        "      making value  = SUM(solp.making_charges_per_unit * solp.quantity)\n"
+        "      (and component % of selling = that / SUM(solp.selling_price_per_unit*solp.quantity)).\n"
+        "      Use these for ANY gold/diamond/making revenue/margin/% breakdown.\n"
+        "  (B) ONLY if you need a DIAMOND ATTRIBUTE not on pricing (shape/quality/carats): SUM the "
+        "CHILD's own amount — SUM(sales_order_line_diamond.diamond_amount_per_unit * "
+        "sales_order_line.quantity) — NEVER line_total.\n"
+        "  (C) If you need line_total grouped by a child attribute, FIRST pre-aggregate line revenue "
+        "to ONE row per line in a CTE, THEN join the child for the GROUP BY label only.\n"
+        "NEVER SUM line_total/total_amount across the child join."
+    )
+
+
 def _prevalidate_sql(sql: str) -> tuple[bool, str, str]:
     """Pre-validate SQL syntax before execution to catch common errors.
 
@@ -241,6 +297,20 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
             f"{pi['pattern_name']}: {pi.get('description', '')}"
             for pi in _pattern_issues
         ]
+
+        # Step 1c: HARD GATE — block line-child fan-out (diamond/gold) and force a
+        # rewrite. Unlike the warn-only pattern check above, this returns success:False
+        # so the SQL agent's repair loop MUST fix it before the wrong number can ship
+        # (RT-007/007b: prompt rule alone didn't stop it; code enforces).
+        _fanout_fix = _detect_line_child_fanout(corrected_sql)
+        if _fanout_fix:
+            logger.warning("[SQL Tool] BLOCKED line-child fan-out for '%s'", purpose)
+            return json.dumps({
+                "success": False,
+                "error": _fanout_fix,
+                "blocked_reason": "line_child_fanout",
+                "rejected_sql": corrected_sql,
+            })
 
         # Step 2: Pre-validation (catch errors before DB execution)
         is_valid, corrected_sql, validation_error = _prevalidate_sql(corrected_sql)

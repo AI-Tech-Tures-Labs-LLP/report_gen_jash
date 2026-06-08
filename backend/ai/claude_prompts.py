@@ -729,6 +729,21 @@ BUSINESS RULES:
   BEFORE giving up, and (2) if you still cannot answer the asked metric, STATE that plainly rather
   than substituting a related metric. Any substitution MUST be explicitly labeled in the output.
 
+⚠️⚠️ NEVER FABRICATE A FORMULA OR A NON-EXISTENT METRIC (abstract concepts like churn/risk/score):
+  Some requests name a concept that is NOT a column and NOT directly stored — e.g. "churn risk",
+  "at-risk customers", "likelihood", "health score", "propensity". There is NO churn_prob, is_at_risk,
+  risk_score, or similar column in this DB. You MUST NOT invent a formula with made-up coefficients
+  (e.g. `revenue * churn_prob * 0.32`) — a magic multiplier or a fabricated probability is a
+  HALLUCINATION, never do it. Instead:
+  • Derive an HONEST, DATA-BACKED PROXY from real columns and STATE it explicitly as a proxy. For
+    "churn risk", a defensible proxy = recency/frequency decline: e.g. customers whose most recent
+    order_date is long before DATA_END (e.g. > 180 days), or whose order count / revenue dropped vs a
+    prior window. Label it: "Proxy for churn risk: no order in >180 days (no churn field exists)."
+  • "Revenue exposure if we lose them" = the customer's REAL historical revenue (SUM line_total),
+    NOT revenue × an invented probability.
+  • If you cannot build even a defensible proxy, say the metric is not derivable — do NOT manufacture
+    one. Every KPI must trace to a query over real columns (no `SELECT <constant>`, no magic factors).
+
 ⚠️ CRITICAL — FAN-OUT / DOUBLE-COUNTING RULE (READ CAREFULLY):
   `sales_order.total_amount` is the ORDER-LEVEL total. One order has MANY order lines.
   • CORRECT for a grand total or time-trend (querying sales_order ALONE, no line join):
@@ -742,6 +757,49 @@ BUSINESS RULES:
         sales_order so → sales_order_line sol (so.so_id = sol.so_id)
                        → sales_order_line_pricing solp (sol.sol_id = solp.sol_id)
         revenue = SUM(solp.line_total)
+
+⚠️⚠️ SECOND-LEVEL FAN-OUT — LINE → DIAMOND/GOLD CHILD TABLES (CRITICAL, the #1 silent bug):
+  `sales_order_line_diamond` and `sales_order_line_gold` have MANY rows per order line
+  (a line has ~2.5 diamond rows on average). The MOMENT you join one of these child tables,
+  the LINE itself is fanned out — so SUM(solp.line_total) or SUM(so.total_amount) now REPEATS
+  the line revenue once per diamond/gold row → 2–3× INFLATED revenue.
+  • Sanity check you MUST apply: any "revenue" total that exceeds the company's total closed
+    revenue (~₹11.3 billion all-time) is IMPOSSIBLE and means you fanned out. Stop and fix.
+  • WRONG (revenue by diamond shape):
+        SELECT sold.shape, SUM(solp.line_total)              -- line_total repeated per diamond row
+        FROM sales_order_line_diamond sold
+        JOIN sales_order_line_pricing solp ON sold.sol_id = solp.sol_id ...   → 2.5× inflated
+  • CORRECT — to attribute VALUE to a diamond attribute, use the diamond row's OWN amount:
+        revenue/value by diamond = SUM(sold.diamond_amount_per_unit * sol.quantity)
+        (sales_order_line_diamond.diamond_amount_per_unit is the per-row diamond value)
+  • CORRECT — for gold attribute value, use sales_order_line_gold's own gold amount column.
+  • RULE: NEVER SUM a line-level or order-level amount (line_total, total_amount) across a join to
+    a *_diamond or *_gold child table. Use the child table's own per-unit amount, OR pre-aggregate
+    line revenue to ONE row per line (e.g. in a CTE) BEFORE joining the child for grouping only.
+
+- GOLD / DIAMOND / MAKING COMPONENT VALUE (for cost/margin breakdowns):
+    • USE the 1:1 columns ON sales_order_line_pricing — they are per-line, NO fan-out:
+      gold value = SUM(solp.gold_amount_per_unit * solp.quantity);
+      diamond value = SUM(solp.diamond_amount_per_unit * solp.quantity);
+      making value = SUM(solp.making_charges_per_unit * solp.quantity).
+    • Do NOT join sales_order_line_diamond/_gold for component VALUE — that fans out (2-3×).
+      Only join the child table when you need a child-only ATTRIBUTE (diamond shape/quality/carats),
+      and then SUM the child's OWN amount column, never line_total.
+
+⚠️ COMPONENT BREAKDOWNS — compute each component INDEPENDENTLY; do NOT force a round 100%:
+  When breaking a value into parts (e.g. margin/cost = gold% + diamond% + making% of base price),
+  compute EACH part directly from its own column (gold_amount_per_unit / base_price_per_unit, etc.)
+  and report the TRUE value. Do NOT round or adjust the parts so they sum to a tidy 100% — if the
+  real parts are 68.55 / 21.49 / 9.96, report THOSE, not 70 / 19.75 / 10.25. A suspiciously exact
+  100.00% sum of independently-measured components is a sign of fabrication. Report true values; if
+  they don't sum to 100 (rounding, or a residual/other bucket), add a "residual/other" line.
+
+⚠️ DATA-QUALITY LANDMINES (filter these or your averages are WRONG):
+  • NEGATIVE lead times: so_fulfillment_log.days_to_fulfill / days_sol_to_po / days_to_transfer /
+    days_dispatched contain NEGATIVE garbage values (~700 rows each). ALWAYS filter `> 0` before
+    averaging — NULLIF(col,0) is NOT enough (it only removes zeros). A negative average DURATION
+    (e.g. "-2.96 days") is always a bug. Use: WHERE days_to_fulfill > 0.
+  • sales_invoices.discount_amount = ALL ZERO (use discount_exceptions — see metric dictionary).
 
 BASELINE PERIOD CONSTRUCTION (anchor to the DATA's latest date, NOT to NOW()):
 - Let DATA_END = MAX(sales_order.order_date) (given in the date-context block above). NOW() is

@@ -219,9 +219,64 @@ def _apply_report_guards(report: dict) -> None:
                     f"do NOT trust as a clean breakdown."
                 )
 
+    # 3) Numeric-sanity guards on KPI values (RT-006/007/009)
+    _COMPANY_TOTAL_REVENUE = 11_300_000_000  # ~₹11.3B all-time closed; revenue can't exceed this
+    for kpi in report.get("kpis", []) or []:
+        if not isinstance(kpi, dict):
+            continue
+        val = kpi.get("value")
+        name = str(kpi.get("name") or kpi.get("label") or "").lower()
+        sql = str(kpi.get("sql") or kpi.get("executed_sql") or "")
+        # 3a) Negative duration (RT-009: "-2.96 days" — impossible)
+        if isinstance(val, (int, float)) and val < 0 and any(
+            w in name for w in ("days", "time", "duration", "lead", "cycle", "age", "fulfil")
+        ):
+            kpi["_accuracy_flag"] = "negative_duration"
+            warnings.append(
+                f"KPI '{kpi.get('name') or kpi.get('label')}' = {val}: a NEGATIVE duration is "
+                f"impossible — the source column likely has negative garbage values that must be "
+                f"filtered (WHERE col > 0). Value is WRONG."
+            )
+        # 3b) Revenue/value exceeding total company revenue (RT-007 fan-out: 2.7× inflation)
+        if isinstance(val, (int, float)) and val > _COMPANY_TOTAL_REVENUE and any(
+            w in name for w in ("revenue", "sales", "value", "amount")
+        ) and "percent" not in str(kpi.get("format", "")).lower():
+            kpi["_accuracy_flag"] = "revenue_exceeds_total"
+            warnings.append(
+                f"KPI '{kpi.get('name') or kpi.get('label')}' = {val:,.0f} EXCEEDS total company "
+                f"revenue (~₹11.3B) — almost certainly FAN-OUT double-counting (a SUM across a "
+                f"diamond/gold child join repeats line revenue per child row). Value is INFLATED."
+            )
+        # 3c) Fabricated magic-coefficient formula (RT-008: revenue * churn_prob * 0.32)
+        if _re.search(r"\b(churn_prob|is_at_risk|risk_score|propensity)\b", sql, _re.IGNORECASE) or \
+           _re.search(r"\*\s*0\.\d+\b", sql):
+            kpi["_accuracy_flag"] = "fabricated_formula"
+            warnings.append(
+                f"KPI '{kpi.get('name') or kpi.get('label')}' SQL references a non-existent "
+                f"risk/probability column or a magic multiplier — likely a FABRICATED formula. "
+                f"Metrics must derive from real columns, not invented coefficients."
+            )
+
+    # 4) Component-breakdown fudge: sibling % KPIs that sum to EXACTLY 100 (RT-006 MASKED-MATH)
+    pct_components = [
+        float(k["value"]) for k in (report.get("kpis", []) or [])
+        if isinstance(k, dict) and isinstance(k.get("value"), (int, float))
+        and any(w in str(k.get("name") or k.get("label") or "").lower()
+                for w in ("gold", "diamond", "making", "component"))
+        and ("percent" in str(k.get("format", "")).lower() or "%" in str(k.get("name") or "").lower() or "of base" in str(k.get("name") or "").lower())
+    ]
+    if len(pct_components) >= 3 and abs(sum(pct_components) - 100.0) < 0.01:
+        warnings.append(
+            "Component %s sum to EXACTLY 100.00% — independently-measured components rarely do; "
+            "they may have been adjusted/normalized (MASKED-MATH). Verify each against its source."
+        )
+
     if warnings:
         existing = report.get("accuracy_warnings") or []
         report["accuracy_warnings"] = existing + warnings
+        # Surface a top-level flag so the UI/QA can SEE there are accuracy concerns
+        # (RT-008: warnings were only logged, not surfaced).
+        report["has_accuracy_warnings"] = True
         logger.warning("[Report Guards] %d accuracy warning(s): %s", len(warnings), warnings)
 
 
@@ -481,16 +536,30 @@ class ClaudeReportPipeline:
             max_sc   = qa_result.get("max_score", 12)
             feedback = qa_result.get("feedback", "")[:80]
 
-            # Override the LLM's approved field based on actual score.
-            # Match the QA prompt scoring rules:
+            # Derive a THREE-TIER verdict from the actual score (matches the QA rubric),
+            # instead of conflating "don't retry" with "approved" (RT-006: score 4 printed APPROVED).
             #   10+ → APPROVED, 7-9 → APPROVED_WITH_WARNINGS,
-            #   4-6 → CONDITIONAL (show to user), <4 → REJECTED (retry)
-            # Only scores below 4 trigger expensive pipeline retries.
+            #   4-6 → CONDITIONAL (show to user, flagged), <4 → REJECTED (retry).
+            # `needs_retry` (score < 4) is the ONLY thing that triggers a pipeline retry.
             if isinstance(score, (int, float)) and isinstance(max_sc, (int, float)) and max_sc > 0:
-                approved = score >= 4
-            status_col = _GREEN if approved else _RED
+                if score >= 10:
+                    verdict, status_col = "APPROVED", _GREEN
+                elif score >= 7:
+                    verdict, status_col = "APPROVED (warnings)", _YELLOW
+                elif score >= 4:
+                    verdict, status_col = "CONDITIONAL", _YELLOW
+                else:
+                    verdict, status_col = "REJECTED", _RED
+                approved = score >= 4          # shown to user (not retried) — but NOT "approved" label
+                needs_retry = score < 4
+            else:
+                verdict, status_col = ("APPROVED", _GREEN) if approved else ("REJECTED", _RED)
+                needs_retry = not approved
+            # If accuracy guards flagged the report, never show a clean APPROVED.
+            if final_report.get("has_accuracy_warnings") and verdict.startswith("APPROVED"):
+                verdict, status_col = "APPROVED (accuracy warnings)", _YELLOW
             _tee(
-                f"  {_c('QA VERDICT', _BOLD)}: {_c('APPROVED' if approved else 'REJECTED', status_col, _BOLD)}  "
+                f"  {_c('QA VERDICT', _BOLD)}: {_c(verdict, status_col, _BOLD)}  "
                 f"{_c(f'Score: {score}/{max_sc}', _YELLOW)}  {_c(f'{time.time()-t0:.1f}s', _DIM)}"
             )
             _tee(f"  {_c(f'  Feedback: {feedback}', _DIM)}\n")
@@ -503,7 +572,7 @@ class ClaudeReportPipeline:
             # Re-running just the writer costs ~90s instead of ~200s, and the data
             # (KPIs/charts) stays stable. (If a future QA failure is truly data-level,
             # that's caught by the Data Analyst / fan-out guard upstream, not here.)
-            if not approved and self._retry_count < 1:
+            if needs_retry and self._retry_count < 1:
                 self._retry_count += 1
                 _tee(f"\n  {_c('QA REJECTED — regenerating narrative with feedback...', _YELLOW, _BOLD)}\n")
                 logger.info("QA rejected — retrying Report Writer only (attempt %d)", self._retry_count)
