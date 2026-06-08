@@ -95,7 +95,7 @@ export default function ChartCard({
           onClose={() => setDrawerOpen(false)}
         />
       )}
-
+ 
       <ChartView
         spec={spec}
         data={filteredData}
