@@ -34,26 +34,88 @@ export default function FilterBar({ applicable, report, onApplied, t }) {
       </select>
     ) : null;
 
+  function clearAll() {
+    setF({ date_from: "", date_to: "", category: "", customer: "", status: "", product: "" });
+  }
+
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "1.4rem" }}>
+    <div style={{
+      background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 8,
+      padding: "0.45rem 0.75rem", marginBottom: "0.65rem",
+      display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem",
+    }}>
       {applicable.date_range && (
-        <>
-          <input type="date" value={f.date_from} onChange={(e) => setF({ ...f, date_from: e.target.value })} style={inp(t)} />
-          <span style={{ color: t.textMuted, fontSize: "0.8rem" }}>to</span>
-          <input type="date" value={f.date_to} onChange={(e) => setF({ ...f, date_to: e.target.value })} style={inp(t)} />
-        </>
+        <InlineField label="DATE RANGE" t={t}>
+          <input type="date" value={f.date_from} onChange={(e) => setF({ ...f, date_from: e.target.value })} className="rpt-filter-input" style={inp(t)} />
+          <span style={{ color: t.textMuted, fontSize: "0.7rem" }}>–</span>
+          <input type="date" value={f.date_to} onChange={(e) => setF({ ...f, date_to: e.target.value })} className="rpt-filter-input" style={inp(t)} />
+        </InlineField>
       )}
-      {applicable.category && sel("category", opts.categories, "All categories")}
-      {applicable.status && sel("status", opts.statuses, "All statuses")}
-      {applicable.customer && sel("customer", opts.customers, "All customers")}
-      {applicable.product && sel("product", opts.products, "All products")}
-      <button onClick={apply} disabled={busy} style={{ border: "none", borderRadius: 8, padding: "0.45rem 0.9rem", cursor: "pointer", color: "#fff", background: `linear-gradient(135deg, ${t.accent}, ${t.accent2})`, fontSize: "0.8rem", fontWeight: 600, opacity: busy ? 0.6 : 1 }}>
-        {busy ? "Applying…" : "Apply Filters"}
-      </button>
+      {applicable.category && (
+        <InlineField label="CATEGORY" t={t}>
+          <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} className="rpt-filter-input" style={inp(t)}>
+            <option value="">All</option>
+            {opts.categories.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </InlineField>
+      )}
+      {applicable.status && (
+        <InlineField label="STATUS" t={t}>
+          <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} className="rpt-filter-input" style={inp(t)}>
+            <option value="">All</option>
+            {opts.statuses.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </InlineField>
+      )}
+      {applicable.customer && (
+        <InlineField label="CUSTOMER" t={t}>
+          <select value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} className="rpt-filter-input" style={inp(t)}>
+            <option value="">All</option>
+            {opts.customers.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </InlineField>
+      )}
+      {applicable.product && (
+        <InlineField label="PRODUCT" t={t}>
+          <select value={f.product} onChange={(e) => setF({ ...f, product: e.target.value })} className="rpt-filter-input" style={inp(t)}>
+            <option value="">All</option>
+            {opts.products.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </InlineField>
+      )}
+      <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", marginLeft: "auto" }}>
+        <button onClick={apply} disabled={busy} style={{
+          border: "none", borderRadius: 6, padding: "0.32rem 0.85rem",
+          cursor: busy ? "not-allowed" : "pointer", color: "#fff",
+          background: "#f59e0b",
+          fontSize: "0.76rem", fontWeight: 700, opacity: busy ? 0.65 : 1, whiteSpace: "nowrap",
+        }}>
+          {busy ? "Applying…" : "✦ Apply Filters"}
+        </button>
+        <button onClick={clearAll} style={{
+          border: `1px solid ${t.border}`, background: "transparent",
+          color: t.textMuted, borderRadius: 6, padding: "0.32rem 0.6rem",
+          cursor: "pointer", fontSize: "0.73rem", fontWeight: 500, whiteSpace: "nowrap",
+        }}>
+          Clear Filters
+        </button>
+      </div>
     </div>
   );
 }
 
 function inp(t) {
-  return { border: `1px solid ${t.border}`, background: t.bgPanel, color: t.text, borderRadius: 8, padding: "0.4rem 0.6rem", fontSize: "0.8rem", outline: "none" };
+  return {
+    border: `1px solid ${t.border}`, background: t.bgPanel, color: t.text,
+    borderRadius: 5, padding: "0.25rem 0.45rem", fontSize: "0.76rem",
+    outline: "none", transition: "border-color 0.15s, box-shadow 0.15s", minWidth: 0,
+  };
+}
+function InlineField({ label, t, children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+      <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.06em", color: t.textMuted, whiteSpace: "nowrap" }}>{label}</span>
+      {children}
+    </div>
+  );
 }

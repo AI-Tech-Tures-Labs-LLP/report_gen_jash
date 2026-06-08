@@ -2,6 +2,16 @@
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
 
+// Normalize text for PDF standard fonts (Helvetica) to prevent spacing/shattering bugs
+// caused by unsupported Unicode characters like the Indian Rupee symbol (₹) or special bullet triangles.
+function safeText(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/₹/g, "Rs. ")
+    .replace(/[▶►●•]/g, "- ")
+    .replace(/[^\x00-\x7F]/g, " "); // Replace other high-unicode chars with spaces to prevent width corruption
+}
+
 // Full-report PDF with embedded chart images. Faithful port of the vanilla
 // downloadPdfBtn handler (title, accent line, date, summary box, KPI grid,
 // chart images, insights). `chartInstances` is a map { idx: Chart.js instance }.
@@ -16,14 +26,14 @@ export function exportPDF(report, chartInstances = {}) {
   }
   function wrapText(text, maxWidth, fontSize) {
     pdf.setFontSize(fontSize);
-    return pdf.splitTextToSize(text, maxWidth);
+    return pdf.splitTextToSize(safeText(text), maxWidth);
   }
 
   // ── Title ──
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(18);
   pdf.setTextColor(30, 30, 60);
-  pdf.text(report.title || "Analytics Report", M, y + 6);
+  pdf.text(safeText(report.title || "Analytics Report"), M, y + 6);
   y += 12;
 
   // Accent line
@@ -85,11 +95,11 @@ export function exportPDF(report, chartInstances = {}) {
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(6.5);
       pdf.setTextColor(100, 100, 120);
-      pdf.text(String(kpis[i].label || "").substring(0, 30).toUpperCase(), x + 3, cy + 6);
+      pdf.text(safeText(kpis[i].label).substring(0, 30).toUpperCase(), x + 3, cy + 6);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(13);
       pdf.setTextColor(30, 30, 50);
-      pdf.text(String(kpis[i].value ?? "—").substring(0, 20), x + 3, cy + 14);
+      pdf.text(safeText(kpis[i].value ?? "—").substring(0, 20), x + 3, cy + 14);
     }
     y += cardH + 8;
   }
@@ -110,7 +120,7 @@ export function exportPDF(report, chartInstances = {}) {
       if (!inst) continue;
       let chartImg;
       try { chartImg = inst.toBase64Image("image/png", 1.0); } catch { continue; }
-      const chartTitle = charts[i].title || "Chart " + (i + 1);
+      const chartTitle = safeText(charts[i].title || "Chart " + (i + 1));
       const canvas = inst.canvas;
       const aspect = canvas.width / canvas.height || 1.6;
       let imgW = usableW;
@@ -145,8 +155,8 @@ export function exportPDF(report, chartInstances = {}) {
       neutral: [59, 130, 246], opportunity: [245, 158, 11],
     };
     insights.forEach((ins) => {
-      const title = typeof ins === "string" ? ins : (ins.title || "");
-      const body = typeof ins === "string" ? "" : (ins.body || ins.text || "");
+      const title = safeText(typeof ins === "string" ? ins : (ins.title || ""));
+      const body = safeText(typeof ins === "string" ? "" : (ins.body || ins.text || ""));
       const type = (typeof ins === "object" && ins.type ? ins.type : "neutral").toLowerCase();
       const color = insightColors[type] || insightColors.neutral;
       const bodyLines = wrapText(body, usableW - 12, 8);
