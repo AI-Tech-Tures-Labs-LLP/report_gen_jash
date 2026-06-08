@@ -71,12 +71,20 @@ def check_sql_against_schema(sql: str, schema: dict[str, list[dict]]) -> tuple[b
 
     sql_upper = sql.upper()
 
-    # Extract table references (FROM / JOIN)
+    # Collect CTE names (WITH x AS (...), y AS (...)) so they aren't mistaken for
+    # missing tables — a CTE is a valid FROM/JOIN target but never in the schema.
+    cte_names = {
+        m.lower()
+        for m in re.findall(r'(?:\bWITH\b|,)\s*"?(\w+)"?\s+AS\s*\(', sql, re.IGNORECASE)
+    }
+
+    # Extract table references (FROM / JOIN), ignoring CTE references.
     table_refs = re.findall(
         r'(?:FROM|JOIN)\s+"?(\w+)"?', sql, re.IGNORECASE
     )
     for tref in table_refs:
-        if tref.lower() not in all_tables:
+        t = tref.lower()
+        if t not in all_tables and t not in cte_names:
             issues.append(f"Table '{tref}' not found in schema")
 
     # Basic check: if GROUP BY is present, verify SELECT has aggregation or is in GROUP BY

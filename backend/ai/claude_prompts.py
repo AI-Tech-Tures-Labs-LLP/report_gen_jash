@@ -7,16 +7,68 @@ Supports dual-mode routing: STANDARD_REPORT and DRIFT_INVESTIGATION.
 from datetime import date
 
 
+_DATA_MAX_DATE_CACHE: dict[str, object] = {}
+
+
+def _get_data_max_date():
+    """Return the latest sales_order.order_date present in the DB (a date), or None.
+
+    Cached for the process lifetime. Fail-safe: any error returns None so callers
+    fall back to calendar dates. This is the keystone of the 'bound the window to
+    real data' fix — the data ends well before today, so anchoring 'recent/current'
+    to today produces empty future windows (see ACCURACY_TESTING.md P1).
+    """
+    if "max_date" in _DATA_MAX_DATE_CACHE:
+        return _DATA_MAX_DATE_CACHE["max_date"]
+    max_date = None
+    try:
+        from db.executor import execute_sql
+
+        res = execute_sql("SELECT MAX(order_date)::date AS d FROM sales_order")
+        if res.get("success") and res.get("data"):
+            max_date = res["data"][0].get("d")
+    except Exception:
+        max_date = None
+    _DATA_MAX_DATE_CACHE["max_date"] = max_date
+    return max_date
+
+
 def _date_context() -> str:
-    """Return a date-context string for injection into prompts."""
+    """Return a date-context string for injection into prompts.
+
+    Anchors all relative time language ('last few weeks', 'current', 'this year')
+    to the LATEST DATE THAT ACTUALLY HAS DATA, not today's calendar date. Without
+    this, the model picks windows that run into empty future months (the dominant
+    P1 'wrong-scope' failure across cases 001/003/004/005).
+    """
     today = date.today()
+    max_d = _get_data_max_date()
+
+    if max_d is None:
+        # Fail-safe: original calendar-based context.
+        return (
+            f"Today is {today.isoformat()}. "
+            f"Current year = {today.year}. "
+            f"'Last year' = {today.year - 1} "
+            f"({today.year - 1}-01-01 to {today.year - 1}-12-31). "
+            f"'This year' = {today.year} "
+            f"({today.year}-01-01 to {today.year}-12-31)."
+        )
+
     return (
-        f"Today is {today.isoformat()}. "
-        f"Current year = {today.year}. "
-        f"'Last year' = {today.year - 1} "
-        f"({today.year - 1}-01-01 to {today.year - 1}-12-31). "
-        f"'This year' = {today.year} "
-        f"({today.year}-01-01 to {today.year}-12-31)."
+        f"Today is {today.isoformat()}, BUT THE DATA ENDS ON {max_d.isoformat()} "
+        f"(this is MAX(sales_order.order_date) — there is NO data after it).\n"
+        f"⚠️ CRITICAL — ANCHOR ALL RELATIVE TIME TO THE DATA, NOT TO TODAY:\n"
+        f"- The 'current'/'latest'/'recent' period MUST end on {max_d.isoformat()}, "
+        f"NEVER on {today.isoformat()}. A window running past {max_d.isoformat()} "
+        f"returns empty rows and produces false 'drops'/'declines'.\n"
+        f"- 'last few weeks' / 'recent weeks' = the weeks ENDING {max_d.isoformat()} "
+        f"(e.g. {max_d.isoformat()} minus N weeks .. {max_d.isoformat()}).\n"
+        f"- 'last 12 months' = the 12 months ENDING {max_d.isoformat()}.\n"
+        f"- For 'overall'/'total'/'all-time'/'performance' with NO explicit time "
+        f"qualifier, use ALL HISTORY (do NOT narrow to the current year).\n"
+        f"- Data year of record = {max_d.year}; latest data month = {max_d.year}-{max_d.month:02d}.\n"
+        f"- Never emit a date filter with an upper bound later than {max_d.isoformat()}."
     )
 
 
@@ -632,7 +684,52 @@ FORMATTING:
 BUSINESS RULES:
 - status = 'closed' filter ONLY on sales_order table
 
-⚠️ CRITICAL — FAN-OUT / DOUBLE-COUNTING RULE (most common error, READ CAREFULLY):
+═══════════════════════════════════════════════════════════════════════════════
+🔑 CANONICAL METRIC DICTIONARY — the ONLY correct way to compute each business
+   concept. Map the asked metric to EXACTLY this SQL. Do NOT improvise a different
+   column or aggregation. (These exist because schema-valid-but-wrong columns are
+   the #1 source of wrong numbers — see units, leftover value, discount below.)
+═══════════════════════════════════════════════════════════════════════════════
+- REVENUE / sales value:
+    • Across a line/dimension join → SUM(sales_order_line_pricing.line_total).
+    • Grand total / time-trend on sales_order ALONE (no line join) → SUM(sales_order.total_amount).
+    • (These two are equivalent because header total == Σ line_total; the join version
+      is mandatory the moment you touch sales_order_line — see fan-out rule below.)
+- UNITS / VOLUME / "units sold" / "quantity":
+    • = SUM(sales_order_line.quantity).
+    • ⚠️ NEVER COUNT(sol_id) / COUNT(*) — that counts ORDER LINES, not units, and
+      undercounts by ~5×. "How many units/volume" is ALWAYS SUM(quantity).
+- ORDER COUNT / "number of orders" = COUNT(DISTINCT sales_order.so_id).
+- DISCOUNT RATE / "discount %" / "discount surge":
+    • USE the governance table: discount_exceptions.approved_discount_pct
+      (also requested_discount_pct, allowed_discount_pct). Trend by created_at.
+    • ⚠️ sales_invoices.discount_amount IS ALL ZERO — it carries NO discount info.
+      Do NOT use it; do NOT compute discount from it; do NOT silently fall back to
+      margin. If discount_exceptions has no rows for the asked period, SAY discount
+      data is unavailable for that period — do NOT substitute a different metric.
+    • DISCOUNT ≠ MARGIN. Never answer a discount question with margin_pct unless you
+      EXPLICITLY state you are substituting margin and why.
+- MARGIN / "margin %" = AVG(sales_order_line_pricing.margin_pct). (Distinct from discount.)
+- LEFTOVER / ON-HAND INVENTORY VALUE (value of stock still on hand):
+    • = SUM(finished_goods_inventory.quantity_available * unit_cost).
+    • ⚠️ NEVER SUM(total_amount) — that is the value of the FULL ORIGINAL RECEIPT
+      (quantity_received × unit_cost), which overstates on-hand value whenever any
+      units were consumed. "Leftover/remaining/on-hand VALUE" = qty_available × unit_cost.
+    • "Leftover UNITS" = SUM(quantity_available). "RM provided" filter = material_mode='RM_PROVIDED'.
+- DSO = (outstanding_amount / annual_revenue × 365) per customer.
+- GOLD cost = gold_weight_grams × gold_rate_per_gm (sales_order_line_gold).
+- HUNTER metrics: join sales_order.hunter_id → hunters; hunter→order is 1:many (safe, no fan-out).
+- "STORE": there is NO store table. The geographic grain is `territories`; the account grain is
+  customer_master. If asked about "stores", either map to territories OR to distinct customers —
+  and EXPLICITLY STATE which mapping you used. Never silently invent a "store" count.
+
+⚠️ MISSING-DATA / SUBSTITUTION RULE (do NOT answer a different question silently):
+  If the obvious column for the asked metric is empty/all-zero (e.g. discount_amount), you MUST
+  (1) search governance/exception tables for the real source (discount_exceptions, discount_rules)
+  BEFORE giving up, and (2) if you still cannot answer the asked metric, STATE that plainly rather
+  than substituting a related metric. Any substitution MUST be explicitly labeled in the output.
+
+⚠️ CRITICAL — FAN-OUT / DOUBLE-COUNTING RULE (READ CAREFULLY):
   `sales_order.total_amount` is the ORDER-LEVEL total. One order has MANY order lines.
   • CORRECT for a grand total or time-trend (querying sales_order ALONE, no line join):
         SELECT SUM(total_amount) FROM sales_order WHERE status='closed'
@@ -645,16 +742,14 @@ BUSINESS RULES:
         sales_order so → sales_order_line sol (so.so_id = sol.so_id)
                        → sales_order_line_pricing solp (sol.sol_id = solp.sol_id)
         revenue = SUM(solp.line_total)
-  • Volume/units = SUM(sales_order_line.quantity) on the same join.
-- Discount % = SUM(discount_amount) / SUM(invoice_total) × 100 from sales_invoice
-- DSO = (outstanding_amount / annual_revenue × 365) computed per customer
-- Gold cost = gold_weight_grams × gold_rate_per_gm (from sales_order_line_gold × Metal Rate Reference)
-- Hunter performance metrics: use performance_snapshots table where available; else compute from party_stage_history + order_approvals
 
-BASELINE PERIOD CONSTRUCTION:
-- "trailing N weeks" = WHERE order_date BETWEEN NOW() - INTERVAL '_BASELINE_WEEKS_PLACEHOLDER_ weeks' AND NOW() - INTERVAL '1 week'
-- "current period" = WHERE order_date >= NOW() - INTERVAL '1 week' (or as specified by context agent)
-- For multi-week baselines, compute the AVERAGE of weekly values, not the raw sum
+BASELINE PERIOD CONSTRUCTION (anchor to the DATA's latest date, NOT to NOW()):
+- Let DATA_END = MAX(sales_order.order_date) (given in the date-context block above). NOW() is
+  LATER than DATA_END, so windows built from NOW() land in empty future and fabricate false drops.
+- "trailing N weeks" (baseline) = WHERE order_date BETWEEN DATA_END - INTERVAL '_BASELINE_WEEKS_PLACEHOLDER_ weeks' AND DATA_END - INTERVAL '1 week'
+  In SQL, derive DATA_END inline: (SELECT MAX(order_date) FROM sales_order) — do NOT use NOW()/CURRENT_DATE for the upper bound.
+- "current period" = the most recent window ENDING at DATA_END (e.g. order_date > DATA_END - INTERVAL '1 week').
+- For multi-week baselines, compute the AVERAGE of weekly values, not the raw sum.
 
 The full DATABASE SCHEMA, TABLE RELATIONSHIPS, and DATA PROFILE are provided in the
 shared context block at the top of this system prompt. Use them as the source of truth.
@@ -716,7 +811,7 @@ For DRIFT_INVESTIGATION:
     {{
       "id": "kpi_current",
       "label": "Current Discount Rate",
-      "sql": "SELECT ROUND(SUM(discount_amount)::numeric / NULLIF(SUM(invoice_total), 0) * 100, 2) AS value FROM sales_invoice WHERE invoice_date >= NOW() - INTERVAL '1 week'",
+      "sql": "SELECT ROUND(AVG(approved_discount_pct)::numeric, 2) AS value FROM discount_exceptions WHERE status='APPROVED' AND created_at >= (SELECT MAX(created_at) FROM discount_exceptions) - INTERVAL '1 week'",
       "value": 16.8,
       "format": "percent",
       "icon": "average",
@@ -737,7 +832,7 @@ For DRIFT_INVESTIGATION:
   "causal_decomposition": [
     {{
       "dimension": "hunter",
-      "sql": "SELECT u.user_name AS entity_name, ROUND(AVG(CASE WHEN si.invoice_date >= NOW() - INTERVAL '1 week' THEN si.discount_amount/NULLIF(si.invoice_total,0)*100 END),2) AS current_val, ROUND(AVG(CASE WHEN si.invoice_date BETWEEN NOW()-INTERVAL '7 weeks' AND NOW()-INTERVAL '1 week' THEN si.discount_amount/NULLIF(si.invoice_total,0)*100 END),2) AS baseline_val, COUNT(*) AS txn_count FROM sales_invoice si JOIN sales_order so ON si.so_id = so.so_id JOIN users u ON so.hunter_id = u.user_id GROUP BY u.user_name ORDER BY ABS(current_val - baseline_val) DESC LIMIT 10",
+      "sql": "WITH anchor AS (SELECT MAX(created_at) AS d FROM discount_exceptions) SELECT h.name AS entity_name, ROUND(AVG(CASE WHEN de.created_at >= (SELECT d FROM anchor) - INTERVAL '1 week' THEN de.approved_discount_pct END),2) AS current_val, ROUND(AVG(CASE WHEN de.created_at BETWEEN (SELECT d FROM anchor) - INTERVAL '7 weeks' AND (SELECT d FROM anchor) - INTERVAL '1 week' THEN de.approved_discount_pct END),2) AS baseline_val, COUNT(*) AS txn_count FROM discount_exceptions de JOIN sales_order so ON de.so_id = so.so_id JOIN hunters h ON so.hunter_id = h.hunter_id WHERE de.status='APPROVED' GROUP BY h.name ORDER BY ABS(current_val - baseline_val) DESC LIMIT 10",
       "data": [
         {{"entity_name": "Divya Krishnan (HNT-006)", "current_val": 18.4, "baseline_val": 11.7, "delta": 6.7, "txn_count": 47, "contribution_pct": 62.0}}
       ]
@@ -748,7 +843,7 @@ For DRIFT_INVESTIGATION:
       "id": "chart_1",
       "title": "Discount Rate — Trailing 13 Weeks vs Baseline Band",
       "type": "line",
-      "sql": "SELECT TO_CHAR(DATE_TRUNC('week', invoice_date), 'YYYY-WW') AS label, ROUND(SUM(discount_amount)/NULLIF(SUM(invoice_total),0)*100, 2) AS value FROM sales_invoice GROUP BY 1 ORDER BY 1 LIMIT 13",
+      "sql": "SELECT TO_CHAR(DATE_TRUNC('week', created_at), 'IYYY-IW') AS label, ROUND(AVG(approved_discount_pct)::numeric, 2) AS value FROM discount_exceptions WHERE status='APPROVED' GROUP BY 1 ORDER BY 1 LIMIT 13",
       "data": [{{"label": "2026-W03", "value": 11.2}}],
       "x_label": "Week",
       "y_label": "Avg Discount %",
@@ -890,6 +985,28 @@ You write drift card narratives and analytical reports that read like a McKinsey
 briefing a CEO — precise, evidence-led, and immediately actionable.
 
 _DATE_CONTEXT_PLACEHOLDER_
+
+═══════════════════════════════════════════════════════════════════════════════
+🔢 CURRENCY FORMATTING — USE THE PRE-COMPUTED `value_inr` FIELD VERBATIM.
+   Many KPIs include a `value_inr` field (e.g. "₹1,126.80 Cr") that has ALREADY
+   been correctly formatted in code. When a KPI has `value_inr`, quote THAT string
+   exactly in your prose — do NOT re-derive Cr/L from the raw number yourself.
+   Only if `value_inr` is absent, convert the RAW value using the thresholds below.
+─ fallback conversion (only when value_inr is missing) ─
+   Convert the RAW numeric KPI value using these EXACT thresholds. Do NOT eyeball it.
+   1 Lakh (L)  = 100,000        (1e5)
+   1 Crore (Cr) = 10,000,000     (1e7)
+   1 Billion    = 100 Crore      (1e9 = 100 Cr)
+   Rule: Cr value = raw / 10,000,000 ;  L value = raw / 100,000.
+   Worked examples (copy this logic):
+     • 233,263,253        → 233,263,253 / 1e7 = 23.3 Cr   (NOT 233.3 Cr)
+     • 1,503,052,703      → / 1e7 = 150.3 Cr  (= 1.50 billion; NOT 1.50 Cr)
+     • 6,094,694,732      → / 1e7 = 609.5 Cr  (NOT 6.09 Cr)
+     • 410,000            → / 1e5 = 4.1 L
+   Always sanity-check: a value with 9 digits before the decimal is HUNDREDS of crore,
+   not single-digit crore. When unsure, write the plain number (₹1,503,052,704) rather
+   than a wrong Cr/L abbreviation.
+═══════════════════════════════════════════════════════════════════════════════
 
 You operate in two modes. Read `intent_mode` from the input.
 

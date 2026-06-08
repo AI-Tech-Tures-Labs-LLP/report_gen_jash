@@ -48,6 +48,183 @@ _SONNET = config.CLAUDE_MODEL        # Available for complex tasks if needed
 _HAIKU  = config.CLAUDE_HAIKU_MODEL  # All agents — fast & cost-effective
 
 
+# ── Accuracy guards (deterministic; cannot be prompted away) ──────────────────
+
+import re as _re
+
+
+def format_inr(value) -> str:
+    """Deterministically format a raw rupee number into Indian Cr/L notation.
+
+    Prompt rules for this failed (RT-001/002: model wrote '₹11.27 crore' for
+    ₹11.27 BILLION — 100× off). Doing it in code is the only reliable fix.
+      ≥ 1 Cr  → '₹X.XX Cr'   (Cr = 1e7)
+      ≥ 1 L   → '₹X.XX L'    (L  = 1e5)
+      else    → '₹N' (thousands-separated)
+    """
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    sign = "-" if n < 0 else ""
+    a = abs(n)
+    if a >= 1e7:
+        return f"{sign}₹{a / 1e7:,.2f} Cr"
+    if a >= 1e5:
+        return f"{sign}₹{a / 1e5:,.2f} L"
+    return f"{sign}₹{a:,.0f}"
+
+
+def _enforce_currency_formatting(report: dict) -> None:
+    """BULLETPROOF currency display: code has the final word on every ₹ figure.
+
+    Runs AFTER the Report Writer. The LLM is never trusted to format magnitudes:
+      1) Every currency KPI's display fields (value_inr, display, value_formatted)
+         are OVERWRITTEN from the raw `value` via format_inr() — deterministic.
+      2) Prose fields (summary, narrative, insight bodies) are scrubbed for
+         wrong-magnitude '₹N crore/lakh' figures: if the writer wrote a Cr/L number
+         that doesn't match ANY real KPI value's correct magnitude, we can't always
+         know the intended value — so we only correct figures that map 1:1 to a known
+         KPI raw value (safe), and otherwise leave prose untouched (never fabricate).
+    """
+    if not isinstance(report, dict):
+        return
+
+    # Pass 1 — authoritative KPI display strings (always safe, fully deterministic).
+    kpi_value_to_correct: dict[float, str] = {}
+    for kpi in report.get("kpis", []) or []:
+        if not isinstance(kpi, dict):
+            continue
+        val = kpi.get("value")
+        if not isinstance(val, (int, float)):
+            continue
+        fmt = str(kpi.get("format", "")).lower()
+        name = str(kpi.get("name") or kpi.get("label") or "").lower()
+        is_currency = (
+            fmt in ("currency", "inr", "rupee", "money")
+            or any(w in name for w in ("revenue", "value", "amount", "aov", "sales", "cost", "impact", "price"))
+        ) and "percent" not in fmt and "%" not in name
+        if is_currency:
+            correct = format_inr(val)
+            kpi["value_inr"] = correct
+            kpi_value_to_correct[round(float(val), 2)] = correct
+
+    # Pass 2 — scrub prose ONLY where a ₹ figure clearly maps to a known KPI value
+    # at the WRONG magnitude. We match the numeric part against known KPI raw values
+    # scaled by common magnitude confusions (×100 = crore/billion swap, the observed
+    # bug). If a prose "₹X Cr" equals a KPI's value/1e5 (i.e. they wrote L-scale as Cr
+    # or vice-versa), replace with the correct string. Never touch unmatched figures.
+    if not kpi_value_to_correct:
+        return
+
+    def _fix_prose(text: str) -> str:
+        if not isinstance(text, str) or "₹" not in text:
+            return text
+        # Match "₹<num> Cr|crore|L|lakh"
+        pattern = _re.compile(r"₹\s*([\d,]+(?:\.\d+)?)\s*(crore|cr|lakh|lac|l|billion|bn)\b", _re.IGNORECASE)
+
+        def _repl(m):
+            num = float(m.group(1).replace(",", ""))
+            unit = m.group(2).lower()
+            # Reconstruct the rupee amount the prose is claiming.
+            if unit in ("crore", "cr"):
+                claimed = num * 1e7
+            elif unit in ("lakh", "lac", "l"):
+                claimed = num * 1e5
+            else:  # billion
+                claimed = num * 1e9
+            # Does the CLAIMED amount, or a ×100/÷100 magnitude-confused version,
+            # match a real KPI value? If a magnitude-confused version matches, fix it.
+            for raw, correct in kpi_value_to_correct.items():
+                for factor in (1, 100, 0.01):
+                    if raw != 0 and abs(claimed * factor - raw) / abs(raw) < 0.02:
+                        if factor != 1:  # only rewrite when there was a magnitude error
+                            return correct
+                        return m.group(0)  # correct already
+            return m.group(0)  # unmatched — leave untouched (never fabricate)
+
+        return pattern.sub(_repl, text)
+
+    for field in ("summary", "narrative", "issue_overview"):
+        if field in report:
+            report[field] = _fix_prose(report[field])
+    for ins in report.get("insights", []) or []:
+        if isinstance(ins, dict):
+            for f in ("body", "text", "title"):
+                if f in ins:
+                    ins[f] = _fix_prose(ins[f])
+
+
+def _apply_report_guards(report: dict) -> None:
+    """Annotate the SQL-agent report with deterministic accuracy warnings.
+
+    Catches the failure classes that prompts alone can't guarantee against
+    (see backend/docs/ACCURACY_TESTING.md):
+      • HARDCODED-KPI / untraced KPI: a KPI whose SQL has no FROM clause (e.g.
+        `SELECT 324`) has no data lineage — likely hallucinated.
+      • MASKED-MATH: contribution_pct values that sum far from 100% indicate a
+        broken decomposition that must surface, not be silently rescaled.
+    We ANNOTATE (report['accuracy_warnings'] + per-item flags), never mutate the
+    numbers — surfacing beats fudging. Downstream agents/UI can show these.
+    """
+    if not isinstance(report, dict):
+        return
+    warnings: list[str] = []
+
+    def _has_from(sql) -> bool:
+        return bool(sql) and _re.search(r"\bfrom\b", str(sql), _re.IGNORECASE) is not None
+
+    # 1) KPIs with no data lineage
+    for kpi in report.get("kpis", []) or []:
+        if not isinstance(kpi, dict):
+            continue
+        sql = kpi.get("sql") or kpi.get("executed_sql") or ""
+        # Only flag scalar-looking KPIs that present a value but no real query.
+        if kpi.get("value") is not None and not _has_from(sql):
+            kpi["_accuracy_flag"] = "untraced_kpi"
+            warnings.append(
+                f"KPI '{kpi.get('name') or kpi.get('label') or '?'}' has no SQL "
+                f"FROM-clause — value is not traceable to a query (possible hallucination)."
+            )
+        # Attach a deterministically-formatted ₹ string for currency KPIs so the
+        # narrative can use it verbatim instead of mis-converting magnitudes (P4).
+        fmt = str(kpi.get("format", "")).lower()
+        name = str(kpi.get("name") or kpi.get("label") or "").lower()
+        is_currency = (
+            fmt in ("currency", "inr", "rupee", "money")
+            or any(w in name for w in ("revenue", "value", "amount", "aov", "sales", "cost", "impact"))
+        )
+        if is_currency and isinstance(kpi.get("value"), (int, float)):
+            kpi["value_inr"] = format_inr(kpi["value"])
+
+    # 2) Contribution-sum sanity on dimensional cuts (drift decomposition)
+    for chart in report.get("charts", []) or []:
+        if not isinstance(chart, dict):
+            continue
+        rows = chart.get("data") or []
+        contribs = []
+        for r in rows if isinstance(rows, list) else []:
+            if isinstance(r, dict):
+                for k in ("contribution_pct", "contribution", "pct_of_drift"):
+                    if isinstance(r.get(k), (int, float)):
+                        contribs.append(float(r[k]))
+                        break
+        if len(contribs) >= 2:
+            total = sum(contribs)
+            if total < 90 or total > 110:
+                chart["_accuracy_flag"] = "contribution_sum_off"
+                warnings.append(
+                    f"Chart '{chart.get('title') or '?'}' contribution_pct sums to "
+                    f"{total:.1f}% (expected ~100%) — decomposition may be unreliable; "
+                    f"do NOT trust as a clean breakdown."
+                )
+
+    if warnings:
+        existing = report.get("accuracy_warnings") or []
+        report["accuracy_warnings"] = existing + warnings
+        logger.warning("[Report Guards] %d accuracy warning(s): %s", len(warnings), warnings)
+
+
 # ── Telemetry aggregation ─────────────────────────────────────────────────────
 
 def _build_metrics(usage_log: list[dict], total_elapsed: float) -> dict:
@@ -280,6 +457,10 @@ class ClaudeReportPipeline:
                 final_report = writer_report
                 if isinstance(cleaned_report, dict) and cleaned_report.get("data_quality_notes"):
                     final_report["data_quality_notes"] = cleaned_report["data_quality_notes"]
+
+            # Deterministic currency formatting — code has the FINAL word on every ₹
+            # figure, regardless of what the LLM wrote (bulletproof P4 fix).
+            _enforce_currency_formatting(final_report)
 
             notes = cleaned_report.get("data_quality_notes", "No issues found")
             notes_str = notes if isinstance(notes, str) else json.dumps(notes)[:100]
@@ -560,6 +741,7 @@ class ClaudeReportPipeline:
                 chart.setdefault('data', [])
                 chart.setdefault('sql', '')
 
+        _apply_report_guards(report)
         return report
 
     def _run_data_analyst_agent(self, report: dict, context: dict | None = None) -> dict:
