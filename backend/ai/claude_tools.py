@@ -212,6 +212,72 @@ def _detect_line_child_fanout(sql: str) -> str:
     )
 
 
+def _autofix_mechanical_sql(sql: str) -> tuple[str, list[str]]:
+    """Deterministically fix UNAMBIGUOUS mechanical SQL errors the model repeatedly
+    emits, so they don't waste a repair round (SQL-robustness Step 1).
+
+    Only fixes things that are NEVER valid SQL (pure typos / required casts) — never
+    touches semantics. Returns (fixed_sql, list_of_fixes_applied) for audit logging.
+    """
+    fixes: list[str] = []
+    out = sql
+
+    # 1) Bogus tokens: WHERE2 / GROUP2 BY / ORDER2 BY / HAVING2 — never valid.
+    for bad, good in (
+        (r'\bWHERE2\b', 'WHERE'),
+        (r'\bGROUP2\s+BY\b', 'GROUP BY'),
+        (r'\bORDER2\s+BY\b', 'ORDER BY'),
+        (r'\bHAVING2\b', 'HAVING'),
+    ):
+        new = re.sub(bad, good, out, flags=re.IGNORECASE)
+        if new != out:
+            fixes.append(f"{bad} -> {good}")
+            out = new
+
+    # 2) ROUND(<expr>, n) where expr lacks a ::numeric/::decimal cast → add it.
+    #    Postgres ROUND(double precision, int) errors; ROUND(numeric, int) is fine.
+    def _fix_round(m):
+        inner, ndigits = m.group(1), m.group(2)
+        if '::numeric' in inner.lower() or '::decimal' in inner.lower():
+            return m.group(0)
+        # Only cast when it looks like an expression (has an operator/paren), not a bare column
+        # that might already be numeric — safe superset: always cast, it's a no-op on numeric.
+        return f"ROUND(({inner})::numeric, {ndigits})"
+    new = re.sub(r'ROUND\s*\(\s*([^,()]+(?:\([^()]*\)[^,()]*)*)\s*,\s*(\d+)\s*\)',
+                 _fix_round, out, flags=re.IGNORECASE)
+    if new != out:
+        fixes.append("added ::numeric cast inside ROUND(...)")
+        out = new
+
+    return out, fixes
+
+
+def _enrich_sql_error(error: str, sql: str) -> str:
+    """Append a SPECIFIC fix hint to a raw Postgres error so the SQL agent repairs
+    it in ONE retry instead of flailing (SQL-robustness Step 2)."""
+    e = (error or "").lower()
+    hint = ""
+    m = re.search(r'missing from-clause entry for table "(\w+)"', e)
+    if m:
+        a = m.group(1)
+        hint = (f" FIX: you referenced `{a}.<col>` but never joined a table aliased `{a}`. "
+                f"Either add the JOIN (e.g. JOIN sales_order {a} ON ...) or remove the `{a}.` reference. "
+                f"Common cause: using `so.` after only joining sales_order_line — join sales_order too.")
+    elif 'specified more than once' in e or 'table name' in e and 'more than once' in e:
+        hint = (" FIX: the same alias is used for two different tables. Give each table a UNIQUE alias "
+                "(e.g. sol, sol2) and update its column references accordingly.")
+    elif re.search(r'column "?(\w+)"? does not exist', e):
+        m2 = re.search(r'column "?(\w+)"? does not exist', e)
+        hint = (f" FIX: column '{m2.group(1)}' is NOT in the schema — do NOT guess column names. "
+                f"Use only columns shown in the DATABASE SCHEMA / metric dictionary in your system prompt.")
+    elif 'function round' in e and 'does not exist' in e:
+        hint = " FIX: cast the first arg of ROUND to numeric — ROUND(expr::numeric, n)."
+    elif 'must appear in the group by' in e:
+        hint = (" FIX: every non-aggregated SELECT column must be in GROUP BY. Use raw columns or "
+                "positional numbers (GROUP BY 1,2) — never aggregates or aliases in GROUP BY.")
+    return error + hint
+
+
 def _prevalidate_sql(sql: str) -> tuple[bool, str, str]:
     """Pre-validate SQL syntax before execution to catch common errors.
 
@@ -284,6 +350,12 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
                 sql[:200],
                 corrected_sql[:200],
             )
+
+        # Step 1a: Deterministic mechanical auto-fixes (typos/casts the model repeats),
+        # so they don't burn a repair round (SQL-robustness Step 1). Unambiguous only.
+        corrected_sql, _mech_fixes = _autofix_mechanical_sql(corrected_sql)
+        if _mech_fixes:
+            logger.info("[SQL Tool] Mechanical auto-fix for '%s': %s", purpose, _mech_fixes)
 
         # Step 1b: Non-blocking accuracy guard — surface known correctness
         # anti-patterns (esp. revenue fan-out / double-counting) WITH the result so
@@ -361,7 +433,7 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
         else:
             return json.dumps({
                 "success": False,
-                "error": result["error"],
+                "error": _enrich_sql_error(result["error"], corrected_sql),
                 "executed_sql": corrected_sql,
             })
 

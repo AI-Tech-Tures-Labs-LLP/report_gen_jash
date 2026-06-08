@@ -237,15 +237,27 @@ def _apply_report_guards(report: dict) -> None:
                 f"impossible — the source column likely has negative garbage values that must be "
                 f"filtered (WHERE col > 0). Value is WRONG."
             )
-        # 3b) Revenue/value exceeding total company revenue (RT-007 fan-out: 2.7× inflation)
-        if isinstance(val, (int, float)) and val > _COMPANY_TOTAL_REVENUE and any(
-            w in name for w in ("revenue", "sales", "value", "amount")
-        ) and "percent" not in str(kpi.get("format", "")).lower():
+        # 3b) Revenue/value exceeding total company revenue (RT-007 fan-out: 2.7× inflation).
+        # Precise: only fire when the SQL actually joins a fan-out CHILD table AND sums a
+        # line/order amount — the real fan-out signature. Do NOT flag legit tax-inclusive
+        # invoice totals (RT-013: total_invoice_value = subtotal+GST, 1:1 with order, ~₹11.6B
+        # legitimately > ₹11.3B order revenue). Headroom raised to 1.5× for tax/markup cases.
+        _sql_l = sql.lower()
+        _joins_child = any(t in _sql_l for t in (
+            "sales_order_line_diamond", "sales_order_line_gold",
+            "po_line_diamond", "po_line_gold", "job_card_diamond_lines"))
+        _sums_line_amt = bool(_re.search(r"sum\s*\(\s*[^)]*(line_total|total_amount|final_amount)", _sql_l))
+        _is_invoice_ctx = any(w in name for w in ("invoice", "tax", "gst", "billed")) or "total_invoice_value" in _sql_l
+        if (isinstance(val, (int, float)) and val > _COMPANY_TOTAL_REVENUE * 1.5
+                and any(w in name for w in ("revenue", "sales", "value", "amount"))
+                and "percent" not in str(kpi.get("format", "")).lower()
+                and not _is_invoice_ctx
+                and _joins_child and _sums_line_amt):
             kpi["_accuracy_flag"] = "revenue_exceeds_total"
             warnings.append(
                 f"KPI '{kpi.get('name') or kpi.get('label')}' = {val:,.0f} EXCEEDS total company "
-                f"revenue (~₹11.3B) — almost certainly FAN-OUT double-counting (a SUM across a "
-                f"diamond/gold child join repeats line revenue per child row). Value is INFLATED."
+                f"revenue (~₹11.3B) via a SUM across a diamond/gold child join — FAN-OUT "
+                f"double-counting (line revenue repeated per child row). Value is INFLATED."
             )
         # 3c) Fabricated magic-coefficient formula (RT-008: revenue * churn_prob * 0.32)
         if _re.search(r"\b(churn_prob|is_at_risk|risk_score|propensity)\b", sql, _re.IGNORECASE) or \

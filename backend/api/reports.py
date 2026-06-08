@@ -45,7 +45,10 @@ def report_endpoint(req: ReportRequest):
 
     from services.enhanced_pipeline import EnhancedReportPipeline
     pipeline = EnhancedReportPipeline(
-        enable_logging=True,
+        # DB logging (audit_trail / signal_detection_logs / graph_sql_mappings) is
+        # write-only — nothing reads it back, and it was producing INSERT-error spam.
+        # Disabled. Re-enable + run db/migrations/001 if an audit dashboard is built.
+        enable_logging=False,
         enable_signals=True,
         enable_optimization=True,
     )

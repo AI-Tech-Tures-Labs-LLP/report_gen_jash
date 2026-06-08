@@ -1411,7 +1411,196 @@ phantom-signals (inert, tables absent); telemetry-table migration; soft assumpti
 
 ---
 
-## TODO (FUTURE) — SQL-generation robustness (NOT accuracy; cost/speed/reliability)
+## SQL-ROBUSTNESS — Steps 1+2 IMPLEMENTED (2026-06-08); Layer 3 (Sonnet) deferred pending measurement
+Joel chose "Layers 1+2 first, measure, then decide." Boot-tested + live-DB verified.
+
+**Step 1 — deterministic mechanical auto-fix [`_autofix_mechanical_sql` in claude_tools.py]:** runs before
+pre-validation, fixes ONLY unambiguous typos/casts so they don't burn a repair round:
+  • `WHERE2`/`GROUP2 BY`/`ORDER2 BY`/`HAVING2` → valid keyword (these are never valid SQL).
+  • `ROUND(expr, n)` → `ROUND((expr)::numeric, n)` (the recurring `round(double precision,int)` error).
+  Verified: fixes the bad cases, leaves already-cast & clean queries UNTOUCHED (no false rewrites),
+  and the auto-fixed ROUND query runs on the live DB returning the correct 19.60. Every fix is logged
+  (audit). NOTE: duplicate-alias AUTO-RENAME deliberately NOT added yet (regex rewrite = corruption
+  risk) — handled instead via Step 2 feedback below.
+
+**Step 2 — enriched repair feedback [`_enrich_sql_error`]:** when a query still errors, append a SPECIFIC
+fix hint to the raw Postgres error so the agent repairs in ONE retry, not many:
+  • `missing FROM-clause for "so"` → "you referenced so. but didn't join sales_order so — add it / common
+    cause: used so. after only joining sales_order_line."
+  • duplicate alias → "give each table a unique alias (sol, sol2)..."
+  • `column X does not exist` → "X not in schema; don't guess — use the metric dictionary."
+  • `function round(double...)` → "cast first arg ::numeric."
+  • GROUP BY error → "non-aggregated SELECT cols must be in GROUP BY; use positional numbers."
+
+**MEASURE NEXT (Step 3 gate):** re-run SQL-heavy queries, count tool rounds before/after. Target: median
+rounds ~14 → ~6 and WHERE2/missing-FROM/ROUND errors gone from traces. Only escalate Agent 3 to Sonnet
+(Layer 3) if semantic errors (wrong joins, guessed cols) still burn rounds after this. No accuracy impact
+— purely syntactic/feedback; correct numbers unaffected.
+
+---
+
+### RT-010 (new) — "Gold karat mix and average gold rate trends by month" — + SQL-robustness measure
+**Date:** 2026-06-08. **Result: ✅ PASS (accuracy) + Steps 1+2 working (typos gone).**
+
+- Accuracy EXACT: 4 karats (10/14/18/22 Kt), Feb-2026 18Kt share 52.9%, Feb avg gold rate ₹11,756.38,
+  rate range ₹2,545–16,215. Gold is 1:1 with line (no fan-out); KPIs used COUNT(DISTINCT sol_id). Scope
+  correctly anchored to Feb 2026 (data end — Round 1 got 0 rows for Mar, pivoted to Feb). ✅
+- **SQL-robustness measure:** 17 rounds / 106s — still high, BUT the breakdown changed: ~13 rounds were
+  DISTINCT legit queries (1 per KPI/chart/table), only **2 actual errors** (one missing-FROM "solg",
+  one empty-Mar pivot). The recurring WHERE2 / ROUND-cast typos that flooded earlier traces are GONE —
+  Step-1 auto-fix ate them silently. So Steps 1+2 ARE working; remaining round count is "one query per
+  element" (by design), not error-flailing.
+- **Refined conclusion on Layer 3:** the bottleneck is now (a) one-query-per-KPI granularity and (b)
+  occasional missing-FROM semantic errors — NOT typos. Sonnet would help (a)+(b) somewhat, but a bigger
+  lever may be batching multiple KPIs per query. Keep Layer 3 deferred; the typo class is solved.
+
+---
+
+### RT-011 (curveball) — "Forecast next quarter's revenue" (no future data, no forecast model)
+**Date:** 2026-06-08. **Result: ⚠️ ACCEPTABLE — it forecasted (didn't refuse), but ALL projections are
+guard-flagged + QA-downgraded. Honest, transparent, not dangerous. Borderline-good.**
+
+- The model PRODUCED a Q2-2026 forecast (₹119 Cr base case) rather than refusing. The forecast VALUES
+  are projections typed as `SELECT <constant>` (KPI1 `SELECT ROUND(1190000000::numeric,2)`, KPI3
+  `SELECT 1680`, KPI5 `SELECT 'Stack Hunter App...'`, all charts `SELECT '...'`). NOT data-backed.
+- ✅ **Untraced-KPI guard fired on ALL 6 KPIs** ("no SQL FROM-clause — possible hallucination"). The
+  infrastructure correctly identified every forecast number as not-data-backed.
+- ✅ **QA scored 4/12 → verdict "CONDITIONAL"** (Round-3 verdict-tier fix working: QA's own REJECTED /
+  score-4 now displays CONDITIONAL, not a false APPROVED — exactly the RT-006 fix in action).
+- ✅ **Methodologically honest:** ran REAL historical queries first (Q1-2026 actual ₹1,503,052,703.92
+  ✅ exact, Q2-2025 actual ₹977,998,060.57 ✅ exact, quarterly trend, YoY, CAGR, seasonality), then
+  projected with labeled Base/Low/High scenarios. Q2-2026 confirmed EMPTY (0 rows) — so it's a
+  projection FROM verified history, not invented data.
+- Caveat: the forecast is presented fairly confidently in the prose; ideal would be an even stronger
+  "this is a projection, not actuals; no predictive model" disclaimer up top. But it IS labeled
+  forecast/base-case throughout and the guards + CONDITIONAL verdict signal non-actuals to the user.
+
+**Verdict:** ACCEPTABLE. Forecasting from real history with labeled scenarios + every projected KPI
+flagged untraced + a CONDITIONAL QA verdict is honest, defensible behavior — NOT the dangerous
+fabrication of RT-008 (which invented a churn_prob formula and presented it as fact). The guards
+turned a potentially-misleading ask into a transparently-caveated output. The layered defense works
+even on an out-of-scope request.
+
+**Optional future polish (not a bug):** a prompt rule for `intent==forecast` to lead with an explicit
+"projection, not actuals" banner. Low priority — current behavior is already safe + flagged.
+
+---
+
+### RT-012 (untouched layer) — "Raw material lot utilization — which lots nearly exhausted?" (CHAT path)
+**Date:** 2026-06-08. **Result: ✅ PASS — correct on a never-before-queried table layer.**
+
+- Routed to CHAT (Sonnet) — correct: it's a single specific lookup ("which lots near exhaustion"), not
+  a multi-KPI dashboard. Chat is the right path; no report needed.
+- Queried the RAW-MATERIALS layer (raw_material_lot_balance) — NEVER touched in any prior test.
+- Answer verified EXACT vs DB: RMD-05666 (LOT0107) = 96.97% used, 1.0 remaining, status 'Low' ✅;
+  exactly 5 items at 90–99% used ("nearly exhausted") ✅; RMD-05666 correctly the most critical ✅.
+- **Good schema-discovery recovery:** Round 1 guessed `raw_materials`/`lot_number` → schema validator
+  blocked it ("Table 'raw_materials' not found" + wrong_table_for_lot_number) → Round 2 introspected
+  information_schema to learn real columns → Round 3+ landed correct. The validator's hallucinated-
+  column guard worked, and the agent recovered properly instead of flailing. 7 rounds total.
+
+**Verdict:** schema/metric discipline holds on a totally new data layer outside the sales core. Strong
+generalization evidence.
+
+---
+
+### RT-013 (AR landmine) — "Payment collection status — paid vs outstanding vs overdue"
+**Date:** 2026-06-08. **Result: ✅ PASS (accuracy) — but exposed + fixed a GUARD FALSE-POSITIVE.**
+
+- All KPIs verified EXACT vs DB: paid 15,635, outstanding (unpaid+partial) 1,306, total outstanding
+  balance ₹824,088,437.72, collection rate 92.9%, total invoice value ₹11,606,013,279.14. Aging buckets,
+  top-15 outstanding customers all real. AR/payments layer handled correctly. ✅
+- **GUARD FALSE-POSITIVE found + fixed:** the `revenue_exceeds_total` guard flagged KPI4 invoice value
+  (₹11.6B > ₹11.3B) as fan-out. But it's LEGIT: `sales_invoices` is 1:1 with sales_order (16,941=16,941,
+  joined sum == raw sum, zero double-count), and `total_invoice_value = subtotal_before_tax + total_tax`
+  — so invoice value correctly exceeds order revenue by GST (~₹338M). The guard keyed only on
+  "value > ₹11.3B + name has 'value'" — too loose.
+  **FIX:** guard now fires ONLY when (a) val > 1.5× ceiling AND (b) SQL actually joins a diamond/gold
+  CHILD table AND (c) sums line_total/total_amount AND (d) NOT an invoice/tax context. Boot-tested:
+  RT-007 real fan-out STILL flagged ✅; RT-013 legit invoice value NOT flagged ✅. Precision restored.
+- The mechanical auto-fix also handled the `WHERE`-as-alias garbles in Rounds 1-2 gracefully (the
+  validator caught "Duplicate alias 'WHERE'" — a malformed query — and the agent recovered by Round 3).
+- QA "APPROVED (accuracy warnings)" at the time (due to the false-positive); after the fix this query
+  would be clean APPROVED.
+
+**Verdict:** AR data-quality class PASSES; the run hardened the fan-out guard against tax-inclusive
+false positives. Good outcome — accuracy correct AND a guard made more precise.
+
+---
+
+### RT-014 (HARDEST QUERY — 6 traps in one) — "Per hunter: revenue, margin %, gold/diamond cost split, avg fulfillment time, recommend category + evidence"
+**Date:** 2026-06-08. **Result: ✅ PASS — ALL SIX failure modes handled simultaneously. Definitive.**
+
+Deliberately stacks every bug class we fought. All verified EXACT vs live DB:
+| Component | Trap | Reported | Verified |
+|---|---|---|---|
+| Top hunter revenue | fan-out / double-count | ₹413,922,809.77 | ✅ EXACT (not inflated; < company total) |
+| Avg gross margin % | margin definition | 25.93 | ✅ 25.92 (sell−gold−diam−mak)/sell |
+| Avg fulfillment time | NEGATIVE lead-time landmine | 19.60 | ✅ EXACT (`WHERE days_to_fulfill > 0`) |
+| Gold-to-diamond cost ratio | 2ND-LEVEL FAN-OUT (diamond/gold child) | 2.95 | ✅ EXACT (used solp 1:1 cols, NO child join) |
+| Hunter count ≥5 orders | — | 22 | ✅ EXACT |
+| Recommend category + evidence | FABRICATION / unverified reasoning | grounded | ✅ real per-hunter category-margin queries (R15-16), not invented |
+
+- Scope correctly all-history (no time qualifier → all-time, data-anchored). ✅
+- NO guard false-positives, NO fan-out (the gold/diamond split correctly used pricing 1:1 columns).
+- Recommendations built from actual `recommended_category` margin/revenue queries WITH evidence rows —
+  not a fabricated formula. QA clean APPROVED 11/12.
+- 17 rounds (a few alias/syntax retries, self-recovered) — the typo auto-fix + enriched-error feedback
+  kept it moving; no WHERE2/ROUND-cast flailing.
+
+**VERDICT: every defense built across Rounds 1-5 + SQL Steps 1-2 held SIMULTANEOUSLY on the single
+hardest query the schema allows. Fan-out avoided, negatives filtered, margin real, recommendations
+grounded, scope correct, no false guard hits. This is the definitive pass.**
+
+---
+
+## ═══ ENGAGEMENT COMPLETE (2026-06-08) ═══
+From a 6/10 with multiple silent wrong-number bugs → DB-verified-correct across 14 re-tests + the
+hardest possible composite query. Defenses are universal (pattern + schema-anchored), self-surfacing,
+and proven to generalize to unseen questions. Accuracy push DONE. Remaining items are non-critical:
+SQL batching (speed), telemetry migration, forecast disclaimer banner.
+
+---
+
+## DB LOGGING DISABLED (2026-06-08, FINAL) — error spam fixed by REMOVING the dead feature
+**Decision (Joel): the DB logging is unused — disable it, don't feed it tables.** Correct call.
+- TRACED it: `/report` (api/reports.py) and report-intent `/chat` (api/chat.py) construct
+  `EnhancedReportPipeline(enable_logging=True)` → it creates a `LoggingAgent` that INSERTs into
+  audit_trail / signal_detection_logs / graph_sql_mappings on every run. (NOT the dead orchestrator —
+  EnhancedReportPipeline IS the live wrapper around ClaudeReportPipeline.)
+- WRITE-ONLY confirmed: `get_logs`/`get_signals`/`get_sql_mappings` exist in enhanced_pipeline.py but
+  NOTHING calls them — no endpoint, no frontend, no dashboard reads these tables. The frontend metrics
+  panel comes from `_build_metrics` (separate in-memory path), NOT these tables. Orphaned scaffolding.
+- FIX: set `enable_logging=False` at both call sites (api/reports.py:48, api/chat.py:129) AND the
+  constructor default (enhanced_pipeline.py:48). Every `if self.logging_agent:` guard now skips → no
+  INSERTs → no spam → no orphan writes. Dropped the 11 tables I'd briefly created (empty; business data
+  untouched, sales_order still 18,500). App imports OK.
+- `enable_signals=True` KEPT — that's signal DETECTION (feeds the report), separate from DB logging.
+- Reversible: to enable an audit dashboard later, flip enable_logging back on + re-run
+  db/migrations/001_add_logging_tables.sql. Also makes P7 phantom-signals fully moot (won't persist).
+
+### (superseded) TELEMETRY MIGRATION RUN (2026-06-08) — error spam fixed, logging now persists
+The `logging_agent` INSERT-error spam (`UndefinedTable: audit_trail / signal_detection_logs /
+graph_sql_mappings does not exist`) seen after EVERY report is FIXED.
+- Root cause: migration `db/migrations/001_add_logging_tables.sql` (creates all 11 logging/intelligence
+  tables, idempotent, indexed) was never run against the master DB.
+- Verified master DB = Postgres 17.4, `gen_random_uuid()` native (no extension needed). Ran the migration
+  → all 11 tables created (agent_execution_logs, graph_sql_mappings, sql_execution_logs,
+  insight_generation_logs, signal_detection_logs, drift_detection_logs, audit_trail, agent_configurations,
+  query_cache_metadata, performance_metrics, schema_migrations); 9 agent_configurations seeded;
+  schema_migrations row '001' present.
+- Verified schema↔agent COMPATIBILITY: simulated the exact INSERTs logging_agent runs (audit_trail
+  pipeline_start, signal_detection_logs per-signal, graph_sql_mappings per-chart) — all 3 succeed, rows
+  land, test rows cleaned up. So the original audit's "migration ↔ agent out of sync" risk is resolved
+  for these three; the agent now PERSISTS telemetry instead of erroring.
+- NET: next report run produces ZERO INSERT-error spam + actually saves the cost/usage/signal telemetry
+  the app already computes. NOTE: the OLD `backup_v2_inventory` DB still lacks these tables (only master
+  was migrated); and P7 phantom-signals will now actually PERSIST to signal_detection_logs — revisit the
+  phantom-signal scoping (ranked-bar/empty-week false signals) now that they're no longer inert.
+
+---
+
+## TODO (FUTURE) — SQL-generation robustness (further, if Steps 1+2 insufficient)
 Tracked from RT-005: the Haiku SQL agent repeatedly re-emits the SAME malformed SQL
 (`DuplicateAlias` "table sol specified more than once", `missing FROM-clause entry`) across many
 rounds before recovering — RT-005 took 13 rounds / 280s, one query 117s. Final numbers correct, so

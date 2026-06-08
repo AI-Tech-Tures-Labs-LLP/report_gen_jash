@@ -126,7 +126,7 @@ def ask_endpoint(req: QuestionRequest):
                 from services.enhanced_pipeline import EnhancedReportPipeline
                 yield f"data: {_json.dumps({'stage': 'report_generating', 'data': {'message': 'Generating full report...'}})}\n\n"
                 pipeline = EnhancedReportPipeline(
-                    enable_logging=True, enable_signals=True, enable_optimization=True,
+                    enable_logging=False, enable_signals=True, enable_optimization=True,
                 )
                 result = asyncio.run(pipeline.generate(
                     question=req.question, provider="claude", force_refresh=False,
