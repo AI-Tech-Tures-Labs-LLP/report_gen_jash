@@ -108,6 +108,9 @@ export default function ReportPage() {
         const v = k.value;
         if (v === null || v === undefined || v === "") return false;
         if (String(v).trim().toLowerCase() === "nan") return false;
+        // NOTE: the backend now re-executes each KPI's SQL and OWNS the value
+        // (label KPIs carry their real name, e.g. "Round"), so no special-case
+        // hiding of "which/top/best" KPIs is needed — just show what the API sends.
         return true;
       });
 

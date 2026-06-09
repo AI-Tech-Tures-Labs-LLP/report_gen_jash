@@ -155,6 +155,168 @@ def _enforce_currency_formatting(report: dict) -> None:
                     ins[f] = _fix_prose(ins[f])
 
 
+def _recompute_from_sql(report: dict) -> dict:
+    """FIX A — code owns the VALUES, not the LLM.
+
+    The SQL agent records each KPI/chart's `sql` AND a hand-typed `value`/`data`. The
+    hand-typed copy is unreliable (model misfiles values during final-JSON assembly →
+    e.g. a 'Top Shape' KPI left as the placeholder 0, or `SQL:(none)`). This pass
+    RE-EXECUTES each element's recorded SQL in code and OVERWRITES value/data from the
+    real DB result — so the number/label the user sees is always exactly what the SQL
+    returns, never what the model typed. Deterministic; no model in the value path.
+
+    Conservative by design:
+    - Only acts when a usable `sql` (with a FROM clause) is present. If sql is missing
+      ('SELECT <const>' or none), it's left as-is and the existing guards flag it.
+    - KPI: takes the first column of the single row as `value` (number or text label).
+    - Chart/table: replaces `data` with the executed rows.
+    - On any SQL error, leaves the model's value untouched + records a note (never crashes).
+    """
+    from db.executor import execute_sql  # local import (avoids top-level cycle)
+    from decimal import Decimal as _Dec
+
+    def _jsonable(v):
+        # Decimal → float so JSON-native + the currency formatter's isinstance(int,float) works.
+        if isinstance(v, _Dec):
+            return float(v)
+        return v
+
+    def _jsonable_rows(rows):
+        return [{k: _jsonable(val) for k, val in r.items()} for r in rows if isinstance(r, dict)]
+
+    def _has_from(sql) -> bool:
+        return bool(sql) and _re.search(r"\bfrom\b", str(sql), _re.IGNORECASE) is not None
+
+    notes: list[str] = []
+
+    # KPIs → single scalar/label value
+    for kpi in report.get("kpis", []) or []:
+        if not isinstance(kpi, dict):
+            continue
+        sql = (kpi.get("sql") or kpi.get("executed_sql") or "").strip()
+        if not _has_from(sql):
+            continue  # no real query to trust — leave model value, guards will flag
+        try:
+            res = execute_sql(sql)
+        except Exception as exc:  # pragma: no cover - defensive
+            notes.append(f"KPI '{kpi.get('label') or kpi.get('id')}' recompute error: {exc}")
+            continue
+        if res.get("success") and res.get("data"):
+            row = res["data"][0]
+            cols = res.get("columns") or list(row.keys())
+            # Prefer a column literally named 'value'; else first column.
+            col = "value" if "value" in row else (cols[0] if cols else None)
+            if col is not None:
+                new_val = row.get(col)
+                if new_val is not None:
+                    kpi["value"] = _jsonable(new_val)  # code owns it — number OR text label
+        elif not res.get("success"):
+            notes.append(f"KPI '{kpi.get('label') or kpi.get('id')}' SQL failed on recompute")
+
+    # Charts + table → row data
+    for chart in (report.get("charts", []) or []):
+        if not isinstance(chart, dict):
+            continue
+        sql = (chart.get("sql") or chart.get("executed_sql") or "").strip()
+        if not _has_from(sql):
+            continue
+        try:
+            res = execute_sql(sql)
+        except Exception:
+            continue
+        if res.get("success") and isinstance(res.get("data"), list) and res["data"]:
+            chart["data"] = _jsonable_rows(res["data"][:50])
+
+    tbl = report.get("table")
+    if isinstance(tbl, dict):
+        sql = (tbl.get("sql") or tbl.get("executed_sql") or "").strip()
+        if _has_from(sql):
+            try:
+                res = execute_sql(sql)
+                if res.get("success") and isinstance(res.get("data"), list) and res["data"]:
+                    tbl["data"] = _jsonable_rows(res["data"][:50])
+            except Exception:
+                pass
+
+    if notes:
+        report["_recompute_notes"] = notes
+        logger.info("[Recompute] %d note(s): %s", len(notes), notes)
+    return report
+
+
+_MATERIAL_TOTAL_CACHE: dict[str, float] = {}
+
+
+def _live_material_total(material: str):
+    """Re-derive the canonical all-time diamond/gold total VALUE from the live DB (no
+    hardcoded number — survives data changes). = SUM(amount_per_unit * quantity) with NO
+    fan-out (pricing column is 1:1 with the line). Cached per process; fail-safe → None."""
+    if material not in ("diamond", "gold"):
+        return None
+    if material in _MATERIAL_TOTAL_CACHE:
+        return _MATERIAL_TOTAL_CACHE[material]
+    val = None
+    try:
+        from db.executor import execute_sql
+        col = f"{material}_amount_per_unit"
+        sql = (f"SELECT SUM(solp.{col} * solp.quantity) AS v "
+               f"FROM sales_order_line_pricing solp "
+               f"JOIN sales_order_line sol ON solp.sol_id = sol.sol_id "
+               f"JOIN sales_order so ON sol.so_id = so.so_id "
+               f"WHERE so.status = 'closed'")
+        res = execute_sql(sql)
+        if res.get("success") and res.get("data") and res["data"][0].get("v") is not None:
+            val = float(res["data"][0]["v"])
+    except Exception:
+        val = None
+    _MATERIAL_TOTAL_CACHE[material] = val
+    return val
+
+
+def _drop_broken_kpis(report: dict) -> None:
+    """DETERMINISTIC removal of un-renderable KPI cards (code, not prompt — the BA
+    keeps creating fragile 'Top X' KPIs despite the prompt rule, and they render as 0).
+
+    Drops a KPI in-place when its value is clearly broken/unrenderable:
+      • contains a leftover TO_CHAR format mask ('#,##', '9,99', '999,999') — the model
+        built a display string with a malformed mask → garbage like 'Round (₹ #,##,##,###)';
+      • is a "which/top/best X" ranking KPI whose value isn't a clean scalar (text/0/garbage).
+    The ranking these KPIs tried to show ALWAYS exists in a ranked chart (e.g. 'Revenue by
+    Shape'), so removing the card loses no information — it just stops showing a 0/garbage card.
+    """
+    if not isinstance(report, dict):
+        return
+    kpis = report.get("kpis")
+    if not isinstance(kpis, list):
+        return
+    kept, dropped = [], []
+    for kpi in kpis:
+        if not isinstance(kpi, dict):
+            kept.append(kpi); continue
+        val = kpi.get("value")
+        name = str(kpi.get("name") or kpi.get("label") or "").lower()
+        sval = str(val) if val is not None else ""
+        # (a) leftover format-mask garbage in the value
+        mask_garbage = bool(_re.search(r"[#9]\s*,\s*[#9]{1,2}\s*,", sval)) or "#,##" in sval
+        # (b) ranking KPI ("top/which/best/highest/lowest/leading X") with a non-clean-scalar value
+        is_ranking = any(w in name for w in (
+            "top ", "which ", "best ", "highest ", "lowest ", "leading ", "by revenue", "by margin")) \
+            and any(w in name for w in ("shape", "quality", "vendor", "category", "product", "hunter",
+                                        "customer", "karat", "colour", "color", "territory", "channel"))
+        bad_ranking_value = is_ranking and (
+            val in (0, "0", "", None) or mask_garbage
+        )
+        if mask_garbage or bad_ranking_value:
+            dropped.append(kpi.get("name") or kpi.get("label") or "?")
+            continue
+        kept.append(kpi)
+    if dropped:
+        report["kpis"] = kept
+        report.setdefault("_dropped_kpis", []).extend(dropped)
+        logger.warning("[Drop KPIs] removed %d un-renderable KPI(s): %s "
+                       "(ranking is shown in the charts instead)", len(dropped), dropped)
+
+
 def _apply_report_guards(report: dict) -> None:
     """Annotate the SQL-agent report with deterministic accuracy warnings.
 
@@ -196,6 +358,17 @@ def _apply_report_guards(report: dict) -> None:
         )
         if is_currency and isinstance(kpi.get("value"), (int, float)):
             kpi["value_inr"] = format_inr(kpi["value"])
+        # "which/top/best X" KPI expects a TEXT label as value; a 0/blank/numeric value
+        # means the label was lost (2-column query collapsed to 0). Flag it.
+        _label_kpi = any(w in name for w in ("top performing", "top ", "which ", "best ", "highest ", "lowest ", "leading "))
+        _v = kpi.get("value")
+        if _label_kpi and (_v in (0, "0", "", None) or isinstance(_v, (int, float))):
+            kpi["_accuracy_flag"] = "label_kpi_lost"
+            warnings.append(
+                f"KPI '{kpi.get('name') or kpi.get('label')}' asks for a name/label (which/top/best) "
+                f"but its value is {_v!r} — the text answer was lost (likely a 2-column query collapsing "
+                f"to 0). The KPI should return the NAME (e.g. 'Round') as a single `value` column."
+            )
 
     # 2) Contribution-sum sanity on dimensional cuts (drift decomposition)
     for chart in report.get("charts", []) or []:
@@ -259,6 +432,28 @@ def _apply_report_guards(report: dict) -> None:
                 f"revenue (~₹11.3B) via a SUM across a diamond/gold child join — FAN-OUT "
                 f"double-counting (line revenue repeated per child row). Value is INFLATED."
             )
+        # 3b-ii) DIAMOND/GOLD total sanity — UNIVERSAL, value-independent: compare the KPI
+        # against the CANONICAL total RE-DERIVED FROM LIVE DATA right now (not a hardcoded
+        # number — survives data changes). True diamond/gold value =
+        # SUM(child_amount_per_unit * quantity) with NO fan-out. If the KPI is materially
+        # ABOVE the live truth (>20%), it was fanned-out or mis-multiplied. (We only flag
+        # OVER, never under — a smaller scoped total is legitimate.)
+        _mat = "diamond" if "diamond" in name else ("gold" if "gold" in name else None)
+        _mat_total = (_mat is not None
+                      and any(w in name for w in ("total", "all ", "overall", "revenue", "value"))
+                      and not any(w in name for w in ("margin", "%", "per ", "avg", "average", "count", "by ")))
+        if (isinstance(val, (int, float)) and _mat_total
+                and "percent" not in str(kpi.get("format", "")).lower()):
+            true_total = _live_material_total(_mat)  # re-derived from DB, cached
+            if true_total and val > true_total * 1.20:
+                kpi["_accuracy_flag"] = "material_total_inflated"
+                warnings.append(
+                    f"KPI '{kpi.get('name') or kpi.get('label')}' = {val:,.0f} but the true all-time "
+                    f"{_mat} value (re-derived live from the DB = SUM({_mat}_amount_per_unit * quantity), "
+                    f"no fan-out) is {true_total:,.0f}. The KPI is inflated ~{val/true_total:.1f}× — likely "
+                    f"fanned-out across the {_mat} child join or wrong multiplier. Recompute without the "
+                    f"child join (use sales_order_line_pricing.{_mat}_amount_per_unit * quantity)."
+                )
         # 3c) Fabricated magic-coefficient formula (RT-008: revenue * churn_prob * 0.32)
         if _re.search(r"\b(churn_prob|is_at_risk|risk_score|propensity)\b", sql, _re.IGNORECASE) or \
            _re.search(r"\*\s*0\.\d+\b", sql):
@@ -282,6 +477,61 @@ def _apply_report_guards(report: dict) -> None:
             "Component %s sum to EXACTLY 100.00% — independently-measured components rarely do; "
             "they may have been adjusted/normalized (MASKED-MATH). Verify each against its source."
         )
+
+    # 5) ATTRIBUTE-SPLIT double-count (the diamond-quality bug): a chart that breaks a value
+    # down BY a child attribute (shape/quality/karat) whose parts SUM TO MORE than the matching
+    # grand-total KPI means the line-level total was attributed to each attribute value (~2× too
+    # high). The correct split (child row's own amount) sums to exactly the total.
+    def _num(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+    # Find a grand-total "diamond/gold value" KPI to compare against.
+    totals = {}
+    for k in (report.get("kpis", []) or []):
+        if not isinstance(k, dict):
+            continue
+        kn = str(k.get("name") or k.get("label") or "").lower()
+        kv = _num(k.get("value"))
+        if kv is None:
+            continue
+        for mat in ("diamond", "gold"):
+            if mat in kn and any(w in kn for w in ("total", "all")) and not any(
+                w in kn for w in ("shape", "quality", "karat", "colour", "color", "carat", "by ")):
+                totals.setdefault(mat, kv)
+    for chart in (report.get("charts", []) or []):
+        if not isinstance(chart, dict):
+            continue
+        title = str(chart.get("title") or "").lower()
+        rows = chart.get("data") or []
+        if not isinstance(rows, list) or len(rows) < 2:
+            continue
+        # Only attribute-split charts of a material value, by an attribute dimension.
+        mat = "diamond" if "diamond" in title else ("gold" if "gold" in title else None)
+        is_attr_split = any(w in title for w in ("shape", "quality", "karat", "colour", "color", "carat"))
+        if not mat or mat not in totals or not is_attr_split:
+            continue
+        # Sum the numeric value column across rows.
+        parts = 0.0
+        n = 0
+        for r in rows:
+            if isinstance(r, dict):
+                v = _num(r.get("value"))
+                if v is None:  # try first numeric field
+                    for vv in r.values():
+                        if _num(vv) is not None and not isinstance(vv, bool):
+                            v = _num(vv); break
+                if v is not None:
+                    parts += v; n += 1
+        if n >= 2 and totals[mat] > 0 and parts > totals[mat] * 1.15:
+            chart["_accuracy_flag"] = "attribute_split_double_count"
+            warnings.append(
+                f"Chart '{chart.get('title')}' splits {mat} value by an attribute, but its parts "
+                f"sum to {parts:,.0f} — MORE than total {mat} value ({totals[mat]:,.0f}). The "
+                f"line-level total was attributed to each attribute (DOUBLE-COUNT). Use the child "
+                f"row's OWN amount (sales_order_line_{mat}.{mat}_amount_per_unit); parts must sum to total."
+            )
 
     if warnings:
         existing = report.get("accuracy_warnings") or []
@@ -822,6 +1072,15 @@ class ClaudeReportPipeline:
                 chart.setdefault('data', [])
                 chart.setdefault('sql', '')
 
+        # FIX A: code re-executes each element's SQL and owns the value/data — the
+        # model's hand-typed values are NOT trusted (kills the 'Top Shape=0' /
+        # SQL:(none) class of misfiled-value bugs). Runs BEFORE the guards so they
+        # validate the real, code-owned values.
+        _recompute_from_sql(report)
+        # Code-level removal of un-renderable ranking/format-mask KPIs (the BA keeps
+        # creating "Top Shape" cards despite the prompt; they render as 0). Ranking is
+        # preserved in the charts, so dropping the broken card loses nothing.
+        _drop_broken_kpis(report)
         _apply_report_guards(report)
         return report
 

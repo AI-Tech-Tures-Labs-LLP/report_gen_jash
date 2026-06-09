@@ -405,7 +405,18 @@ When `intent_mode` is STANDARD_REPORT, produce the existing report structure:
 - 1 Detail table
 - 6–8 insight topics for the Report Writer to expand into full insights
 
-KPI QUALITY RULES: Each KPI must be a single scalar. BANNED labels: Growth, Trend, Distribution, Breakdown.
+KPI QUALITY RULES: Each KPI must be a single NUMERIC or PERCENT scalar (a clean number the card can
+display directly — total revenue, average margin %, order count, average order value, total units).
+BANNED labels: Growth, Trend, Distribution, Breakdown.
+
+⛔ DO NOT create "which/top/best X" KPIs (e.g. "Top Shape by Revenue", "Top Quality", "Best Vendor",
+"Highest-Margin Category"). These need a NAME + a number crammed into one card, which renders
+unreliably (often shows 0). A #1-ranking answer belongs in a CHART, not a KPI card — and you are
+already creating ranked charts (e.g. "Revenue by Shape") that show the #1 item at the top. So:
+  • KPI cards = pure scalars only (numbers/percentages).
+  • "Which/top/best" questions → answer with a ranked bar/horizontalBar CHART, never a KPI.
+  • If the user's headline is "top X", still make the KPIs scalar totals and let the ranked chart
+    surface the winner. Do NOT put a shape/quality/vendor/category NAME as a KPI value.
 
 ### QUESTION-ALIGNMENT RULES (CRITICAL)
 The report MUST be laser-focused on the user's question. Follow these rules:
@@ -670,7 +681,14 @@ GROUP BY RULES — READ FIRST, THESE ARE THE MOST COMMON MISTAKES:
 SCHEMA AND JOINS:
 - Use ONLY tables and columns present in the schema below
 - Follow documented JOIN chains — never guess a join path
-- KPI queries → exactly 1 row, 1 numeric value
+- KPI queries → exactly 1 row, ONE column aliased `value`. The `value` may be a NUMBER
+  (e.g. total revenue) OR a TEXT label when the KPI asks "which/top/best ..." (e.g. "Top
+  Performing Shape" → value = 'Round', NOT a 2-column shape+revenue result).
+  • For a "which/top X by Y" KPI, return the X NAME as `value`:
+        SELECT shape AS value FROM ... GROUP BY shape ORDER BY SUM(...) DESC LIMIT 1
+    (optionally append the figure into the text: SELECT shape || ' (₹' || ... || ')' AS value).
+  • NEVER return a 2-column (label, metric) result for a KPI — the card shows ONE value, so a
+    2-column result collapses to 0/blank. One column named `value`, one row. Always.
 - Chart queries → 2+ columns (label + value), multiple rows
 - Dimensional cut queries → entity_name + current + baseline + delta + txn_count + contribution_pct
 
@@ -769,22 +787,61 @@ BUSINESS RULES:
         SELECT sold.shape, SUM(solp.line_total)              -- line_total repeated per diamond row
         FROM sales_order_line_diamond sold
         JOIN sales_order_line_pricing solp ON sold.sol_id = solp.sol_id ...   → 2.5× inflated
-  • CORRECT — to attribute VALUE to a diamond attribute, use the diamond row's OWN amount:
-        revenue/value by diamond = SUM(sold.diamond_amount_per_unit * sol.quantity)
-        (sales_order_line_diamond.diamond_amount_per_unit is the per-row diamond value)
-  • CORRECT — for gold attribute value, use sales_order_line_gold's own gold amount column.
-  • RULE: NEVER SUM a line-level or order-level amount (line_total, total_amount) across a join to
-    a *_diamond or *_gold child table. Use the child table's own per-unit amount, OR pre-aggregate
-    line revenue to ONE row per line (e.g. in a CTE) BEFORE joining the child for grouping only.
 
-- GOLD / DIAMOND / MAKING COMPONENT VALUE (for cost/margin breakdowns):
+═══════════════════════════════════════════════════════════════════════════════
+🔑 UNIVERSAL RULE — VALUE *BY A CHILD ATTRIBUTE* vs VALUE *TOTAL* (read carefully — two
+   different columns; mixing them silently DOUBLE-COUNTS by ~2×):
+
+  There are TWO "diamond_amount_per_unit" columns and they mean DIFFERENT things:
+    • sales_order_line_pricing.diamond_amount_per_unit = the WHOLE LINE's diamond total
+      (ONE number per order line — the sum of all diamonds on that line).
+    • sales_order_line_diamond.diamond_amount_per_unit  = ONE diamond's value (MANY rows
+      per line; each row carries its OWN shape/quality AND its OWN amount).
+    (Same pattern for gold: sales_order_line_gold has per-karat rows with their own amount.)
+
+  ➤ For a GRAND TOTAL or a COMPONENT breakdown (gold vs diamond vs making of the whole line),
+    use the LINE-LEVEL pricing column — it's 1:1 with the line, no fan-out:
+        total diamond value = SUM(solp.diamond_amount_per_unit * solp.quantity)
+
+  ➤ For value BROKEN DOWN BY A CHILD ATTRIBUTE (revenue/value by diamond SHAPE, QUALITY,
+    CARAT, SIZE — or by gold KARAT/COLOUR), you MUST use the CHILD ROW's OWN amount,
+    because only the child row knows which attribute that value belongs to:
+        value by quality = SUM(sold.diamond_amount_per_unit * sol.quantity)
+                           FROM ...sales_order_line_diamond sold... GROUP BY sold.quality
+        value by karat   = SUM(solg.gold_amount_per_unit  * sol.quantity)
+                           FROM ...sales_order_line_gold solg...    GROUP BY solg.gold_kt
+
+  ⚠️ NEVER attribute the LINE-LEVEL total (solp.diamond_amount_per_unit, or line_total) to a
+     child attribute. A line often has diamonds of MULTIPLE qualities/shapes — assigning the
+     whole line's total to each quality present DOUBLE-COUNTS (~2×). Use the per-row child
+     amount, which already splits correctly.
+
+  ✅ SELF-CHECK: the per-attribute parts MUST SUM to the grand total. If revenue-by-quality
+     sums to MORE than total diamond revenue, you double-counted — switch to the child row's
+     own amount. (e.g. Σ(quality revenues) must equal SUM of all diamond rows' amounts.)
+═══════════════════════════════════════════════════════════════════════════════
+
+  • RULE: NEVER SUM a line-level or order-level amount (line_total, total_amount,
+    solp.diamond_amount_per_unit) across a child join to GROUP BY a child attribute.
+    Use the child table's OWN per-row amount column.
+
+  ⚠️ MULTIPLIER RULE — value = amount × sales_order_line.quantity, NEVER × pieces_per_unit:
+    The per-row `diamond_amount_per_unit` (and gold amount) is ALREADY the per-UNIT value (it
+    already accounts for the stones on that row). To get revenue you multiply by the ORDER LINE's
+    `sol.quantity` (units sold), NOT by `pieces_per_unit` (stones per unit — that's already baked in).
+        CORRECT:  SUM(sold.diamond_amount_per_unit * sol.quantity)
+        WRONG:    SUM(sold.diamond_amount_per_unit * sold.pieces_per_unit)   ← inflates ~6×
+    Sanity: total diamond value is a FRACTION of total revenue (~₹1.9B of ~₹11.3B). If your diamond
+    total approaches or exceeds total company revenue, you used the wrong multiplier — fix it.
+
+- GOLD / DIAMOND / MAKING COMPONENT VALUE (for cost/margin breakdowns of the WHOLE line — NOT
+  split by shape/quality):
     • USE the 1:1 columns ON sales_order_line_pricing — they are per-line, NO fan-out:
       gold value = SUM(solp.gold_amount_per_unit * solp.quantity);
       diamond value = SUM(solp.diamond_amount_per_unit * solp.quantity);
       making value = SUM(solp.making_charges_per_unit * solp.quantity).
-    • Do NOT join sales_order_line_diamond/_gold for component VALUE — that fans out (2-3×).
-      Only join the child table when you need a child-only ATTRIBUTE (diamond shape/quality/carats),
-      and then SUM the child's OWN amount column, never line_total.
+    • This is for the GRAND component split only. The moment you break diamond/gold value down
+      BY shape/quality/karat, switch to the CHILD row's own amount (see UNIVERSAL RULE above).
 
 ⚠️ COMPONENT BREAKDOWNS — compute each component INDEPENDENTLY; do NOT force a round 100%:
   When breaking a value into parts (e.g. margin/cost = gold% + diamond% + making% of base price),

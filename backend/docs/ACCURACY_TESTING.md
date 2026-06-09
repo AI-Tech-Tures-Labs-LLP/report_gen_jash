@@ -1629,7 +1629,212 @@ shows; greeting/off-topic/refused → NO report offer. Verified logic; React reb
 
 ---
 
-## TODO (FUTURE) — SQL-generation robustness (further, if Steps 1+2 insufficient)
+### RT-015 — "Diamond Shape & Quality Performance" — LABEL-KPI showing 0 bug (Joel spotted in UI)
+**Date:** 2026-06-08. **Result: display bug found + fixed (NOT an accuracy bug).**
+
+- Symptom: KPI cards "Top Performing Shape by Revenue" and "Top Performing Quality by Revenue" showed
+  **0** on the dashboard. The DATA was correct (trace: agent computed Shape=Round ₹6.2B, Quality=EF
+  VVS-VS ₹2.3B; underlying revenue ₹1.92B verified earlier). The text answer just never reached the card.
+- Root cause: these are TEXT/label KPIs ("which shape?"), but the agent followed the old rule "KPI =
+  1 numeric value" and returned a 2-COLUMN result (shape, revenue). A KPI card shows ONE value → the
+  2-column result collapsed to 0. (The fan-out gate + the WHERE/DuplicateAlias retries also made this
+  a 6-round, 116s slog, leaving the label-KPIs mis-shaped at final assembly.)
+- FIX (two layers): (1) SQL-agent prompt rule [claude_prompts.py]: a "which/top/best X" KPI must return
+  the NAME as a single column aliased `value` (e.g. `SELECT shape AS value ... ORDER BY SUM() DESC LIMIT 1`),
+  NEVER a 2-column (label, metric) result. (2) Code guard [_apply_report_guards]: flag `label_kpi_lost`
+  when a "which/top/best" KPI has a 0/blank/numeric value (text answer lost). Verified: flags the value=0
+  case, does NOT flag a correct 'Round (₹6.2B)' text value or a normal numeric revenue KPI. App OK.
+- Note: revenue/margin/orders KPIs in this report were all CORRECT (₹1.92B diamond rev, 35% margin,
+  32,672 orders) — only the two label KPIs rendered 0. Display/plumbing fix, accuracy intact.
+
+**RT-015b (re-run after the prompt+guard fix) — STILL showed 0. Root cause refined + frontend fix added.**
+- This time the SQL agent CORRECTLY produced `Top Shape by Revenue = Round` (prompt fix worked at SQL
+  stage — traceability shows "Round"). But the CARD still rendered 0 → the value is lost AFTER the SQL
+  stage, in the model's FINAL-JSON assembly: it ran the right query, logged "Round", but wrote a
+  numeric/0 into the KPI's `value` field. The Report Writer (Agent 5) only deep-copies + grafts
+  narrative, so it preserves whatever value was there (the 0). The frontend `formatKPIValue("Round")`
+  correctly returns "Round" — so the formatter was never the bug; the value reaching it is genuinely 0.
+- This is the SQL agent being unreliable at hand-assembling final JSON for label KPIs — prompt steers
+  but doesn't guarantee. Re-running the query in code to backfill the name is complex (query
+  reconstruction), so the RELIABLE fix is presentational + honest:
+  **FRONTEND [ReportPage.jsx, React rebuilt]:** a "top/which/best/highest/lowest/leading" KPI whose
+  value is numeric/0 (text answer lost) is HIDDEN rather than shown as a misleading "0". Verified:
+  hides `Top Shape=0`, shows `Top Shape='Round'`, never hides normal numeric KPIs (revenue/margin).
+  Backend guard still flags `label_kpi_lost` for observability.
+- HONEST STATUS: a missing KPI card is better than a wrong "0", but the deeper fix (guarantee the label
+  KPI carries its name) needs either Agent-2 to stop emitting fragile label-KPIs, or a code backfill.
+  Tracked. Accuracy of the report's NUMBERS is unaffected — this only ever concerned 2 label cards.
+
+---
+
+## FIX A — CODE OWNS KPI/CHART VALUES (2026-06-08) — structural fix for misfiled-value class
+**Root cause (Joel pinpointed):** the SQL agent runs ~13 queries then HAND-TYPES one big JSON,
+misfiling values during assembly — e.g. 'Top Shape' KPI ran the right query (logged "Round") but the
+final JSON kept the placeholder `0`; also the `SQL:(none)` and hardcoded-`SELECT 324` KPIs are the same
+disease (model trusted to compute AND transcribe). Prompt steering ≠ guarantee (same lesson as currency
+formatter & fan-out gate: code must enforce).
+
+**Fix [`_recompute_from_sql()` in claude_multi_agent.py, runs after SQL agent, before guards]:**
+The agent already RECORDS each element's `sql`. We stop trusting its hand-typed value/data and
+RE-EXECUTE that sql in code, overwriting `value`/`data` from the real DB result. The value the user
+sees is now ALWAYS exactly what the SQL returns — number OR text label — never what the model typed.
+- KPI → first col (prefer a col named `value`) of the single row; Decimal→float (JSON-native, keeps
+  currency formatter's isinstance(int,float) working).
+- Chart/table → replace `data` with executed rows (≤50), Decimal→float.
+- Conservative: only acts when a usable `sql` with a FROM clause exists. Constants (`SELECT 324`) /
+  no-FROM are LEFT for the guards to flag (we still don't trust those). SQL errors → leave model value
+  + note, never crash. Applies to BOTH standard and drift (both carry `sql` on KPIs/charts).
+
+**Verified (live DB):** the exact bug — label KPI value=0 → recomputed to "Round"; a wrong hand-typed
+revenue 999 → real ₹2.11B (float) → currency formatter "₹211.04 Cr"; `SELECT 324` (no FROM) left as-is
+for guards; empty chart → filled with real 5 rows; whole report JSON-native serializable; no spurious
+warnings. App imports OK.
+
+**Why this is the real fix (vs the band-aids):** kills the whole CLASS — label-0, wrong hand-typed
+numbers, stale placeholders, and (because we re-run the recorded sql) reduces `SQL:(none)` impact. QA
+was never a value gate (it's narrative-only, and even crashed-to-auto-approve in RT-015b) and the
+guards only WARN — now code OWNS the value deterministically, upstream of both. The frontend label-KPI
+hide (RT-015b) stays as a last-resort cosmetic backstop.
+
+NOTE: re-running SQL adds ~13 more DB queries per report (cheap, ~0.05s each, all SELECT) but is the
+price of correctness. Folds into the SQL-robustness/batching TODO if latency matters.
+
+**RT-016 (re-test of the broken diamond report after Fix A) — ✅ PASS, label KPIs fixed:**
+- "Top Diamond Shape by Value = **Round (95.8% of diamond value)**", "Top Diamond Quality by Margin %
+  = **EF VVS (35.07%)**" — NO MORE 0. Fix A's recompute filled the label values from the real SQL.
+- DB-verified: total revenue ₹11,267,974,058.97 ✅, AOV ₹665,130.40 ✅, orders 16,941 ✅, top shape
+  Round ✅. All numbers intact (no regression from the recompute).
+- FRONTEND CLEANUP: removed the RT-015b "hide label-KPIs showing 0" hack from ReportPage.jsx — now
+  that the BACKEND owns/guarantees the value, the frontend just displays what the API sends (no
+  second-guessing). React rebuilt. (Backend authoritative > frontend patch.)
+- NOTE: this run still took 13 SQL rounds w/ many DuplicateAlias/missing-FROM retries (the Haiku
+  SQL-emission weakness) — accuracy correct, but reinforces the SQL-robustness TODO.
+
+---
+
+### RT-017 — ATTRIBUTE-SPLIT DOUBLE-COUNT (Joel found: "GH VVS revenue" wrong ~2×). Verified + universal fix.
+**Date:** 2026-06-09. **A genuine WRONG KPI** (I initially under-called it as "defensible" — it was not).
+
+**The bug, verified vs DB:** KPI "Diamond Revenue — GH VVS Quality" = ₹1,231,629,205. TRUE =
+**₹596,205,480** (~2.07× overstated). PROOF the true method is right: per-quality parts computed from
+the diamond ROW's own amount SUM EXACTLY to the ₹1,915,770,280 total (745M+596M+...). The buggy method
+did NOT (it'd sum to ~3.8B).
+
+**Why wrong (root cause):** TWO columns named diamond_amount_per_unit —
+`sales_order_line_pricing.diamond_amount_per_unit` = WHOLE LINE's diamond total (1:1), and
+`sales_order_line_diamond.diamond_amount_per_unit` = ONE diamond's value (many rows/line, each with its
+own quality). The agent split BY quality using the LINE-LEVEL pricing column via DISTINCT sol_id →
+attributed the whole line's diamond value to EVERY quality on it. Half the lines (17,865/35,765) have
+multiple qualities → ~2× double-count.
+
+**Is it the prompt's fault / recent work / unseen?** ALL THREE (honest): (a) our metric-dictionary
+anti-fan-out rule said "use the 1:1 pricing column, avoid the child table" — correct for TOTALS but it
+accidentally steered the model to the wrong column for BY-attribute splits; (b) the fan-out HARD GATE
+pushed the model off line_total onto the pricing-column+DISTINCT workaround → into this mistake; (c) the
+test set only ever verified TOTALS and the dominant slice (Round 96%), never a minor slice like GH VVS.
+
+**UNIVERSAL — it's a whole CLASS:** value split by ANY child attribute (diamond shape/quality/carat/size,
+gold karat/colour, job-card diamonds) has this. The inverse of fan-out: not "don't multiply" but "split
+using the child's OWN per-row amount, which already partitions correctly."
+
+**FIX (two layers, boot-tested + DB-verified):**
+1. PROMPT [claude_prompts.py] — new UNIVERSAL RULE distinguishing TOTAL/component (use line-level
+   `solp.*_amount_per_unit`) vs BY-CHILD-ATTRIBUTE (use `sales_order_line_diamond/_gold` row's OWN
+   amount). Explicit: never attribute the line total to a child attribute; per-attribute parts MUST
+   sum to the grand total (self-check).
+2. CODE GUARD [_apply_report_guards] — `attribute_split_double_count`: when a chart splits diamond/gold
+   value by shape/quality/karat AND its parts sum to >1.15× the matching grand-total KPI, flag it
+   (the double-count signature). Verified: flags the ₹3.8B-vs-₹1.92B case, does NOT flag a correct
+   split (parts=total) or a non-attribute chart (monthly trend). App imports OK.
+
+**TRUE numbers for re-test:** total diamond ₹1,915,770,280; by quality — EF VVS-VS ₹745,044,898,
+GH VVS ₹596,205,480, then EF VVS, GH VVS-VS (parts sum to total). Re-run the diamond report to confirm
+quality/shape splits now use the row amount + sum to total + no guard flag.
+
+**Correction to prior overclaim:** "good accuracy" was overstated. Accurate statement: numbers are
+verified-correct on the TESTED cases + fixed bug classes; this run found a NEW unverified class
+(attribute-split) that WAS wrong and is now fixed. Verify-don't-assume stands.
+
+---
+
+### RT-018 — Recurring 'Top Shape=0' (3rd time, new cause each run) + wrong ₹11.3B diamond total. Two structural fixes.
+**Date:** 2026-06-09. (Honest note: I twice mis-blamed this on stale code/caching — it was a REAL
+recurring bug. The pattern across 3 runs: a "Top Shape/Quality" KPI breaks a DIFFERENT way each time —
+(1) dropped value→placeholder 0, (2) 2-col collapse→0, (3) malformed TO_CHAR mask "₹ #,##,##,###"→
+frontend can't parse→0. Same disease: a label-KPI whose value is a HAND-BUILT string is fragile by
+construction; no SQL patch fixes infinite fumble modes. recompute can't help — it faithfully re-runs
+the model's bad/garbage SQL.)
+
+**Plus a 2nd real bug this run:** KPI1 'Total Diamond Revenue' = ₹11,311,657,328 (should be ₹1.9B) —
+model used SUM(diamond_amount_per_unit * pieces_per_unit) → ~6× inflation. The fan-out guard MISSED it
+(₹11.31B squeaked just under the ₹11.3B×1.5 ceiling).
+
+**FIX #1 — kill the fragile label-KPI class [Business Analyst prompt]:** KPI cards must be pure
+numeric/percent scalars; explicitly FORBID "which/top/best X" KPIs (Top Shape/Quality/Vendor/Category).
+A #1-ranking belongs in a ranked CHART (already generated, shows the winner on top), not a card. This
+REMOVES the fragile thing instead of trying (4th time) to make a hand-built name+number string render.
+Verified the rule is in BUSINESS_ANALYST_SYSTEM.
+
+**FIX #2a — diamond/gold value multiplier rule [SQL-agent metric dictionary]:** value =
+SUM(amount_per_unit * sales_order_line.quantity), NEVER × pieces_per_unit (stones/unit, already baked
+into the amount). Includes sanity: diamond total is a fraction of revenue (~₹1.9B of ₹11.3B).
+
+**FIX #2b — guard for implausible material total [_apply_report_guards]:** a "total diamond/gold
+value/revenue" KPI > 60% of total company revenue → flag `material_total_implausible` (catches the
+×pieces_per_unit ~6× inflation that slipped under the fan-out ceiling). Verified: flags the ₹11.3B
+case incl. label "Total Diamond Revenue (All Shapes & Qualities)"; does NOT flag correct ₹1.9B diamond
+total, legit ₹11.27B COMPANY revenue, or diamond margin %. App imports OK.
+
+**Effect:** the recurring "Top Shape = 0" card should no longer be created at all (ranking lives in the
+chart); the diamond total should be ₹1.9B (right multiplier) and flagged if the model strays. Both are
+prompt + guard (no refactor). RE-TEST: restart server + hard-refresh, re-run the diamond report.
+
+### RT-019 — Fix #1 (BA prompt ban) was IGNORED by model → redone as CODE. Fix #2 (₹1.9B) CONFIRMED.
+**Date:** 2026-06-09. The BA created "Top Diamond Shape/Quality by Revenue" KPIs DESPITE the prompt ban
+→ KPI = "Round (₹ #,##,##,###)" (malformed TO_CHAR mask) → frontend 0. 4th failed prompt-level attempt.
+LESSON RE-CONFIRMED: prompt = request the model can ignore; only CODE enforces.
+- ✅ Fix #2 WORKS: Total Diamond Revenue = ₹1,915,770,280 (₹191.58 Cr); margin 35%, ASP ₹85,849, orders
+  32,672 all correct. The ×pieces_per_unit ₹11.3B inflation is gone.
+- ✅ Fix #1 REDONE AS CODE — `_drop_broken_kpis()` (runs after recompute, before guards): deterministically
+  REMOVES un-renderable KPI cards — value with a leftover format mask (#,##/9,99/999,999), or a
+  "top/which/best X by …" ranking KPI with a 0/blank/garbage value. Ranking is preserved in the ranked
+  charts, so nothing is lost. Verified: drops the 2 mask-garbage KPIs, keeps the 4 good scalars, keeps a
+  correctly-rendered "Round (₹173.28 Cr)", drops a ranking value=0. App OK.
+- NET: broken "Top Shape" card is now GONE deterministically (not asked-nicely). RE-TEST: restart +
+  hard-refresh → expect 4 clean scalar KPIs, no Top-Shape/Quality cards, diamond total ₹1.9B, ranking in charts.
+
+### RT-020 — Fan-out variant (solp.diamond across diamond join → ₹6.75B) + UNIVERSAL value-independent fixes + full fan-out AUDIT.
+**Date:** 2026-06-09. Joel (rightly) rejected hardcoded ceilings + demanded universal fixes + a re-audit.
+
+**Bug:** "Total Diamond Revenue" = ₹674.99 Cr (₹6.75B) vs true ₹1.9B (~3.5× inflated). The model used the
+RIGHT column (solp.diamond_amount_per_unit) but JOINED sales_order_line_diamond anyway → line-level
+amount fanned out 2.56× across diamond rows. Slipped past all guards (fan-out gate only checked
+line_total; the 60%-of-revenue material ceiling = ₹6.78B, and ₹6.75B squeaked under).
+
+**FULL FAN-OUT AUDIT (rows-per-parent, live DB) — the complete surface, no more guessing:**
+  FAN-OUT (multiply): sales_order_line_diamond 2.56×, po_line_diamond 2.56×, job_card_diamond_lines 2.40×.
+  1:1 SAFE: sales_order_line_gold 1.00, sales_order_line_pricing 1.00, po_line_gold 1.00, po_line_pricing
+  1.00, job_card_gold_details 1.00.
+  ⇒ KEY CORRECTION: ONLY the 3 *_diamond children fan out. GOLD children are 1:1 — the old gate was
+  OVER-BLOCKING gold (in its block-list wrongly). Fixed.
+
+**UNIVERSAL FIX 1 — fan-out gate [claude_tools._detect_line_child_fanout], value-independent:**
+  • Gate ONLY the 3 audited fan-out tables (diamond line/PO/job-card); stop gating gold (1:1).
+  • Block ANY line-level/pricing column summed across the fanned join (line_total, total_amount,
+    solp.* per-unit, sales_order_line_pricing.*) — not just line_total. Catches the RT-019/020 variant.
+  • EXCEPTION: summing the child's OWN amount (sold.diamond_amount_per_unit) is the correct attribution
+    method → allowed. Verified: blocks solp.diamond-across-join + line_total-across-join; allows correct
+    no-join total, child-own by-quality, and gold(1:1).
+
+**UNIVERSAL FIX 2 — material-total guard re-derives truth LIVE [_live_material_total + guard], NO hardcoded value:**
+  Replaced the 60%-of-revenue ceiling with: compute the canonical all-time diamond/gold total from the DB
+  at runtime (SUM(amount_per_unit*quantity), 1:1 no fan-out, cached), and flag any "total diamond/gold"
+  KPI > 1.2× that live truth. Survives data changes (re-derives every process). Verified: live diamond
+  total = ₹1,915,770,280 (from DB); flags ₹6.75B (3.5×), allows ₹1.9B. App OK.
+
+**Both fixes are PATTERN/LIVE-DERIVED, zero hardcoded business values** — per Joel's requirement.
+RE-TEST: restart + hard-refresh, re-run diamond report → diamond total must be ₹1.9B (₹191.58 Cr), the
+gate should force-rewrite any fanned diamond total, and the live guard backstops it.
 Tracked from RT-005: the Haiku SQL agent repeatedly re-emits the SAME malformed SQL
 (`DuplicateAlias` "table sol specified more than once", `missing FROM-clause entry`) across many
 rounds before recovering — RT-005 took 13 rounds / 280s, one query 117s. Final numbers correct, so

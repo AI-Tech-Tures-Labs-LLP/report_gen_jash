@@ -168,24 +168,42 @@ def _detect_line_child_fanout(sql: str) -> str:
     did not stop the model (RT-007b). Code enforces.
     """
     s = ' '.join(sql.split()).lower()
-    # A child table that fans out the line is referenced (in FROM or JOIN position):
-    _child_tables = (
-        "sales_order_line_diamond", "sales_order_line_gold",
-        "po_line_diamond", "po_line_gold", "job_card_diamond_lines",
+    # AUDITED fan-out surface (rows-per-parent verified > 1): ONLY the diamond line/PO/job-card
+    # children multiply (~2.4-2.6×). gold / pricing children are 1:1 and SAFE — do NOT gate them.
+    _fanout_tables = (
+        "sales_order_line_diamond",   # 2.56× per sales_order_line
+        "po_line_diamond",            # 2.56× per po_line
+        "job_card_diamond_lines",     # 2.40× per job_card
     )
-    joins_line_child = any(
-        re.search(rf'\b(?:from|join)\s+{t}\b', s) for t in _child_tables
+    joins_fanout_child = any(
+        re.search(rf'\b(?:from|join)\s+{t}\b', s) for t in _fanout_tables
     )
-    if not joins_line_child:
+    if not joins_fanout_child:
         return ""
-    # ...and a line/order-level money column is being SUMmed (the double-count).
+    # UNIVERSAL rule (value-independent): a line/order-level amount summed ACROSS the fanned
+    # child join is double-counted, regardless of WHICH column. This covers line_total,
+    # total_amount, AND the pricing per-unit columns (solp.diamond_amount_per_unit, etc.) —
+    # the RT-019 variant where the model used the right column but still joined the child.
+    # Identify line-level/pricing/order aliases vs the child's OWN amount (which is correct).
     sums_line_amount = bool(
         re.search(r'\bsum\s*\(\s*[^)]*\bline_total\b', s)
         or re.search(r'\bsum\s*\(\s*[^)]*\btotal_amount\b', s)
         or re.search(r'\bsum\s*\(\s*[^)]*\bfinal_amount\b', s)
+        # pricing-table per-unit columns summed across the diamond join = fan-out too
+        or re.search(r'\bsum\s*\(\s*[^)]*\b(solp|p|pr|pricing)\.(diamond|gold|making|selling|base|line)\w*', s)
+        or re.search(r'\bsum\s*\(\s*[^)]*\bsales_order_line_pricing\b', s)
+    )
+    # EXCEPTION: summing the child's OWN per-row amount (sold.diamond_amount_per_unit) is the
+    # CORRECT attribution method — do NOT block that. Only block when a NON-child (line/pricing)
+    # amount is summed across the join.
+    sums_child_own = bool(
+        re.search(r'\bsum\s*\(\s*[^)]*\b(sold|sodl?|d|dia|diamond)\.(diamond_amount_per_unit|amount_per_unit)\b', s)
     )
     if not sums_line_amount:
         return ""
+    if sums_child_own and not re.search(r'\bsum\s*\(\s*[^)]*\b(line_total|total_amount|final_amount)\b', s) \
+       and not re.search(r'\bsum\s*\(\s*[^)]*\b(solp|pricing)\.', s):
+        return ""  # correct child-own-amount method — allow
     # Allow the correct pattern: pre-aggregating line revenue to one row per line in a
     # CTE/subquery, then joining the child only for grouping. Heuristic: if the SUM and
     # the child join are NOT in the same SELECT scope it's likely safe — but to stay safe
