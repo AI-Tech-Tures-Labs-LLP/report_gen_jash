@@ -728,6 +728,41 @@ BUSINESS RULES:
     • DISCOUNT ≠ MARGIN. Never answer a discount question with margin_pct unless you
       EXPLICITLY state you are substituting margin and why.
 - MARGIN / "margin %" = AVG(sales_order_line_pricing.margin_pct). (Distinct from discount.)
+- RAW MATERIAL CONSUMED / USED / "issued to production" / "consumed in production" — this is the
+  ACTUAL material drawn for making an item, and it has its OWN ledger. Do NOT use po_line_gold /
+  po_line_diamond for "consumed" — those are what was PURCHASED from a vendor, a different concept.
+    • Source of truth = raw_material_lot_usage_ledger (one row per material issue; material_type is
+      'gold' or 'diamond'). Gold consumed = SUM(qty_used_gm) WHERE material_type='gold';
+      diamond consumed = SUM(carats_used) (or pieces_used) WHERE material_type='diamond'.
+    • It links to a sale via sol_id (and to a PO via pol_id). ⚠️ It is MANY rows per sol_id (a sale
+      draws material in multiple issues) — so when joining to sales, aggregate the ledger in a
+      subquery/CTE FIRST (GROUP BY sol_id), then join, or you will FAN OUT the sales side.
+    • "Consumed" (this ledger) vs "charged to customer" (sales_order_line_pricing gold/diamond
+      _amount_per_unit) vs "purchased" (po_line_gold/po_line_diamond) are THREE different numbers —
+      pick the one the question asks for and say which you used.
+- COGS / UNIT COST / "what it cost us" / "vendor cost" / GROSS PROFIT — for a SALE or any
+  sales-side margin/profit/cost-vs-price question, the cost lives ON THE SAME sales row, NOT in
+  the purchase-order tables:
+    • COST per unit of a sold item = sales_order_line_pricing.base_price_per_unit
+      (= gold_amount_per_unit + diamond_amount_per_unit + making_charges_per_unit per unit).
+    • COGS for a sales line = base_price_per_unit × quantity. GROSS PROFIT = line_total − COGS.
+      GROSS MARGIN % = (line_total − base_price_per_unit×quantity) / line_total × 100
+      (or just AVG(margin_pct), which already encodes this).
+    • ⛔ NEVER compute a sale's cost/profit by aggregating sales and PO tables SEPARATELY and
+      subtracting (e.g. SUM(sales line_total) − SUM(po unit_price×qty over all POs)). That compares
+      closed-sales revenue to TOTAL procurement spend — two unrelated populations — and yields a
+      FABRICATED profit/margin. A sale and a purchase order are linked ONLY through the allocation
+      bridge, never directly: `sales_order_line` has no PO column of its own.
+    • IF you genuinely need the VENDOR cost of the specific items sold, you MUST go through the
+      bridge: sales_order_line.sol_id → sales_allocation.sol_id → sales_allocation.pol_id →
+      po_line_pricing.pol_id (sales_allocation is 1:1 per sol — safe). so_fulfillment_log carries
+      the same sol_id↔pol_id↔vendor link if you need vendor/dates too. Vendor COGS of a sale =
+      SUM(plp.unit_price × sol.quantity) ALONG THAT JOIN — not a separate PO aggregate.
+    • For a plain sales margin/profit question, prefer the on-row cost (base_price_per_unit) — it
+      needs no bridge and can't fan out. Reach for the PO bridge only when the question explicitly
+      asks what the VENDOR charged for the sold item.
+    • po_line_pricing.unit_price is the VENDOR PURCHASE price — for "what did we PAY vendors / PO
+      spend by vendor" use po tables alone; to tie it to a SALE you MUST use the allocation bridge.
 - LEFTOVER / ON-HAND INVENTORY VALUE (value of stock still on hand):
     • = SUM(finished_goods_inventory.quantity_available * unit_cost).
     • ⚠️ NEVER SUM(total_amount) — that is the value of the FULL ORIGINAL RECEIPT

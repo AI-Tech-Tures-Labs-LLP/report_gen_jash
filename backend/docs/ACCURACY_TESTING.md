@@ -1835,6 +1835,220 @@ line_total; the 60%-of-revenue material ceiling = ₹6.78B, and ₹6.75B squeake
 **Both fixes are PATTERN/LIVE-DERIVED, zero hardcoded business values** — per Joel's requirement.
 RE-TEST: restart + hard-refresh, re-run diamond report → diamond total must be ₹1.9B (₹191.58 Cr), the
 gate should force-rewrite any fanned diamond total, and the live guard backstops it.
+
+### RT-021 — UNIVERSAL INVARIANT LAYER (the correctness endgame) [_check_invariants, claude_multi_agent.py]
+**Date:** 2026-06-09. Consolidates the scattered bug-specific guards into 4 LAWS that must hold for ANY
+data report, checked deterministically against the code-owned (recomputed) values, after the guards:
+  • LAW 1 RECONCILIATION — a value breakdown's parts can't exceed its total (re-derived live for
+    diamond/gold, or a total KPI). Catches fan-out + wrong-attribution + double-count with ONE principle.
+  • LAW 2 CONTAINMENT — no value KPI exceeds its live-true total (material) or total company revenue.
+  • LAW 3 LINEAGE — every value KPI must trace to a query with a FROM clause (no hand-typed constants).
+  • LAW 4 SANITY — durations ≥ 0, percentages 0–100, counts non-negative.
+Attaches `report_integrity = {status: verified|violations, checks_run, violations[]}` — a DETERMINISTIC,
+trustworthy stamp (unlike the LLM QA score, which has lied 12/12 on wrong reports). Violations also set
+has_accuracy_warnings + downgrade the QA verdict.
+**Boot-tested (all pass):** L1 flags a 3.5× fanned diamond breakdown, passes a correct one; L2 flags
+₹6.75B diamond total, passes ₹1.9B; L3 flags a SELECT-324 value; L4 flags −2.96 days and 135%; and a
+FULLY-CLEAN report (revenue ₹11.27B + orders + margin + reconciling category chart) → status "verified",
+8 checks, ZERO false positives. App imports OK.
+**Universality:** the MECHANISM is universal (every data query runs all 4 laws); the strongest guarantee
+(reconciliation = provably-correct) fires when a total exists to check against — full for core metrics
+(revenue/value/margin by any dimension/table), trace+sane+contain for novel metrics, grounded+sane+
+disclosed for inherently-ambiguous questions (churn/recommend). No silent wrong number on anything that
+HAS a right answer. value-independent / live-derived — no hardcoded business numbers.
+RE-TEST: any report now carries report_integrity; re-run the diamond report → expect status "verified",
+diamond total ₹1.9B.
+
+---
+
+### RT-022 — Invariant layer's FIRST live catch was a FALSE POSITIVE (component vs product) → precision fix + live-revenue ceiling.
+**Date:** 2026-06-11. Two things this run: (a) made the company-revenue ceiling LIVE (no hardcode, per
+Joel); (b) the new CONTAINMENT invariant FIRED on KPI1 — but it was a FALSE POSITIVE worth understanding.
+
+- **Live-revenue ceiling [_live_company_revenue]:** replaced the hardcoded ₹11.3B with a live
+  `SELECT SUM(total_amount) FROM sales_order WHERE status='closed'` (=₹11,267,974,059 now). Zero
+  hardcoded DB values remain anywhere (grep-confirmed). Scales with data; fail-safe → inf.
+- **The false positive:** KPI1 "Total Diamond PRODUCT Revenue" = ₹10,301,636,355. The invariant compared
+  it to the diamond COMPONENT truth (₹1.9B) and flagged "5.4× inflated." But ₹10.3B is CORRECT — it's the
+  line_total of diamond-BEARING orders (full jewelry value: gold+diamond+making), verified exact vs DB.
+  Two legit metrics were conflated: "diamond COMPONENT value" (just the stone, ≤₹1.9B) vs "diamond
+  PRODUCT/ORDER revenue" (whole jewelry containing diamonds, ≤ company revenue ₹11.27B).
+- ✅ **Silver lining (the architecture worked):** even mis-judging, the system did the SAFE thing —
+  flagged + downgraded QA to CONDITIONAL (4/12) instead of silently approving. Under ambiguity it erred
+  toward caution, not toward silent-wrong. That IS the correct failure mode.
+- **FIX (precision, not aggression):** containment/material guards now only compare to the ₹1.9B
+  COMPONENT truth when the KPI clearly means the component ("component", "diamond value/amount/cost",
+  "stone"); a "diamond PRODUCT/ORDER revenue" is treated as ordinary revenue, bounded only by the live
+  company-revenue ceiling. Verified: ₹10.3B product revenue → VERIFIED (no false flag); ₹6.75B *component*
+  → still CAUGHT; ₹20B anything → CAUGHT; ₹1.9B component → verified. App OK.
+- LESSON: invariants must respect the SEMANTIC distinction between a component and the whole — over-tight
+  bounds create false positives. Caution-on-ambiguity is right, but precision avoids crying wolf.
+
+---
+
+### RT-023 — diamond report numbers ALL CORRECT; fixed a 2nd guard false-positive (concentration-% vs lost-name).
+**Date:** 2026-06-11. Re-test after RT-022. **Numbers: ✅ all DB-verified exact.**
+- Total Diamond Revenue ₹1,915,770,280.2 ✅; Top Shape Concentration 90.45% ✅ (Round's share of diamond
+  revenue, verified); Top Quality Concentration 38.89% ✅; margin/orders/AOV correct. Diamond total ₹1.9B
+  (no fan-out — gate forced the correct row-amount query). The RT-022 component/product false-positive is
+  GONE (KPI1 passes clean).
+- **2nd false-positive found + fixed:** the label-KPI guard flagged "Top Shape Revenue Concentration =
+  90.45" as a "lost name." But 90.45 is a VALID % (Round = 90.45% of diamond revenue). The guard saw
+  "top " + numeric and assumed the name was lost. FIX: distinguish "Top X CONCENTRATION/share/%" (value
+  IS legitimately numeric → keep) from "Top X by revenue" (value should be a NAME → drop if numeric/0).
+  Verified 5 cases: concentration-% kept; "by revenue"=0/number → dropped; "by revenue"='Round' → kept;
+  normal scalar kept. App OK.
+- **Pattern across RT-022/023:** the invariant/guard layer is now catching its OWN over-tight rules as
+  FALSE POSITIVES on legitimate metrics, and we keep tightening to PRECISION. The trade is right (caution
+  over silent-wrong), and each fix makes the guards smarter without weakening real catches.
+- Honest status: diamond report is fully correct + clean; QA should now be clean APPROVED (no spurious
+  accuracy warnings). The remaining non-correctness item is SPEED (8-round, 268s grind — deferred).
+
+### RT-024 — gold-by-karat + component-breakdown: numbers ALL CORRECT, fixed 2 MORE guard false-positives.
+**Date:** 2026-06-11. Two reports tested; **every number DB-verified correct**, but BOTH reports got a
+spurious flag (one was even QA-REJECTED 6/12 while being 100% correct). Root-caused + fixed both.
+- **Gold by karat:** 18Kt ₹5,950,033,867.04 ✅, Total ₹11,267,974,059.01 ✅ (= company total exactly;
+  gold table is 1:1, NO fan-out — verified MAX 1.000 rows/sol). FALSE POSITIVE: RECONCILIATION invariant
+  said "Revenue by Gold Karat parts = 11.27B, 1.99× the total (5.65B)". BUG: the chart is FULL revenue
+  split BY a material ATTRIBUTE (karat) → parts sum to company revenue, NOT to the gold-COMPONENT total.
+  But the invariant grabbed `company_total('gold')` (₹5.65B component value) as the "total" merely because
+  "gold" was in the title. FIX: only use the material-component total when the chart MEASURES component
+  value ("gold value/amount/component"), not when revenue is split by that material's attribute; else
+  reconcile against the live company-revenue ceiling. → gold report now passes clean (0 violations).
+- **Component breakdown (gold/diamond/making):** Total Rev ₹9,320,474,400.66 ✅, Order Lines 24,998 ✅
+  (DB-verified exact), avg gold/diamond/making costs all correct. FALSE POSITIVE: label-KPI guard flagged
+  "Total Order Lines (Top 5 Categories) = 24998" as a lost name. BUG: `_label_kpi` matched "top " ANYWHERE
+  → the SCOPE qualifier "(Top 5 Categories)" tripped it. FIX: match "top "/"highest "/etc only at the
+  START of the name; added lines/orders/units/qty/total to numeric-metric exclusions. → no longer flags
+  count KPIs with a "(Top N …)" scope.
+- Verified 6 cases: both false positives cleared; genuine lost-label ("Top Vendor"=0, "Which Vendor"=num)
+  still caught; genuine component fan-out (18×) still caught. App OK.
+- **HONEST STATE:** numbers correct in EVERY test (RT-022/023/024) — zero wrong values. The ONLY accuracy
+  defect remaining is guard/invariant FALSE POSITIVES that wrongly downgrade correct reports. Converging
+  fast; correctness (no silent-wrong) is solid. Speed (gold 162s, component 280s) still deferred.
+
+### RT-025 — ⛔ FIRST GENUINELY-WRONG NUMBER (not fan-out, not false-positive): cross-domain fabricated profit.
+**Date:** 2026-06-11. Query: "Compare what we sold products for vs what they cost us from vendors, by
+category." **QA gave it 12/12 APPROVED — and it was WRONG.** This is the most important finding of the
+engagement: the first bug where the model answered a DIFFERENT question and produced a confident, plausible,
+fabricated business number that ALL prior guards missed.
+- Correct: Avg Selling Price ₹66,711.30 ✅ (closed); Total Revenue ₹11,267,974,059.01 ✅.
+- WRONG: Gross Profit ₹3,145,533,457 / Margin 27.96% / Avg Vendor Cost ₹45,022.08 / all cost+profit charts.
+  The model computed Revenue = SUM(sales line_total, closed) MINUS COGS = SUM(po_line_pricing.unit_price ×
+  po_line_items.quantity over ALL purchase orders). **VERIFIED: there is NO key linking a sales line to a
+  PO line** — `sales_order_line` has no po/allocation column, NO allocation/fulfilment bridge table exists
+  (only `pg_shmem_allocations`, a PG internal). So it compared closed-sales revenue (₹11.27B) to TOTAL
+  procurement spend (₹8.34B) — two unrelated populations — and called the difference "gross profit." The
+  per-category charts AVG selling price and AVG vendor cost from two unrelated row sets. Meaningless.
+- THE RIGHT ANSWER WAS ON THE SAME ROW: sales_order_line_pricing has base_price_per_unit (= gold_amount +
+  diamond_amount + making_charges per unit). True COGS = base_price_per_unit × quantity; gross profit =
+  line_total − that; or just AVG(margin_pct). The model ignored the in-row cost and invented a PO join.
+- **WHY GUARDS MISSED IT:** every prior defense targeted fan-out (inflation) or false-positives. This is a
+  SEMANTIC join the LLM invents — right-looking SQL, wrong meaning. Prompts can't guarantee against it.
+- **FIXES (universal, no hardcoded values):**
+  1. Metric dict (claude_prompts.py): added COGS/vendor-cost/gross-profit rule — cost lives on the sales
+     row (base_price_per_unit); ⛔ NEVER join/compare sales to po_line_*/purchase_order for a sale's
+     cost/margin/profit (no key exists); po unit_price is purchase-side only.
+  2. Deterministic guard (_apply_report_guards → `cross_domain_cost_fabrication`): flags any KPI/chart
+     whose name/SQL is cost/profit/margin AND whose SQL references BOTH a sales_order* source and a
+     po_line*/purchase_order source. Pure-PO ("PO spend by vendor") and pure-sales margin do NOT trip it.
+     Verified 5 cases: fabricated profit KPI + chart flagged; vendor-cost (PO-only), correct sales margin,
+     pure-PO-spend all clean.
+  3. QA escalation: severe flags (cross_domain_cost_fabrication, material_total_inflated,
+     revenue_exceeds_total, fabricated_formula, any chart _invariant) now force verdict to
+     "CONDITIONAL (accuracy — value may be wrong)" — a fabricated number can NEVER show APPROVED again.
+- **HONEST STATE UPDATE:** the "no silent-wrong numbers" claim was PREMATURE. RT-022/023/024 were all
+  correct-number/false-flag cases; RT-025 is a real wrong number that scored 12/12. Now caught + QA-gated.
+  But the lesson stands: every NEW cross-domain/semantic question is a candidate for a NEW invented-join
+  bug. The guard catches the sales↔PO case specifically; other cross-domain fabrications may need the same
+  treatment as they surface. NOT yet "perfect" — but the defense pattern is proven and extensible. App OK.
+
+### RT-026 — Sonnet swap on SQL agent: fixed the CAPABILITY gap (correct answer), exposed the alias bug.
+**Date:** 2026-06-11. Re-ran the RT-025 query AFTER moving ONLY the SQL Agent (+ Drift Detective) to
+claude-sonnet-4-6; all other 5 agents stay on Haiku. **Result: CORRECT + APPROVED 12/12 (verified).**
+- Sonnet read the new metric-dict COGS rule and used the ON-ROW cost (base_price_per_unit), the bridge-free
+  correct method. DB-verified exact: Avg Selling ₹66,711.30 ✅, Avg Vendor Cost (base_price) ₹49,414.36 ✅,
+  Gross Margin 25.93% ✅, Revenue ₹11.27B ✅, Units 204,020 ✅. NO fabrication/cross-domain flags. The exact
+  query that was REJECTED-fabricated on Haiku (RT-025/026) is now correct. Capability gap = solved by Sonnet.
+- COST: $1.30 vs $0.99 Haiku (+31%) — NOT the "cost-neutral" I predicted. Rounds dropped 15→5 (good) but
+  Sonnet still burned 2 FULL rounds (16 queries, ~50s) re-emitting the SAME `DuplicateAlias: sol specified
+  more than once` error. At Sonnet's 3× rate, those wasted rounds are what blew the budget. So the +31% is
+  mostly WASTE on a mechanical bug, not Sonnet's price.
+
+### RT-027 — fixed the duplicate-alias waste (precise hints, NO risky auto-rewrite).
+**Date:** 2026-06-11. Root of RT-026's cost overrun: SQL agent (both models) repeatedly writes the same
+alias for two tables, OR the same JOIN twice → Postgres "table name specified more than once" → 2-3 wasted
+rounds. DECISION (per project principle "a wrong-but-valid number is worse than a caught error"): do NOT
+auto-rewrite the SQL — rewriting ON-clause column refs can silently produce VALID-BUT-WRONG joins (RT-025
+class disaster). Instead, make the error PRECISE so the model fixes in 1 round:
+  1. `_prevalidate_sql` now distinguishes (a) same alias / two different tables → "rename the SECOND table
+     to alias2, update only ITS refs", from (b) same table joined twice same alias → "remove the duplicate
+     JOIN". Both name the exact table/alias. Valid distinct-alias SQL still passes clean (no false positive).
+  2. `_enrich_sql_error` extracts the alias from the Postgres message and gives the same targeted fix,
+     warning NOT to blindly rename every `alias.` (only the duplicated table's).
+Verified 4 cases. Expectation: SQL agent now repairs alias collisions in ~1 round, pulling Sonnet's cost
+back toward break-even. (Re-test pending.) App OK.
+
+### RT-028 — raw-material→production→sale (3-domain): goal HELD, exposed a SEMANTIC gap + cost blowup.
+**Date:** 2026-06-11. Query: "top products: gold/diamond raw material CONSUMED in production vs charged
+to customers." Router → Sonnet (cross-domain) ✅. **Outcome: CONDITIONAL 5/12 — a fabricated KPI was
+caught, so NO wrong answer shipped as correct (Joel's goal HELD).** But three issues, only one caught:
+  1. CAUGHT ✅: KPI "Raw Material Margin Capture" was hand-COMPUTED by the model (SQL: "Computed: …", no
+     FROM) → lineage_failed invariant + QA reject. Charts 4/5/6 also SQL:(none). Goal working as designed.
+  2. NOT caught ⚠️ (semantic): model read "consumed in production" as po_line_gold/po_line_diamond =
+     what was PURCHASED. The TRUTH table is raw_material_lot_usage_ledger (verified: 35,330 rows w/ sol_id,
+     material_type gold|diamond, cols qty_used_gm/carats_used/pieces_used). "consumed"≠"purchased"≠"charged"
+     = THREE different numbers. No guard catches this — same CLASS as RT-025 (model answers a near-but-wrong
+     question). FIX APPLIED: metric-dict rule added (schema-anchored, names real cols, notes 3.81×/sol
+     fan-out → aggregate first). NO code gate added — checked live: po_line_diamond.amount is PER-DIAMOND
+     (distinct values per diamond_id), so SUM via DISTINCT pol_id is CORRECT; gating it would FALSE-BLOCK.
+     (This is the dynamic-not-hardcoded discipline: let the DB decide, don't blanket-gate.)
+  3. Cost ⚠️: $2.09 / 693s. SQL agent = $1.61 (77%), 13 rounds, flailing on `AmbiguousColumn product_id`
+     ×6 + false DROP-keyword reject + alias (alias hint DID fire, good). Mechanical waste at Sonnet's 3× rate.
+
+### ★ AUDIT + PLAN (2026-06-11) — stop the whack-a-mole; attack the ROOT.
+Joel called out (correctly) that I keep "finding new bugs + proposing new fixes" reactively instead of a
+plan. Did a real audit. THREE findings:
+
+**Finding 1 — FAN-OUT predicts EVERY accuracy bug.** Measured rows-per-parent for all relationships
+(live DB). Sorted by danger:
+  - finished_goods_inventory per product = **36.7×** (max 91) 🔴 UNTESTED
+  - job_card per sol = **5.8×** 🔴 UNTESTED
+  - raw_material_lot_usage per sol = **3.8×** 🔴 (just hit)
+  - po_line_items per po = **3.4×** 🔴 UNTESTED
+  - sales_order_line_diamond / po_line_diamond = **2.56×**, job_card_diamond_lines **2.40×** 🟡 GATED ✅
+  - sales_order_line per so = **2.07×** 🟡 partial
+  - pricing / gold / allocation / fulfillment / invoice_lines / returns = **1.00×** 🟢 SAFE (never a bug)
+  CONCLUSION: every bug to date (RT-007 diamond, RT-025 cost, RT-028 rm) is a table with fan-out >1; the
+  1.0× tables have NEVER produced a bug. Fan-out factor IS the bug predictor. FOUR high-fan-out tables
+  remain UNTESTED (inventory 36×, job_card 5.8×, po_items 3.4×, rm_usage 3.8×) = where the NEXT bugs are.
+
+**Finding 2 — the "metric dictionary" is a FAKE semantic layer.** It's prose in a prompt the model can
+ignore (RT-025 happened AFTER its COGS rule was written). A real semantic layer is CODE that owns the
+join. Patching prose per-metric IS the whack-a-mole; each new metric is a new gap.
+
+**Finding 3 — cost is a FLAILING problem, not a model problem.** 77% of the $2.09 was one agent burning
+rounds on MECHANICAL errors (ambiguous column, alias, false-DROP) — deterministic-fixable, model-independent.
+
+**THE PLAN (phased; stop when "answer, never wrong" is structurally met, not at "perfect"):**
+  - **Phase 1 — finish the deterministic repair layer** (cheap, low-risk, immediate ~40% cost cut):
+    precise hints for ambiguous-column, false-DROP-keyword, missing-FROM (same pattern as the alias hint).
+    Industry approach #3 (typed repair loop), done properly. Stops Sonnet bleeding on every hard query.
+  - **Phase 2 — fan-out gate as a DATA-DRIVEN registry, not per-table patches.** Replace the 3 hardcoded
+    diamond tables with a registry built from the measured fan-out table above; block ANY parent-level
+    SUM across ANY >1 table. Closes inventory/job_card/po_items/rm_usage (the 4 time-bombs) in ONE move.
+    Industry approach #1, universal. ← After this, the goal is STRUCTURALLY met.
+  - **Phase 3 — promote the dictionary to a lightweight CODE semantic layer** for the ~10 core metrics
+    (each a function owning its tables/joins/fan-out); SQL agent calls get_metric_sql('cogs') instead of
+    inventing joins. Industry approach #2 — the root-cause fix for the RT-025/consumption CLASS. Biggest
+    effort; makes bugs PREVENTED not just caught; do last, after Phases 1-2 prove the patterns.
+  NOT doing: golden-query library (#4 — questions too varied); Opus (never — failures are mechanical/
+  semantic, not reasoning-depth). Order rationale: each phase de-risks the next; 1+2 lock "never wrong",
+  3 makes it cheaper/faster by prevention.
+
+---
+
+## TODO (SQL ROBUSTNESS / SPEED — deferred per Joel, correctness first)
 Tracked from RT-005: the Haiku SQL agent repeatedly re-emits the SAME malformed SQL
 (`DuplicateAlias` "table sol specified more than once", `missing FROM-clause entry`) across many
 rounds before recovering — RT-005 took 13 rounds / 280s, one query 117s. Final numbers correct, so

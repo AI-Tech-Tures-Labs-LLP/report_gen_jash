@@ -44,8 +44,80 @@ from db.profiler import get_data_profile
 logger = logging.getLogger(__name__)
 
 # ── Model aliases ─────────────────────────────────────────────────────────────
-_SONNET = config.CLAUDE_MODEL        # Available for complex tasks if needed
-_HAIKU  = config.CLAUDE_HAIKU_MODEL  # All agents — fast & cost-effective
+_SONNET = config.CLAUDE_MODEL        # Hard SQL (cross-domain, fan-out, many joins)
+_HAIKU  = config.CLAUDE_HAIKU_MODEL  # Simple SQL + all non-SQL agents — fast & cheap
+
+
+def _route_sql_model(question: str, blueprint: dict, context: dict) -> tuple[str, str]:
+    """OPTION B — deterministic SQL-model router. Decide Haiku vs Sonnet from MEASURABLE
+    schema/blueprint signals, NOT from an LLM's guess about the question (RT-025 taught us
+    questions lie about their difficulty). Never Opus. Returns (model, reason).
+
+    "Hard" = anything Haiku has historically flailed on: cross-domain (sales↔PO/inventory/job),
+    fan-out child tables, many distinct tables, or a large element count. Conservative: when a
+    hard signal is present we start on Sonnet; otherwise Haiku, with failure-escalation (Option C)
+    as the safety net for anything this heuristic under-rates.
+    """
+    bp = json.dumps(blueprint or {}).lower() + " " + json.dumps(context or {}).lower() + " " + (question or "").lower()
+    tables = set(context.get("relevant_tables") or [])
+    n_tables = len(tables)
+    n_kpis = len(blueprint.get("kpis") or [])
+    n_charts = len(blueprint.get("charts") or [])
+
+    signals = []
+    # 1) CROSS-DOMAIN: sales family AND a purchasing/inventory/production family present together.
+    _sales = any("sales_order" in t for t in tables) or "sales_order" in bp
+    _po = any(t.startswith(("po_", "purchase_")) for t in tables) or "po_line" in bp or "purchase_order" in bp
+    _inv = any(("inventory" in t or "raw_material" in t) for t in tables) or "raw_material" in bp
+    _job = any("job_card" in t for t in tables) or "job_card" in bp
+    if _sales and (_po or _inv or _job):
+        signals.append("cross-domain join (sales↔purchasing/inventory/production)")
+    # 2) FAN-OUT child tables (diamond/gold line children multiply rows).
+    if any(t in tables for t in ("sales_order_line_diamond", "po_line_diamond", "job_card_diamond_lines")) \
+       or any(w in bp for w in ("_line_diamond", "job_card_diamond_lines")):
+        signals.append("fan-out child table present")
+    # 3) Many tables → multi-join complexity.
+    if n_tables >= 5:
+        signals.append(f"{n_tables} tables in scope")
+    # 4) Large blueprint → many queries, more chances to fumble.
+    if (n_kpis + n_charts) >= 11:
+        signals.append(f"{n_kpis} KPIs + {n_charts} charts")
+    # 5) DRIFT investigations are inherently multi-phase/hard.
+    if context.get("intent_mode") == "DRIFT_INVESTIGATION":
+        signals.append("drift investigation (multi-phase)")
+
+    if signals:
+        return _SONNET, "; ".join(signals)
+    return _HAIKU, f"simple ({n_tables} tables, {n_kpis + n_charts} elements, single-domain)"
+
+
+def _sql_agent_struggled(report: dict, rounds_used: int, max_rounds: int) -> str | None:
+    """OPTION C — decide whether a Haiku SQL attempt FAILED badly enough to re-run on Sonnet.
+    Decides on OBSERVED behavior, not a guess. Returns a reason string if it struggled, else None.
+
+    Signals: burned most of the round budget (flailing), or left KPIs/charts unpopulated
+    (value missing / no FROM / chart with no data) — i.e. it couldn't actually answer.
+    """
+    if not isinstance(report, dict):
+        return "no report produced"
+    # 1) round exhaustion — the classic flail (RT-026: 15 rounds re-emitting the same error)
+    if max_rounds and rounds_used >= max(6, int(max_rounds * 0.6)):
+        return f"used {rounds_used}/{max_rounds} rounds (flailing)"
+    # 2) unresolved elements — KPIs with no real query / charts with no rows
+    def _has_from(s) -> bool:
+        return bool(s) and _re.search(r"\bfrom\b", str(s), _re.IGNORECASE) is not None
+    kpis = [k for k in (report.get("kpis") or []) if isinstance(k, dict)]
+    unresolved_kpi = sum(
+        1 for k in kpis
+        if (k.get("value") in (None, 0, "0", "")) and not _has_from(k.get("sql") or k.get("executed_sql"))
+    )
+    empty_charts = sum(
+        1 for c in (report.get("charts") or [])
+        if isinstance(c, dict) and not (c.get("data") or [])
+    )
+    if unresolved_kpi >= 2 or empty_charts >= 2:
+        return f"{unresolved_kpi} unresolved KPIs, {empty_charts} empty charts"
+    return None
 
 
 # ── Accuracy guards (deterministic; cannot be prompted away) ──────────────────
@@ -247,6 +319,23 @@ def _recompute_from_sql(report: dict) -> dict:
 _MATERIAL_TOTAL_CACHE: dict[str, float] = {}
 
 
+def _live_company_revenue():
+    """Re-derive total all-time CLOSED company revenue from the live DB — never hardcoded,
+    so the containment ceiling scales as data grows. Cached per process; fail-safe → None."""
+    if "company_revenue" in _MATERIAL_TOTAL_CACHE:
+        return _MATERIAL_TOTAL_CACHE["company_revenue"]
+    val = None
+    try:
+        from db.executor import execute_sql
+        res = execute_sql("SELECT SUM(total_amount) AS v FROM sales_order WHERE status = 'closed'")
+        if res.get("success") and res.get("data") and res["data"][0].get("v") is not None:
+            val = float(res["data"][0]["v"])
+    except Exception:
+        val = None
+    _MATERIAL_TOTAL_CACHE["company_revenue"] = val
+    return val
+
+
 def _live_material_total(material: str):
     """Re-derive the canonical all-time diamond/gold total VALUE from the live DB (no
     hardcoded number — survives data changes). = SUM(amount_per_unit * quantity) with NO
@@ -298,13 +387,17 @@ def _drop_broken_kpis(report: dict) -> None:
         sval = str(val) if val is not None else ""
         # (a) leftover format-mask garbage in the value
         mask_garbage = bool(_re.search(r"[#9]\s*,\s*[#9]{1,2}\s*,", sval)) or "#,##" in sval
-        # (b) ranking KPI ("top/which/best/highest/lowest/leading X") with a non-clean-scalar value
+        # (b) ranking-NAME KPI ("top/which/best X") expected to hold a NAME — but NOT a
+        # numeric metric about the top item ("Top Shape Concentration %", "Top Hunter Revenue").
         is_ranking = any(w in name for w in (
             "top ", "which ", "best ", "highest ", "lowest ", "leading ", "by revenue", "by margin")) \
             and any(w in name for w in ("shape", "quality", "vendor", "category", "product", "hunter",
-                                        "customer", "karat", "colour", "color", "territory", "channel"))
+                                        "customer", "karat", "colour", "color", "territory", "channel")) \
+            and not any(w in name for w in ("concentration", "share", "contribution", "%", "pct"))
+        # A ranking-NAME KPI is "broken" if its value is missing/garbage. But a NUMERIC value on a
+        # ranking-name KPI is only "lost label" if the metric isn't itself numeric (concentration%).
         bad_ranking_value = is_ranking and (
-            val in (0, "0", "", None) or mask_garbage
+            val in (0, "0", "", None) or mask_garbage or isinstance(val, (int, float))
         )
         if mask_garbage or bad_ranking_value:
             dropped.append(kpi.get("name") or kpi.get("label") or "?")
@@ -360,14 +453,60 @@ def _apply_report_guards(report: dict) -> None:
             kpi["value_inr"] = format_inr(kpi["value"])
         # "which/top/best X" KPI expects a TEXT label as value; a 0/blank/numeric value
         # means the label was lost (2-column query collapsed to 0). Flag it.
-        _label_kpi = any(w in name for w in ("top performing", "top ", "which ", "best ", "highest ", "lowest ", "leading "))
+        # BUT NOT when the KPI is legitimately a NUMERIC metric ABOUT the top item — e.g.
+        # "Top Shape Revenue Concentration" = 90.45% (a real %), "Top Hunter Revenue" = ₹X.
+        # Those have valid numeric values; only a "which IS the top X" naming-KPI needs a label.
+        # A label KPI is one that NAMES the top item ("Top Shape", "Which vendor", "Best month").
+        # Match "top "/"highest "/etc only at the START — "(Top 5 Categories)" as a SCOPE qualifier
+        # mid-name (e.g. "Total Order Lines (Top 5 Categories)") must NOT trigger it (RT-024 false pos).
+        _label_kpi = any(name.startswith(w) for w in ("top performing", "top ", "highest ", "lowest ", "leading ")) \
+            or any(w in name for w in ("which ", "best "))
+        _numeric_metric = (
+            "percent" in fmt or "%" in name
+            or any(w in name for w in ("concentration", "share", "contribution", "revenue", "value",
+                                       "count", "lines", "orders", "units", "qty", "quantity", "number of",
+                                       "margin", "amount", "aov", "rate", "ratio", "pct", "total"))
+        )
         _v = kpi.get("value")
-        if _label_kpi and (_v in (0, "0", "", None) or isinstance(_v, (int, float))):
+        if _label_kpi and not _numeric_metric and (_v in (0, "0", "", None) or isinstance(_v, (int, float))):
             kpi["_accuracy_flag"] = "label_kpi_lost"
             warnings.append(
                 f"KPI '{kpi.get('name') or kpi.get('label')}' asks for a name/label (which/top/best) "
                 f"but its value is {_v!r} — the text answer was lost (likely a 2-column query collapsing "
                 f"to 0). The KPI should return the NAME (e.g. 'Round') as a single `value` column."
+            )
+
+    # 1b) CROSS-DOMAIN FABRICATION (RT-025): a sale and a purchase order link ONLY through the
+    # allocation bridge (sales_allocation / so_fulfillment_log: sol_id↔pol_id, 1:1). If a
+    # cost/profit/margin value mixes a sales_order* source with a po_line*/purchase_order source
+    # but does NOT go through that bridge, it is aggregating two unrelated populations (closed-sales
+    # revenue vs total procurement spend) → a FABRICATED number. With the bridge present, the join
+    # is legitimate, so we do NOT flag it. Universal: table-name pattern + bridge check, no values.
+    _po_src = _re.compile(r"\b(po_line_pricing|po_line_items|purchase_order)\b", _re.IGNORECASE)
+    _sales_src = _re.compile(r"\b(sales_order_line_pricing|sales_order_line|sales_order)\b", _re.IGNORECASE)
+    _bridge = _re.compile(r"\b(sales_allocation|so_fulfillment_log)\b", _re.IGNORECASE)
+    for item in (list(report.get("kpis", []) or []) + list(report.get("charts", []) or [])):
+        if not isinstance(item, dict):
+            continue
+        nm = str(item.get("name") or item.get("title") or item.get("label") or "").lower()
+        sql = str(item.get("sql") or item.get("executed_sql") or "")
+        if not sql:
+            continue
+        # only the cost/profit/margin family — a pure "PO spend by vendor" report legitimately
+        # uses po tables alone (no sales source), so it won't match (needs BOTH sources).
+        _is_costy = any(w in nm for w in ("profit", "margin", "cost", "cogs", "markup", "vs cost", "vs. cost")) \
+            or _re.search(r"line_total\s*[-–]\s*sum|[-–]\s*sum\(\s*plp|unit_price\s*\*\s*pli", sql, _re.IGNORECASE)
+        # flag only when sales+PO are mixed WITHOUT the allocation bridge (the only legit link).
+        if _is_costy and _po_src.search(sql) and _sales_src.search(sql) and not _bridge.search(sql):
+            item["_accuracy_flag"] = "cross_domain_cost_fabrication"
+            warnings.append(
+                f"'{item.get('name') or item.get('title') or item.get('label')}' derives a "
+                f"cost/profit/margin by mixing SALES tables with PURCHASE-ORDER tables (po_line_*/"
+                f"purchase_order) WITHOUT the allocation bridge (sales_allocation/so_fulfillment_log). "
+                f"A sale links to its PO only through that bridge, so this compares closed-sales revenue "
+                f"against total procurement spend — a FABRICATED profit/margin. Either use the sale's "
+                f"own cost (base_price_per_unit × quantity), or join sol_id→sales_allocation.pol_id→"
+                f"po_line_pricing for the true vendor cost of the items sold."
             )
 
     # 2) Contribution-sum sanity on dimensional cuts (drift decomposition)
@@ -393,7 +532,9 @@ def _apply_report_guards(report: dict) -> None:
                 )
 
     # 3) Numeric-sanity guards on KPI values (RT-006/007/009)
-    _COMPANY_TOTAL_REVENUE = 11_300_000_000  # ~₹11.3B all-time closed; revenue can't exceed this
+    # Live-derived ceiling (never hardcoded — scales as data grows). Fail-safe to a large
+    # finite number so the guard simply doesn't false-fire if the DB lookup is unavailable.
+    _COMPANY_TOTAL_REVENUE = _live_company_revenue() or float("inf")
     for kpi in report.get("kpis", []) or []:
         if not isinstance(kpi, dict):
             continue
@@ -439,8 +580,14 @@ def _apply_report_guards(report: dict) -> None:
         # ABOVE the live truth (>20%), it was fanned-out or mis-multiplied. (We only flag
         # OVER, never under — a smaller scoped total is legitimate.)
         _mat = "diamond" if "diamond" in name else ("gold" if "gold" in name else None)
-        _mat_total = (_mat is not None
-                      and any(w in name for w in ("total", "all ", "overall", "revenue", "value"))
+        # Only the COMPONENT value (the stone/metal itself) is bounded by the ~₹1.9B live total.
+        # "diamond PRODUCT/ORDER revenue" = full jewelry value containing diamonds (≤ company
+        # revenue) — a legitimately larger, different metric; don't flag it here (RT-022).
+        _is_component = (_mat is not None
+                        and any(w in name for w in ("component", f"{_mat} amount", f"{_mat} value",
+                                                    f"{_mat} cost", "stone"))
+                        and not any(w in name for w in ("product", "order", "jewel", "line total", "line_total")))
+        _mat_total = (_is_component
                       and not any(w in name for w in ("margin", "%", "per ", "avg", "average", "count", "by ")))
         if (isinstance(val, (int, float)) and _mat_total
                 and "percent" not in str(kpi.get("format", "")).lower()):
@@ -540,6 +687,163 @@ def _apply_report_guards(report: dict) -> None:
         # (RT-008: warnings were only logged, not surfaced).
         report["has_accuracy_warnings"] = True
         logger.warning("[Report Guards] %d accuracy warning(s): %s", len(warnings), warnings)
+
+
+# ── Universal invariant layer (the correctness endgame) ───────────────────────
+# Four laws that must hold for ANY data report, checked deterministically against the
+# already-recomputed (code-owned) values. This is the principled consolidation of the
+# scattered guards: instead of catching N specific bug patterns, we assert the data must
+# RECONCILE, be CONTAINED, be TRACEABLE, and be SANE. A report either satisfies them
+# (provably-not-silently-wrong) or gets flagged. Attaches a `report_integrity` stamp the
+# UI/QA can trust (unlike the LLM QA score, which has lied).
+
+def _num(x):
+    try:
+        if isinstance(x, bool):
+            return None
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _check_invariants(report: dict) -> None:
+    if not isinstance(report, dict):
+        return
+    violations: list[str] = []
+    checks_run = 0
+    company_total = _live_material_total  # reuse live-derive helper for materials
+    # Live-derived company-revenue ceiling (never hardcoded). Fail-safe → inf (guard won't false-fire).
+    COMPANY_REVENUE = _live_company_revenue() or float("inf")
+
+    kpis = [k for k in (report.get("kpis") or []) if isinstance(k, dict)]
+    charts = [c for c in (report.get("charts") or []) if isinstance(c, dict)]
+
+    def _kpi_total_for(keyword_sets):
+        # find a scalar KPI that is a grand-total for the given concept
+        for k in kpis:
+            nm = str(k.get("name") or k.get("label") or "").lower()
+            v = _num(k.get("value"))
+            if v is None:
+                continue
+            if any(all(w in nm for w in ws) for ws in keyword_sets) and not any(
+                x in nm for x in ("margin", "%", "avg", "average", "per ", "by ", "count")):
+                return v
+        return None
+
+    # ── LAW 1 — RECONCILIATION: a breakdown chart's parts ≈ its matching total ──
+    for chart in charts:
+        title = str(chart.get("title") or "").lower()
+        rows = chart.get("data") or []
+        if not isinstance(rows, list) or len(rows) < 2:
+            continue
+        # only value breakdowns (revenue/value/sales), not margin/%/count/avg charts
+        if not any(w in title for w in ("revenue", "value", "sales", "amount")):
+            continue
+        if any(w in title for w in ("margin", "%", "avg", "average", "count", "trend", "monthly", "rate")):
+            continue
+        parts = [_num(r.get("value")) for r in rows if isinstance(r, dict)]
+        parts = [p for p in parts if p is not None]
+        if len(parts) < 2:
+            continue
+        psum = sum(parts)
+        # find the total to reconcile against (prefer a live-derived material total).
+        # CRITICAL (RT-024): a chart titled "Revenue by Gold Karat" / "Revenue by Diamond Shape"
+        # is FULL line revenue partitioned BY a material ATTRIBUTE — its parts sum to company
+        # revenue, NOT to the material-component total. Only reconcile against the component
+        # total when the chart actually MEASURES component value (e.g. "Gold Component Value by …",
+        # "Diamond Amount by …"), not when it's revenue/sales merely split by that material's attribute.
+        total = None
+        for mat in ("diamond", "gold"):
+            if mat in title and any(w in title for w in (
+                    f"{mat} value", f"{mat} amount", f"{mat} component", f"{mat} cost", "component value")):
+                total = company_total(mat); break
+        if total is None:
+            total = _kpi_total_for([("total", "revenue"), ("total", "sales"), ("total", "value")])
+            # fall back to the live company-revenue ceiling so a real grand-total KPI isn't required
+            if total is None and COMPANY_REVENUE not in (None, float("inf")):
+                total = COMPANY_REVENUE
+        if total and total > 0:
+            checks_run += 1
+            ratio = psum / total
+            # parts should be ≤ total (a "top N" can be < total). Flag if they EXCEED it.
+            if ratio > 1.08:
+                chart["_invariant"] = "reconciliation_failed"
+                violations.append(
+                    f"RECONCILIATION: chart '{chart.get('title')}' parts sum to {psum:,.0f}, "
+                    f"{ratio:.2f}× the total ({total:,.0f}) — a breakdown can't exceed its total "
+                    f"(fan-out / wrong attribution). Recompute the parts without the multiplying join."
+                )
+
+    # ── LAW 2 — CONTAINMENT: no value exceeds total company revenue; material ≤ revenue ──
+    for k in kpis:
+        nm = str(k.get("name") or k.get("label") or "").lower()
+        v = _num(k.get("value"))
+        if v is None or "percent" in str(k.get("format", "")).lower() or "%" in nm:
+            continue
+        if any(w in nm for w in ("revenue", "value", "sales", "amount", "cost")) and not any(
+            w in nm for w in ("avg", "average", "per ", "margin")):
+            checks_run += 1
+            mat = "diamond" if "diamond" in nm else ("gold" if "gold" in nm else None)
+            # IMPORTANT distinction (RT-022): "diamond COMPONENT value" (just the stone, ≤ ₹1.9B)
+            # vs "diamond PRODUCT/ORDER revenue" (full jewelry value containing diamonds, ≤ company
+            # revenue). Only compare to the material-component truth when the KPI clearly means the
+            # COMPONENT — else treat it as ordinary revenue and only check the company-revenue ceiling.
+            _is_component = mat and any(w in nm for w in (
+                "component", f"{mat} amount", f"{mat} value", f"{mat} cost", "stone")) \
+                and not any(w in nm for w in ("product", "order", "jewel", "line total", "line_total"))
+            if _is_component:
+                truth = company_total(mat)
+                if truth and v > truth * 1.25:
+                    k["_invariant"] = "containment_failed"
+                    violations.append(
+                        f"CONTAINMENT: '{k.get('name') or k.get('label')}' = {v:,.0f} exceeds the live "
+                        f"true {mat} COMPONENT total ({truth:,.0f}) by {v/truth:.1f}× — inflated/fanned-out.")
+            elif v > COMPANY_REVENUE * 1.5:
+                k["_invariant"] = "containment_failed"
+                violations.append(
+                    f"CONTAINMENT: '{k.get('name') or k.get('label')}' = {v:,.0f} exceeds total company "
+                    f"revenue — impossible for a revenue/value metric.")
+
+    # ── LAW 3 — LINEAGE: every value KPI traces to a real query ──
+    for k in kpis:
+        v = k.get("value")
+        sql = str(k.get("sql") or k.get("executed_sql") or "")
+        if v is not None:
+            checks_run += 1
+            if not _re.search(r"\bfrom\b", sql, _re.IGNORECASE):
+                k["_invariant"] = "lineage_failed"
+                violations.append(
+                    f"LINEAGE: '{k.get('name') or k.get('label')}' value is not backed by a query "
+                    f"(no FROM clause) — possibly hand-typed/hallucinated.")
+
+    # ── LAW 4 — SANITY: physically-possible ranges by kind ──
+    for k in kpis:
+        nm = str(k.get("name") or k.get("label") or "").lower()
+        v = _num(k.get("value"))
+        if v is None:
+            continue
+        checks_run += 1
+        if v < 0 and any(w in nm for w in ("days", "time", "duration", "lead", "cycle", "age", "count", "orders", "revenue", "value")):
+            k["_invariant"] = "sanity_failed"
+            violations.append(f"SANITY: '{k.get('name') or k.get('label')}' = {v} is negative — impossible for this metric.")
+        if ("percent" in str(k.get("format", "")).lower() or "%" in nm) and (v < -1 or v > 100.5):
+            k["_invariant"] = "sanity_failed"
+            violations.append(f"SANITY: '{k.get('name') or k.get('label')}' = {v}% is outside 0–100%.")
+
+    # ── Attach a deterministic integrity stamp (trustworthy, unlike the LLM QA score) ──
+    report["report_integrity"] = {
+        "status": "verified" if not violations else "violations",
+        "checks_run": checks_run,
+        "violations": violations,
+    }
+    if violations:
+        existing = report.get("accuracy_warnings") or []
+        report["accuracy_warnings"] = existing + violations
+        report["has_accuracy_warnings"] = True
+        logger.warning("[Invariants] %d violation(s) across %d checks: %s",
+                       len(violations), checks_run, violations)
+    else:
+        logger.info("[Invariants] report passed all %d checks (reconcile/contain/trace/sane)", checks_run)
 
 
 # ── Telemetry aggregation ─────────────────────────────────────────────────────
@@ -820,6 +1124,19 @@ class ClaudeReportPipeline:
             # If accuracy guards flagged the report, never show a clean APPROVED.
             if final_report.get("has_accuracy_warnings") and verdict.startswith("APPROVED"):
                 verdict, status_col = "APPROVED (accuracy warnings)", _YELLOW
+            # SEVERE flags = a value that is genuinely WRONG (not merely suspect), e.g. a
+            # cross-domain fabricated profit/margin or a fan-out-inflated total. These must not
+            # read as APPROVED at all — force at least CONDITIONAL so the user treats the number
+            # as untrustworthy. Universal: keyed on the flag, not on any specific value.
+            _SEVERE = {"cross_domain_cost_fabrication", "material_total_inflated",
+                       "revenue_exceeds_total", "fabricated_formula"}
+            _has_severe = any(
+                (it.get("_accuracy_flag") in _SEVERE)
+                for it in (list(final_report.get("kpis", []) or []) + list(final_report.get("charts", []) or []))
+                if isinstance(it, dict)
+            ) or any(c.get("_invariant") for c in (final_report.get("charts", []) or []) if isinstance(c, dict))
+            if _has_severe and verdict.startswith("APPROVED"):
+                verdict, status_col = "CONDITIONAL (accuracy — value may be wrong)", _RED
             _tee(
                 f"  {_c('QA VERDICT', _BOLD)}: {_c(verdict, status_col, _BOLD)}  "
                 f"{_c(f'Score: {score}/{max_sc}', _YELLOW)}  {_c(f'{time.time()-t0:.1f}s', _DIM)}"
@@ -1048,29 +1365,53 @@ class ClaudeReportPipeline:
             )
             max_rounds = 25
 
-        response = self.client.call_agent(
-            system_prompt=system_prompt,
-            user_message=user_msg,
-            tools=SQL_AGENT_TOOLS,
-            tool_handlers=TOOL_HANDLERS,
-            max_tool_rounds=max_rounds,
-            agent_name="Drift Detective" if intent_mode == 'DRIFT_INVESTIGATION' else "SQL Agent",
-            model=_HAIKU,
-            use_cache=True,
-            cached_prefix=self._shared_context,
-        )
+        agent_label = "Drift Detective" if intent_mode == 'DRIFT_INVESTIGATION' else "SQL Agent"
 
-        try:
-            report = self.client.extract_json(response)
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.error("SQL agent JSON parse failed: %s", exc)
-            report = blueprint.copy()
-            for kpi in report.get('kpis', []):
-                kpi.setdefault('value', 0)
-                kpi.setdefault('sql', '')
-            for chart in report.get('charts', []):
-                chart.setdefault('data', [])
-                chart.setdefault('sql', '')
+        def _run_on(model: str) -> dict:
+            """Run the SQL agent on one model and parse to a report dict."""
+            resp = self.client.call_agent(
+                system_prompt=system_prompt,
+                user_message=user_msg,
+                tools=SQL_AGENT_TOOLS,
+                tool_handlers=TOOL_HANDLERS,
+                max_tool_rounds=max_rounds,
+                agent_name=agent_label,
+                model=model,
+                use_cache=True,
+                cached_prefix=self._shared_context,
+            )
+            try:
+                return self.client.extract_json(resp)
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.error("SQL agent JSON parse failed: %s", exc)
+                r = blueprint.copy()
+                for kpi in r.get('kpis', []):
+                    kpi.setdefault('value', 0); kpi.setdefault('sql', '')
+                for chart in r.get('charts', []):
+                    chart.setdefault('data', []); chart.setdefault('sql', '')
+                return r
+
+        # OPTION B — deterministic pre-routing: pick the model from schema/blueprint signals.
+        chosen_model, route_reason = _route_sql_model(question, blueprint, context)
+        logger.info("[SQL Router] %s → %s (%s)", agent_label,
+                    "SONNET" if chosen_model == _SONNET else "HAIKU", route_reason)
+        report = _run_on(chosen_model)
+
+        # OPTION C — failure escalation: if Haiku was chosen but struggled, re-run on Sonnet.
+        # Decides on OBSERVED behavior (rounds burned / unresolved elements), not a prediction.
+        # Only escalate UP (Haiku→Sonnet); never the reverse, and never to Opus.
+        if chosen_model == _HAIKU:
+            rounds_used = 0
+            try:
+                for u in reversed(self.client.usage_log):
+                    if u.get("agent") == agent_label:
+                        rounds_used = u.get("tool_rounds", 0); break
+            except Exception:
+                pass
+            struggle = _sql_agent_struggled(report, rounds_used, max_rounds)
+            if struggle:
+                logger.warning("[SQL Router] Haiku struggled (%s) — ESCALATING to Sonnet", struggle)
+                report = _run_on(_SONNET)
 
         # FIX A: code re-executes each element's SQL and owns the value/data — the
         # model's hand-typed values are NOT trusted (kills the 'Top Shape=0' /
@@ -1082,6 +1423,10 @@ class ClaudeReportPipeline:
         # preserved in the charts, so dropping the broken card loses nothing.
         _drop_broken_kpis(report)
         _apply_report_guards(report)
+        # Universal invariant layer: reconcile / contain / trace / sane. Attaches the
+        # trustworthy `report_integrity` stamp. This is the correctness backstop that
+        # generalizes beyond the specific guards above.
+        _check_invariants(report)
         return report
 
     def _run_data_analyst_agent(self, report: dict, context: dict | None = None) -> dict:

@@ -2,6 +2,50 @@
 // backend /ask endpoint (intent router) and streams SSE events back.
 
 /**
+ * Pretty-print the pipeline cost/speed metrics to the dev-tools console.
+ * Backend attaches `metrics` (from _build_metrics) to every chat + report
+ * response. We surface the REAL numbers — USD cost, wall-clock seconds, token
+ * counts, cache hit-rate, and a per-agent table — not a true/false summary.
+ */
+export function logMetrics(metrics, source = "request") {
+  if (!metrics || typeof metrics !== "object") return;
+  const usd = Number(metrics.estimated_cost_usd || 0);
+  const secs = (Number(metrics.total_time_ms || 0) / 1000).toFixed(1);
+  const fmtN = (n) => Number(n || 0).toLocaleString("en-US");
+
+  const title =
+    `%c⚡ ${source} cost & speed  ·  $${usd.toFixed(6)}  ·  ${secs}s  ·  ` +
+    `${fmtN(metrics.total_tokens)} tokens  ·  cache ${metrics.cache_hit_rate_pct ?? 0}%`;
+  console.groupCollapsed(title, "color:#7c3aed;font-weight:bold");
+
+  console.log(
+    `%cTotals%c  cost=$${usd.toFixed(6)}   time=${secs}s   agent_calls=${metrics.agent_calls ?? 0}`,
+    "color:#0ea5e9;font-weight:bold", "color:inherit"
+  );
+  console.log(
+    `Tokens  in=${fmtN(metrics.total_input_tokens)}  out=${fmtN(metrics.total_output_tokens)}  ` +
+    `cache_read=${fmtN(metrics.total_cache_read_tokens)}  cache_write=${fmtN(metrics.total_cache_creation_tokens)}  ` +
+    `(hit-rate ${metrics.cache_hit_rate_pct ?? 0}%)`
+  );
+
+  // Per-agent breakdown as a real table (sortable, expandable in dev-tools).
+  if (Array.isArray(metrics.agents) && metrics.agents.length) {
+    const rows = metrics.agents.map((a) => ({
+      agent: a.agent,
+      model: a.model,
+      "time (s)": (Number(a.elapsed_ms || 0) / 1000).toFixed(1),
+      rounds: a.tool_rounds,
+      in: a.input_tokens,
+      out: a.output_tokens,
+      cache_read: a.cache_read_tokens,
+      "cost ($)": Number(a.cost_usd || 0).toFixed(6),
+    }));
+    console.table(rows);
+  }
+  console.groupEnd();
+}
+
+/**
  * Stream the /ask endpoint. Calls onEvent(event) for every SSE event:
  *   {stage:"routing"|"routed"|"report_generating"|"analyze"|"sql"|"execute"|"interpret"|"complete", data:{...}}
  * Resolves with the final "complete" event's data (or null).
@@ -39,6 +83,7 @@ export async function askStream(question, conversationId, onEvent) {
       }
     }
   }
+  if (finalData && finalData.metrics) logMetrics(finalData.metrics, "chat");
   return finalData;
 }
 
@@ -52,6 +97,7 @@ export async function generateReport(question) {
   if (!res.ok) throw new Error("Report generation failed");
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+  if (data.metrics) logMetrics(data.metrics, "report");
   return data;
 }
 

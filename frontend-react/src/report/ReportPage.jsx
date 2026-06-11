@@ -7,6 +7,7 @@ import ModifyPanel from "./ModifyPanel.jsx";
 import FilterBar from "./FilterBar.jsx";
 import PlaceholderCard from "./PlaceholderCard.jsx";
 import { exportPDF, exportExcel } from "./exporters.js";
+import { logMetrics } from "../api.js";
 
 export default function ReportPage() {
   const params = new URLSearchParams(window.location.search);
@@ -41,7 +42,9 @@ export default function ReportPage() {
         setLoadError("Report not found. It may have expired — generate it again from the chat.");
         return;
       }
-      setPayload(JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      setPayload(parsed);
+      if (parsed && parsed.metrics) logMetrics(parsed.metrics, "report");
     } catch {
       setLoadError("Failed to load this report. Please generate it again from the chat.");
     }

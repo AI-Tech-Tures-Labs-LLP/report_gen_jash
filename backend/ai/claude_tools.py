@@ -281,9 +281,13 @@ def _enrich_sql_error(error: str, sql: str) -> str:
         hint = (f" FIX: you referenced `{a}.<col>` but never joined a table aliased `{a}`. "
                 f"Either add the JOIN (e.g. JOIN sales_order {a} ON ...) or remove the `{a}.` reference. "
                 f"Common cause: using `so.` after only joining sales_order_line — join sales_order too.")
-    elif 'specified more than once' in e or 'table name' in e and 'more than once' in e:
-        hint = (" FIX: the same alias is used for two different tables. Give each table a UNIQUE alias "
-                "(e.g. sol, sol2) and update its column references accordingly.")
+    elif 'specified more than once' in e or ('table name' in e and 'more than once' in e):
+        md = re.search(r'table name "(\w+)" specified more than once', e)
+        who = md.group(1) if md else "an alias"
+        hint = (f" FIX: '{who}' is used as a table name/alias more than once in FROM/JOIN. Most likely "
+                f"you wrote the SAME JOIN twice — remove the duplicate. If both joins are needed, give "
+                f"the second a DIFFERENT alias (e.g. '{who}2') and update only that table's '{who}.<col>' "
+                f"references. Do NOT blindly rename every '{who}.' — only the ones for the duplicated table.")
     elif re.search(r'column "?(\w+)"? does not exist', e):
         m2 = re.search(r'column "?(\w+)"? does not exist', e)
         hint = (f" FIX: column '{m2.group(1)}' is NOT in the schema — do NOT guess column names. "
@@ -319,8 +323,23 @@ def _prevalidate_sql(sql: str) -> tuple[bool, str, str]:
         all_aliases = {}
         for table, alias in from_matches + join_matches:
             alias_lower = alias.lower()
-            if alias_lower in all_aliases and all_aliases[alias_lower].lower() != table.lower():
-                errors.append(f"Duplicate alias '{alias}' used for both {all_aliases[alias_lower]} and {table}")
+            if alias_lower in all_aliases:
+                prior = all_aliases[alias_lower]
+                if prior.lower() != table.lower():
+                    # same alias, two DIFFERENT tables → rename the second + its column refs
+                    errors.append(
+                        f"Duplicate alias '{alias}' used for both {prior} and {table}. "
+                        f"FIX: give {table} a UNIQUE alias (e.g. '{alias}2') and update every "
+                        f"'{alias}.<col>' that refers to {table} (NOT the ones referring to {prior})."
+                    )
+                else:
+                    # SAME table joined twice with the SAME alias → the second JOIN is redundant
+                    errors.append(
+                        f"Table {table} is joined twice with the same alias '{alias}' "
+                        f"('specified more than once'). FIX: you almost certainly need only ONE "
+                        f"'{table} {alias}' — remove the duplicate JOIN. If you truly need it twice "
+                        f"(self-join), the second one MUST have a different alias (e.g. '{alias}2')."
+                    )
             else:
                 all_aliases[alias_lower] = table
 
