@@ -1,15 +1,40 @@
-"""Report endpoints: /report, /report/apply-filters, /report/modify, /report/filters."""
+"""Report endpoints: /report, /report/apply-filters, /report/modify, /report/filters, /reports/save."""
 
 import json as _json
 import logging
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from api.schemas import ReportRequest, ReportApplyFiltersRequest, ReportModifyRequest
+from api.auth import get_current_user
 
 logger = logging.getLogger("api")
 router = APIRouter()
+
+
+class SaveReportRequest(BaseModel):
+    report_id: str
+    conv_id: Optional[str] = None
+    question: str
+    report_data: Dict[str, Any]
+
+
+@router.post("/reports/save")
+def save_report_endpoint(req: SaveReportRequest, current_user: dict = Depends(get_current_user)):
+    """Persist a generated report to MongoDB (user-scoped via JWT)."""
+    from db.user_data import save_report
+
+    save_report(
+        user_id=current_user["user_id"],
+        conv_id=req.conv_id or "",
+        report_id=req.report_id,
+        question=req.question,
+        report_data=req.report_data,
+    )
+    return {"ok": True}
 
 
 @router.post("/report")

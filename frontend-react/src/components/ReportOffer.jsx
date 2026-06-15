@@ -3,7 +3,7 @@ import { generateReport, openReport } from "../api.js";
 
 // "Want a detailed analytics report?" card shown under chat answers.
 // On click, calls /report and opens the full dashboard in a new tab.
-export default function ReportOffer({ question, t }) {
+export default function ReportOffer({ question, t, convId }) {
   const [status, setStatus] = useState("idle"); // idle | loading | done | error
   const [hover, setHover] = useState(false);
   const [reportId, setReportId] = useState(null);
@@ -18,7 +18,7 @@ export default function ReportOffer({ question, t }) {
     setStatus("loading");
     try {
       const data = await generateReport(question);
-      const id = openReport(question, data); // stores + opens once
+      const id = openReport(question, data, convId); // stores + opens once
       setReportId(id);
       setStatus("done");
     } catch {
