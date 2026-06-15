@@ -144,12 +144,17 @@ def get_turn_by_id(turn_id: int) -> Dict[str, Any] | None:
 
 
 def get_recent_history(conversation_id: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """Return the most recent `limit` turns for a conversation (oldest first)."""
+    """Return the most recent `limit` turns for a conversation (oldest first).
+
+    Includes the stored `query_result` (deserialized) so callers can give the
+    model the PRIOR NUMBERS — without them, follow-ups like "break that down by
+    month" lose the figures the previous answer was based on.
+    """
     _ensure_table()
     engine = get_engine()
     query = text(
         """
-        SELECT question, answer, sql_query, created_at
+        SELECT question, answer, sql_query, query_result, created_at
         FROM chat_history
         WHERE conversation_id = :conversation_id
         ORDER BY created_at DESC
@@ -161,6 +166,15 @@ def get_recent_history(conversation_id: str, limit: int = 5) -> List[Dict[str, A
             query, {"conversation_id": conversation_id, "limit": limit}
         ).mappings().all()
 
-    # Reverse so caller sees oldest → newest
-    return list(reversed([dict(r) for r in rows]))
+    # Reverse so caller sees oldest → newest; deserialize query_result JSON.
+    result = []
+    for r in reversed(rows):
+        row = dict(r)
+        if row.get("query_result"):
+            try:
+                row["query_result"] = json.loads(row["query_result"])
+            except (json.JSONDecodeError, TypeError):
+                row["query_result"] = None
+        result.append(row)
+    return result
 

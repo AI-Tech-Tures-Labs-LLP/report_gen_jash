@@ -1,7 +1,7 @@
 """Claude-backed LLM functions for report modification and chat SQL answering.
 
 This module replaces the legacy DSPy/Groq signatures that previously powered
-the `/report/modify` and `/chat/stream` endpoints. Both now run on Claude via
+the `/report/modify` and `/ask` (chat) endpoints. Both now run on Claude via
 the shared `ClaudeClient`, reusing the same SQL Agent brain that drives report
 generation — so chat, reports, and modifications all share one model and one
 SQL-generation approach.
@@ -205,6 +205,9 @@ def modify_report(current_report: str, modification: str, schema_info: str,
 _CHAT_INTERPRET_SYSTEM = """You are a data analyst. Given a user question, the SQL
 that was run, and the query results (JSON), write a clear, concise answer.
 
+CURRENCY: All monetary values are Indian Rupees (INR). ALWAYS use the ₹ symbol (or "INR")
+for money — NEVER "$" or "dollars". E.g. "₹11.27 billion", not "$11.27 billion".
+
 Output a JSON object with exactly two keys:
 - "answer": a plain-language explanation of what the results show (2-4 sentences)
 - "insights": 3-5 short analytic bullet points as a single string (newline-separated)
@@ -241,6 +244,17 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None
 
     yield {"stage": "sql", "data": {"message": "Generating SQL..."}}
 
+    # Capture the LAST successful execute_sql_query tool result directly, instead of
+    # trusting the model to echo the rows back as JSON (it often truncates or drops
+    # them). The tool already ran the query — re-parsing its actual output is both
+    # cheaper and more accurate than re-running SQL from the model's JSON echo.
+    _last_exec: dict = {}
+
+    def _capture(tool_name: str, parsed: dict, _raw) -> None:
+        if tool_name == "execute_sql_query" and parsed.get("success") is True:
+            _last_exec["sql"] = parsed.get("executed_sql", "")
+            _last_exec["data"] = parsed.get("data") or []
+
     sql_response = client.call_agent(
         system_prompt=sql_system,
         user_message=(
@@ -255,6 +269,7 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None
         tool_handlers=TOOL_HANDLERS,
         agent_name="Chat SQL Agent",
         use_cache=True,
+        on_tool_result=_capture,
     )
 
     sql = ""
@@ -267,7 +282,16 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None
         # Fallback: the agent returned prose; treat the whole thing as the answer
         logger.warning("Chat SQL agent returned non-JSON; using text fallback")
 
-    # If the agent reported SQL but no rows (e.g. it didn't echo data), re-run it.
+    # Prefer the ACTUAL tool execution result over the model's JSON echo.
+    # The tool's captured rows are authoritative; the echo can be truncated/wrong.
+    if _last_exec.get("data"):
+        rows = _last_exec["data"]
+        sql = sql or _last_exec.get("sql", "")
+    if not sql and _last_exec.get("sql"):
+        sql = _last_exec["sql"]
+
+    # Last resort: agent named SQL but we captured no rows (e.g. it only validated,
+    # never executed) — run it once so the answer isn't empty.
     if sql and not rows:
         result = execute_sql(sql)
         if result.get("success"):

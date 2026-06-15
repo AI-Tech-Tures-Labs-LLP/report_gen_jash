@@ -118,13 +118,16 @@ TOOL_GET_METRIC_SQL = {
     "name": "get_metric_sql",
     "description": (
         "Get the CANONICAL, DB-verified SQL for a core business metric (revenue, cogs, "
-        "gross_profit, gross_margin_pct, units, diamond/gold/making component value, "
-        "vendor_cogs, raw_material gold/diamond consumed). Call this BEFORE writing SQL for "
-        "any cost/profit/margin/component/consumed metric — it returns the correct tables and "
-        "joins so you don't invent a wrong one (e.g. summing across a fan-out child, or comparing "
-        "sales vs all-PO spend). Accepts an exact metric name OR an intent keyword "
-        "(e.g. 'vendor cost', 'gold consumed'). Adapt the returned fragment (add GROUP BY / "
-        "filters) as needed, but keep its join structure."
+        "gross_profit, gross_profit_base, gross_margin_pct, units, diamond/gold/making component "
+        "value, gold_cost, vendor_cogs, raw_material gold/diamond consumed, leftover_inventory_value, "
+        "leftover_units, discount_pct, dso). Call this BEFORE writing SQL for any cost/profit/margin/"
+        "component/consumed/inventory/discount metric — it returns the correct tables and joins so you "
+        "don't invent a wrong one (e.g. summing across a fan-out child, comparing sales vs all-PO "
+        "spend, or using a wrong/empty column). Accepts an exact metric name OR an intent keyword "
+        "(e.g. 'vendor cost', 'gold consumed', 'leftover value', 'dso'). If the result has "
+        "\"unavailable\": true, that metric has NO data in this DB — tell the user it's unavailable, "
+        "do NOT fabricate it. Adapt the returned fragment (add GROUP BY / filters) as needed, but "
+        "keep its join structure."
     ),
     "input_schema": {
         "type": "object",

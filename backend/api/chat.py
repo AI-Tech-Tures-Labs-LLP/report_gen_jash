@@ -1,4 +1,8 @@
-"""Chat + smart-router endpoints: /chat/stream and /ask."""
+"""Chat + smart-router endpoint: /ask.
+
+`/ask` is the single chat entry point — both frontends call it. (A legacy
+`/chat/stream` endpoint was removed; nothing called it.)
+"""
 
 import json as _json
 import logging
@@ -10,101 +14,6 @@ from api.schemas import QuestionRequest
 
 logger = logging.getLogger("api")
 router = APIRouter()
-
-
-@router.post("/chat/stream")
-def chat_stream_endpoint(req: QuestionRequest):
-    """Stream chat progress via Server-Sent Events (SSE).
-
-    Runs on Claude via the shared SQL Agent (same brain as report generation).
-    Sends real-time progress updates as each stage completes, then the final
-    result as the last event.
-    """
-    from services.report_generator import classify_intent
-    from services.claude_report_llm import (
-        answer_chat_question, classify_query_intent, answer_conversational,
-    )
-    from db.memory import get_recent_history, add_turn
-
-    def event_generator():
-        logger.info(
-            "STREAM request | conversation_id=%s | question=%s",
-            req.conversation_id or "default",
-            req.question,
-        )
-
-        conversation_id = req.conversation_id or "default"
-
-        # GATEKEEPER: don't run SQL for non-data turns (greetings/off-topic/abuse).
-        route = classify_query_intent(req.question)
-        if route.get("mode") in ("conversational", "out_of_scope", "refuse"):
-            reply = answer_conversational(req.question, mode=route["mode"])
-            try:
-                add_turn(conversation_id, req.question, reply, "", query_result=None)
-            except Exception:
-                pass
-            yield f"data: {_json.dumps({'stage': 'complete', 'data': {'sql': '', 'data': [], 'answer': reply, 'insights': '', 'report_eligible': False, 'row_count': 0, 'mode': 'chat', 'non_data': True}})}\n\n"
-            return
-
-        intent = classify_intent(req.question)
-        report_eligible_by_intent = intent == "report"
-        history = get_recent_history(conversation_id, limit=5)
-
-        if history:
-            history_lines = ["You are in a multi-turn conversation. Here are the recent exchanges:"]
-            for turn in history:
-                history_lines.append(f"User: {turn['question']}")
-                history_lines.append(f"Assistant: {turn['answer']}")
-            history_lines.append(f"Now the user asks: {req.question}")
-            question_with_context = "\n".join(history_lines)
-        else:
-            question_with_context = req.question
-
-        try:
-            for event in answer_chat_question(question_with_context):
-                if event["stage"] == "complete":
-                    result = event["data"]
-                    # Persist this turn
-                    add_turn(
-                        conversation_id,
-                        req.question,
-                        result["answer"],
-                        result["sql"],
-                        query_result=(result["data"][:200] if result.get("data") else None),
-                    )
-                    data_rows = len(result.get("data") or [])
-                    report_eligible = report_eligible_by_intent or data_rows >= 3
-                    result["report_eligible"] = report_eligible
-                    result["row_count"] = data_rows
-                    result["mode"] = "chat"
-                    yield f"data: {_json.dumps(event, default=str)}\n\n"
-                else:
-                    yield f"data: {_json.dumps(event)}\n\n"
-        except Exception as exc:
-            logger.error("STREAM error: %s", exc)
-            error_event = {
-                "stage": "complete",
-                "data": {
-                    "sql": "",
-                    "data": [],
-                    "answer": f"An error occurred: {str(exc)}",
-                    "insights": "",
-                    "report_eligible": False,
-                    "row_count": 0,
-                    "mode": "chat",
-                },
-            }
-            yield f"data: {_json.dumps(error_event)}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 @router.post("/ask")
@@ -121,10 +30,14 @@ def ask_endpoint(req: QuestionRequest):
     from services.claude_report_llm import (
         classify_query_intent, answer_chat_question, answer_conversational,
     )
-    from services.report_generator import classify_intent  # noqa: F401 (kept for parity)
     from db.memory import get_recent_history, add_turn
 
     def event_generator():
+        # Both frontends send a conversation_id; "default" is only a safety net.
+        # Warn if we hit it, so a missing id is visible rather than silently
+        # bucketing unrelated turns together.
+        if not req.conversation_id:
+            logger.warning("ASK request with NO conversation_id — falling back to shared 'default' bucket")
         conversation_id = req.conversation_id or "default"
         logger.info("ASK request | conversation_id=%s | question=%s", conversation_id, req.question)
 
@@ -172,6 +85,16 @@ def ask_endpoint(req: QuestionRequest):
             for turn in history:
                 lines.append(f"User: {turn['question']}")
                 lines.append(f"Assistant: {turn['answer']}")
+                # Include the PRIOR query results (compact) so follow-ups like
+                # "break the top one down by month" can reference the actual
+                # numbers/entities the previous answer was based on — not just
+                # the prose. Cap rows + chars to keep the prompt small.
+                prior_rows = turn.get("query_result")
+                if prior_rows:
+                    snippet = _json.dumps(prior_rows[:10], default=str)
+                    if len(snippet) > 1500:
+                        snippet = snippet[:1500] + "…(truncated)"
+                    lines.append(f"(data behind that answer: {snippet})")
             lines.append(f"Now the user asks: {req.question}")
             question_with_context = "\n".join(lines)
         else:

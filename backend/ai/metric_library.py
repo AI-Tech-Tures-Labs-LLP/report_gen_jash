@@ -38,12 +38,42 @@ METRIC_LIBRARY: dict[str, dict] = {
                 "aggregate PO tables separately and subtract (RT-025 fabrication).",
     },
     "gross_profit": {
+        # VENDOR-cost gross profit — consistent with gross_margin_pct (both use vendor cost via the
+        # 1:1 allocation bridge). This is "what we sold for − what the vendor charged us".
+        "sql": "SELECT ROUND((SUM(solp.line_total) - SUM(plp.unit_price * sol.quantity))::numeric, 2) AS value "
+               "FROM sales_order_line sol "
+               "JOIN sales_order so ON sol.so_id = so.so_id AND so.status = 'closed' "
+               "JOIN sales_order_line_pricing solp ON solp.sol_id = sol.sol_id "
+               "JOIN sales_allocation sa ON sa.sol_id = sol.sol_id "
+               "JOIN po_line_pricing plp ON plp.pol_id = sa.pol_id",
+        "note": "VENDOR-cost gross profit = revenue − vendor COGS (allocation bridge). Pairs with "
+                "gross_margin_pct (same basis). For the INTERNAL landed-cost version use "
+                "gross_profit_base. NEVER revenue − total PO spend (unrelated populations).",
+    },
+    "gross_profit_base": {
         "sql": f"SELECT ROUND((SUM(solp.line_total) - SUM(solp.base_price_per_unit * solp.quantity))::numeric, 2) AS value {_CLOSED_JOIN}",
-        "note": "Revenue − on-row COGS, same row. NEVER revenue − total PO spend.",
+        "note": "INTERNAL landed-cost gross profit = revenue − on-row base_price (gold+diamond+making). "
+                "Same row, no bridge. Use when the question asks profit vs our COST TO MAKE, not vs "
+                "what the vendor charged. (Vendor-cost version is the default 'gross_profit'.)",
     },
     "gross_margin_pct": {
-        "sql": f"SELECT ROUND(AVG(solp.margin_pct)::numeric, 2) AS value {_CLOSED_JOIN}",
-        "note": "margin_pct already encodes (selling−base)/selling. Use it directly.",
+        # VENDOR-COST WEIGHTED margin (Joel's definition: price to customer vs cost from
+        # vendor), revenue-weighted so large bulk orders pull the company figure correctly.
+        # NOT AVG(margin_pct): a simple average weights a ₹500 line == a ₹5M line and
+        # overstates the blended margin (35.0% vs the true 32.66%, DB-verified). The
+        # vendor cost comes through the 1:1 allocation bridge (sol→sales_allocation→
+        # po_line_pricing), same path as vendor_cogs.
+        "sql": "SELECT ROUND((100.0 * (SUM(solp.line_total) - SUM(plp.unit_price * sol.quantity)) "
+               "/ NULLIF(SUM(solp.line_total), 0))::numeric, 2) AS value "
+               "FROM sales_order_line sol "
+               "JOIN sales_order so ON sol.so_id = so.so_id AND so.status = 'closed' "
+               "JOIN sales_order_line_pricing solp ON solp.sol_id = sol.sol_id "
+               "JOIN sales_allocation sa ON sa.sol_id = sol.sol_id "
+               "JOIN po_line_pricing plp ON plp.pol_id = sa.pol_id",
+        "note": "VENDOR-cost gross margin %, revenue-weighted: (Σ line_total − Σ vendor "
+                "unit_price×qty) / Σ line_total. Vendor cost via the 1:1 allocation bridge "
+                "(safe, no fan-out). NEVER AVG(margin_pct) — that is an unweighted per-line "
+                "average and overstates the blended company margin.",
     },
     "units": {
         "sql": "SELECT SUM(sol.quantity) AS value FROM sales_order_line sol "
@@ -83,6 +113,44 @@ METRIC_LIBRARY: dict[str, dict] = {
                "FROM raw_material_lot_usage_ledger WHERE material_type = 'diamond'",
         "note": "Diamond CONSUMED = usage ledger carats_used. NOT po_line_diamond (=purchased).",
     },
+    "gold_cost": {
+        "sql": "SELECT ROUND(SUM(solg.gold_rate_per_gm * solg.total_gold_weight_per_unit * sol.quantity)::numeric, 2) AS value "
+               "FROM sales_order_line_gold solg "
+               "JOIN sales_order_line sol ON solg.sol_id = sol.sol_id "
+               "JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed'",
+        "note": "Gold metal value of sold items. Column is total_gold_weight_per_unit (grams/unit) — "
+                "there is NO 'gold_weight_grams'. solg is 1:1 with sol (no fan-out). Equivalent: "
+                "SUM(solg.gold_amount_per_unit * sol.quantity). Agrees with gold_component_value.",
+    },
+    "leftover_inventory_value": {
+        "sql": "SELECT ROUND(SUM(quantity_available * unit_cost)::numeric, 2) AS value "
+               "FROM finished_goods_inventory",
+        "note": "On-hand/remaining stock VALUE = quantity_available × unit_cost. NEVER SUM(total_amount) "
+                "(= full original receipt value, overstates ~16× once any units are consumed). "
+                "Filter material_mode='RM_PROVIDED' for RM-provided stock only.",
+    },
+    "leftover_units": {
+        "sql": "SELECT SUM(quantity_available) AS value FROM finished_goods_inventory",
+        "note": "On-hand units = SUM(quantity_available). (Value version = leftover_inventory_value.)",
+    },
+    "discount_pct": {
+        "sql": "SELECT ROUND(AVG(approved_discount_pct)::numeric, 2) AS value FROM discount_exceptions",
+        "note": "Discount lives in the governance table discount_exceptions.approved_discount_pct "
+                "(also requested_/allowed_discount_pct; trend by created_at). ⚠️ "
+                "sales_invoices.discount_amount is ALL ZERO — never use it. DISCOUNT ≠ MARGIN. "
+                "If discount_exceptions has no rows for the asked period, say discount data is "
+                "unavailable — do NOT substitute margin.",
+    },
+    "dso": {
+        # Intentionally returns no SQL — the underlying data is all-zero, so any computed DSO is a
+        # false 0. The agent must surface unavailability, not a number.
+        "sql": "",
+        "note": "UNAVAILABLE: customer_master.outstanding_balance is ALL ZERO in this DB — there is no "
+                "receivables/AR data, so DSO cannot be computed. Do NOT return 0 days; STATE that "
+                "outstanding-balance data is unavailable. (If AR is added later: "
+                "outstanding_balance / annual_revenue × 365, annual_revenue = "
+                "SUM(sales_order.total_amount) per customer_id.)",
+    },
 }
 
 # Cheap keyword → metric routing so the agent can ask by intent word.
@@ -99,6 +167,14 @@ _ALIASES = {
     "gold consumed": "raw_material_gold_consumed", "gold used": "raw_material_gold_consumed",
     "diamond consumed": "raw_material_diamond_consumed", "diamond used": "raw_material_diamond_consumed",
     "raw material": "raw_material_gold_consumed",
+    "gross profit base": "gross_profit_base", "landed cost profit": "gross_profit_base",
+    "gold cost": "gold_cost", "metal cost": "gold_cost",
+    "leftover value": "leftover_inventory_value", "on-hand value": "leftover_inventory_value",
+    "on hand value": "leftover_inventory_value", "remaining value": "leftover_inventory_value",
+    "inventory value": "leftover_inventory_value",
+    "leftover units": "leftover_units", "on-hand units": "leftover_units", "remaining units": "leftover_units",
+    "discount": "discount_pct", "discount %": "discount_pct", "discount rate": "discount_pct",
+    "dso": "dso", "days sales outstanding": "dso", "receivable": "dso", "receivables": "dso",
 }
 
 
@@ -108,13 +184,24 @@ def get_metric_sql(metric: str) -> dict:
     if not metric:
         return {"found": False, "available": sorted(METRIC_LIBRARY), "note": "Pass a metric name."}
     key = metric.strip().lower()
+
+    def _result(name: str) -> dict:
+        entry = METRIC_LIBRARY[name]
+        out = {"found": True, "metric": name, "sql": entry["sql"], "note": entry["note"]}
+        # A metric with no SQL is intentionally UNAVAILABLE (data missing, e.g. DSO) — flag it
+        # so the agent surfaces unavailability instead of trying to run an empty query.
+        if not entry["sql"]:
+            out["unavailable"] = True
+        return out
+
     if key in METRIC_LIBRARY:
-        entry = METRIC_LIBRARY[key]
-        return {"found": True, "metric": key, "sql": entry["sql"], "note": entry["note"]}
-    for kw, mapped in _ALIASES.items():
+        return _result(key)
+    # Match the MOST SPECIFIC alias first: a substring scan in dict order would let a short
+    # generic alias ("units", "sales") hijack a longer specific phrase ("leftover units",
+    # "days sales outstanding"). Sorting by descending key length fixes that ordering bug.
+    for kw in sorted(_ALIASES, key=len, reverse=True):
         if kw in key:
-            entry = METRIC_LIBRARY[mapped]
-            return {"found": True, "metric": mapped, "sql": entry["sql"], "note": entry["note"]}
+            return _result(_ALIASES[kw])
     return {"found": False, "available": sorted(METRIC_LIBRARY),
             "note": f"No canonical metric matches '{metric}'. Write SQL directly using the schema, "
                     f"or pick one of the available metrics."}

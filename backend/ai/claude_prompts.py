@@ -742,7 +742,14 @@ BUSINESS RULES:
       data is unavailable for that period — do NOT substitute a different metric.
     • DISCOUNT ≠ MARGIN. Never answer a discount question with margin_pct unless you
       EXPLICITLY state you are substituting margin and why.
-- MARGIN / "margin %" = AVG(sales_order_line_pricing.margin_pct). (Distinct from discount.)
+- MARGIN / "gross margin %" = VENDOR-cost, revenue-weighted:
+    (SUM(solp.line_total) − SUM(plp.unit_price × sol.quantity)) / SUM(solp.line_total) × 100,
+    where vendor cost comes through the 1:1 allocation bridge
+    (sol → sales_allocation.pol_id → po_line_pricing). Call get_metric_sql('margin') for the exact SQL.
+    • ⚠️ NEVER AVG(sales_order_line_pricing.margin_pct) — that is an UNWEIGHTED per-line average
+      (weights a tiny line == a huge bulk line) and OVERSTATES the blended company margin
+      (~35% vs the true ~33%, DB-verified). Company-level margin is ALWAYS revenue-weighted.
+    • (Distinct from discount.)
 - RAW MATERIAL CONSUMED / USED / "issued to production" / "consumed in production" — this is the
   ACTUAL material drawn for making an item, and it has its OWN ledger. Do NOT use po_line_gold /
   po_line_diamond for "consumed" — those are what was PURCHASED from a vendor, a different concept.
@@ -784,8 +791,18 @@ BUSINESS RULES:
       (quantity_received × unit_cost), which overstates on-hand value whenever any
       units were consumed. "Leftover/remaining/on-hand VALUE" = qty_available × unit_cost.
     • "Leftover UNITS" = SUM(quantity_available). "RM provided" filter = material_mode='RM_PROVIDED'.
-- DSO = (outstanding_amount / annual_revenue × 365) per customer.
-- GOLD cost = gold_weight_grams × gold_rate_per_gm (sales_order_line_gold).
+- DSO / "days sales outstanding" / "receivables days":
+    • ⚠️ customer_master.outstanding_balance is ALL ZERO in this database — there is NO
+      receivables/AR data. DSO CANNOT be computed. Do NOT return 0 days (that is a false answer),
+      and do NOT invent it. STATE that receivables/outstanding-balance data is unavailable, so DSO
+      cannot be calculated. (If real AR data is added later: DSO = outstanding_balance /
+      annual_revenue × 365, with annual_revenue = SUM(sales_order.total_amount) per customer_id.)
+- GOLD cost / "gold value of sales" (cost of the gold metal in sold items):
+    • = SUM(solg.gold_rate_per_gm × solg.total_gold_weight_per_unit × sol.quantity) over closed sales
+      (sales_order_line_gold is 1:1 with sales_order_line — safe, no fan-out).
+    • ⚠️ The column is total_gold_weight_per_unit (grams/unit) — there is NO `gold_weight_grams`
+      column. Equivalent simpler form: SUM(solg.gold_amount_per_unit × sol.quantity).
+    • This matches the pricing-table gold component (gold_component_value) — they agree by design.
 - HUNTER metrics: join sales_order.hunter_id → hunters; hunter→order is 1:many (safe, no fan-out).
 - "STORE": there is NO store table. The geographic grain is `territories`; the account grain is
   customer_master. If asked about "stores", either map to territories OR to distinct customers —
