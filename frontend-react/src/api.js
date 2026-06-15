@@ -124,7 +124,7 @@ export function openReport(question, reportData, convId) {
 async function syncReportToMongo(reportId, question, reportData, convId) {
   try {
     const { getAuthHeaders } = await import("./auth.js");
-    await fetch("/reports/save", {
+    const res = await fetch("/reports/save", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
       body: JSON.stringify({
@@ -134,7 +134,8 @@ async function syncReportToMongo(reportId, question, reportData, convId) {
         report_data: reportData,
       }),
     });
-  } catch {
-    /* silent — localStorage is the backup */
+    if (!res.ok) console.warn("Failed to sync report to MongoDB:", res.status);
+  } catch (err) {
+    console.warn("Report sync to MongoDB failed:", err);
   }
 }

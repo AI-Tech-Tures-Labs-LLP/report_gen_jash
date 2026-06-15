@@ -30,6 +30,8 @@ export default function App() {
   const [convs, setConvs] = useState(() => loadConversations());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const threadRef = useRef(null);
+  const syncTimer = useRef(null); // debounce MongoDB sync
+  const isLoadingConv = useRef(false); // prevent sync during conversation switch
 
   useEffect(() => {
     localStorage.setItem("sqlbot_theme", themeMode);
@@ -42,12 +44,17 @@ export default function App() {
 
   // Persist messages whenever they change (skip empty — that's a new chat)
   useEffect(() => {
-    if (messages.length > 0) {
-      saveMessages(convId, messages);
-      // Sync to MongoDB in the background
+    if (messages.length === 0) return;
+    if (isLoadingConv.current) return; // don't re-sync while switching conversations
+
+    saveMessages(convId, messages);
+
+    // Debounce MongoDB sync (300ms) to coalesce rapid message updates
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
       const title = convs.find((c) => c.id === convId)?.title || "Chat";
       syncToMongo(convId, title, messages);
-    }
+    }, 300);
   }, [messages, convId]);
 
   // Load conversations from MongoDB on mount — migrate localStorage data if needed
@@ -173,23 +180,36 @@ export default function App() {
   }
 
   async function loadConvFromMongo(targetConvId) {
+    isLoadingConv.current = true; // prevent sync useEffect from firing during load
     try {
       const res = await fetch(`/conversations/${targetConvId}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.messages && data.messages.length > 0) {
-          setMessages(data.messages);
           setConvId(targetConvId);
+          setMessages(data.messages);
           saveMessages(targetConvId, data.messages);
           return;
         }
       }
-    } catch { /* fallback */ }
+    } catch (err) {
+      console.warn("Failed to load conversation from MongoDB:", err);
+    }
     // Fallback to localStorage
     const saved = loadMessages(targetConvId);
-    setMessages(saved);
     setConvId(targetConvId);
-  }
+    setMessages(saved);
+    // Use setTimeout to re-enable sync after React commits the state update
+  } 
+
+  // Re-enable sync after loading completes (runs after state settles)
+  useEffect(() => {
+    if (isLoadingConv.current) {
+      // Allow one render cycle, then re-enable sync
+      const t = setTimeout(() => { isLoadingConv.current = false; }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [convId]);
 
   async function handleDeleteConversation(e, targetConvId) {
     e.stopPropagation();
