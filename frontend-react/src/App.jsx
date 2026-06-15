@@ -87,21 +87,27 @@ export default function App() {
 
   async function syncToMongo(cId, title, msgs) {
     try {
-      await fetch("/conversations", {
+      const res = await fetch("/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ conv_id: cId, title, messages: msgs }),
       });
-    } catch { /* silent — localStorage is the primary backup */ }
+      if (!res.ok) console.warn("Failed to sync conversation to MongoDB:", res.status);
+    } catch (err) {
+      console.warn("Sync to MongoDB failed:", err);
+    }
   }
 
   async function deleteFromMongo(cId) {
     try {
-      await fetch(`/conversations/${cId}`, {
+      const res = await fetch(`/conversations/${cId}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
-    } catch { /* silent */ }
+      if (!res.ok) console.warn("Failed to delete conversation from MongoDB:", res.status);
+    } catch (err) {
+      console.warn("Delete from MongoDB failed:", err);
+    }
   }
 
   function pushMessage(m) {
@@ -185,11 +191,27 @@ export default function App() {
     setConvId(targetConvId);
   }
 
-  function handleDeleteConversation(e, targetConvId) {
+  async function handleDeleteConversation(e, targetConvId) {
     e.stopPropagation();
+
+    // Clean up any report data in localStorage for this conversation
+    const msgs = loadMessages(targetConvId);
+    for (const m of msgs) {
+      if (m.reportId) {
+        localStorage.removeItem("sqlbot_report_" + m.reportId);
+        localStorage.removeItem("sqlbot_report_" + m.reportId + "_question");
+        localStorage.removeItem("sqlbot_report_" + m.reportId + "_theme");
+      }
+    }
+
+    // Remove from localStorage (conversations list + messages)
     const remaining = deleteConversation(targetConvId);
     setConvs(remaining);
-    deleteFromMongo(targetConvId);
+
+    // Remove from MongoDB (cascades: deletes conversation + all its reports)
+    await deleteFromMongo(targetConvId);
+
+    // If deleting the active conversation, start a new chat
     if (targetConvId === convId) {
       newChat();
     }
