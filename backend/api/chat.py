@@ -7,9 +7,10 @@
 import json as _json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from api.auth import get_current_user
 from api.schemas import QuestionRequest
 
 logger = logging.getLogger("api")
@@ -17,7 +18,7 @@ router = APIRouter()
 
 
 @router.post("/ask")
-def ask_endpoint(req: QuestionRequest):
+def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_user)):
     """Smart entry point for the main input box.
 
     Classifies the question's INTENT (backend-owned), then routes:
@@ -26,25 +27,40 @@ def ask_endpoint(req: QuestionRequest):
                         report_eligible=True so the UI always offers 'Generate Report').
     Streams SSE in BOTH cases so the frontend has one contract; the frontend branches
     on the final event's `mode` ("report" | "chat").
+
+    LOGIN-ONLY: requires a valid auth token. Conversation memory is stored per-user
+    in Mongo (db.user_data), keyed by (user_id, conversation_id) — the central business
+    Postgres is no longer touched for chat history. Auth is resolved HERE (not inside
+    the generator) so a bad token returns a clean 401 before the SSE stream starts.
     """
     from services.claude_report_llm import (
         classify_query_intent, answer_chat_question, answer_conversational,
     )
-    from db.memory import get_recent_history, add_turn
+    from db.user_data import get_recent_turns, add_turn
+
+    user_id = current_user["user_id"]
 
     def event_generator():
-        # Both frontends send a conversation_id; "default" is only a safety net.
-        # Warn if we hit it, so a missing id is visible rather than silently
-        # bucketing unrelated turns together.
-        if not req.conversation_id:
-            logger.warning("ASK request with NO conversation_id — falling back to shared 'default' bucket")
+        # conversation_id scopes the thread WITHIN this user. Default per-user bucket
+        # if the client omits one (still isolated per user, never shared across users).
         conversation_id = req.conversation_id or "default"
-        logger.info("ASK request | conversation_id=%s | question=%s", conversation_id, req.question)
+        logger.info("ASK request | user=%s conv=%s | question=%s", user_id, conversation_id, req.question)
+
+        # Fetch history ONCE, up front — the router needs it too (a follow-up like
+        # "break the top one down" is unroutable without knowing what "the top one" is).
+        history = get_recent_turns(user_id, conversation_id, limit=5)
+        # Compact context for the cheap router: just the Q/A text of recent turns (no result rows).
+        router_context = ""
+        if history:
+            router_context = "\n".join(
+                f"User: {t['question']}\nAssistant: {t['answer']}" for t in history
+            )
 
         # ── Step 1: classify intent (cheap Haiku) — GATEKEEPER: decides if we touch the DB at all,
-        #            AND rates SQL complexity so we pick the cheapest SAFE model for the SQL step. ──
+        #            AND rates SQL complexity so we pick the cheapest SAFE model for the SQL step.
+        #            Gets recent context so follow-up references route correctly. ──
         yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
-        intent = classify_query_intent(req.question)
+        intent = classify_query_intent(req.question, recent_context=router_context)
         mode = intent.get("mode", "data")
         complexity = intent.get("complexity", "complex")
         logger.info("ASK routed → %s / %s (%s)", mode, complexity, intent.get("reason", ""))
@@ -55,7 +71,7 @@ def ask_endpoint(req: QuestionRequest):
             reply = answer_conversational(req.question, mode=mode)
             # Persist so multi-turn context still flows, but no SQL/data.
             try:
-                add_turn(conversation_id, req.question, reply, "", query_result=None)
+                add_turn(user_id, conversation_id, req.question, reply, "", query_result=None)
             except Exception:
                 pass
             yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': reply, 'sql': '', 'data': [], 'insights': '', 'report_eligible': False, 'row_count': 0, 'non_data': True}})}\n\n"
@@ -80,8 +96,7 @@ def ask_endpoint(req: QuestionRequest):
                 yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': f'Report generation failed: {exc}', 'sql': '', 'data': [], 'insights': '', 'report_eligible': True, 'row_count': 0}})}\n\n"
             return
 
-        # ── Step 2b: CHAT intent → fast answer (with history) ──
-        history = get_recent_history(conversation_id, limit=5)
+        # ── Step 2b: CHAT intent → fast answer (history already fetched above) ──
         if history:
             lines = ["You are in a multi-turn conversation. Here are the recent exchanges:"]
             for turn in history:
@@ -115,7 +130,7 @@ def ask_endpoint(req: QuestionRequest):
                 if event["stage"] == "complete":
                     result = event["data"]
                     add_turn(
-                        conversation_id, req.question, result["answer"], result["sql"],
+                        user_id, conversation_id, req.question, result["answer"], result["sql"],
                         query_result=(result["data"][:200] if result.get("data") else None),
                     )
                     result["row_count"] = len(result.get("data") or [])

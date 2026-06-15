@@ -1,7 +1,16 @@
-"""Conversation memory stored in PostgreSQL (Neon).
+"""DEPRECATED — legacy Postgres conversation memory. NO LONGER USED.
 
-Keeps the last N turns per conversation so the AI can
-use recent context for follow‑up questions.
+Chat history (both the LLM's working memory and the UI history) now lives in MongoDB,
+per-user, in db/user_data.py (add_turn / get_recent_turns / get_full_turns) — co-located
+with auth, not in the central business/ERP Postgres. The /ask path and the (removed)
+/history endpoints no longer call anything here.
+
+This module is retained ONLY so the existing `chat_history` Postgres TABLE and any old
+rows are not silently lost — Joel will drop that table manually. Nothing imports this file
+anymore; it can be deleted once the table is dropped. Do NOT wire new code to it.
+
+Original purpose: kept the last N turns per conversation so the AI could use recent
+context for follow-up questions.
 """
 
 from __future__ import annotations

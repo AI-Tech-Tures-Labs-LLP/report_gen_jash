@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { getTheme } from "./theme.js";
 import { askStream, openReport } from "./api.js";
-import { loadConversations, saveConversations, newConversationId, saveMessages, loadMessages, deleteConversation } from "./storage.js";
+import { loadConversations, saveConversations, newConversationId, saveMessages, loadMessages, deleteConversation, saveActiveConvId, loadActiveConvId } from "./storage.js";
 import { getAuthHeaders, logout, getUser } from "./auth.js";
 import ChatMessage from "./components/ChatMessage.jsx";
 import ReportOffer from "./components/ReportOffer.jsx";
@@ -26,7 +26,8 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(""); // streaming status line
-  const [convId, setConvId] = useState(() => newConversationId());
+  // Resume the last-open conversation on reload; only mint a fresh one if there's none.
+  const [convId, setConvId] = useState(() => loadActiveConvId() || newConversationId());
   const [convs, setConvs] = useState(() => loadConversations());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const threadRef = useRef(null);
@@ -57,8 +58,17 @@ export default function App() {
     }, 300);
   }, [messages, convId]);
 
-  // Load conversations from MongoDB on mount — migrate localStorage data if needed
+  // Remember the active conversation so a page reload RESUMES it (instead of
+  // dropping into a blank new chat). Read back in the convId useState initializer.
   useEffect(() => {
+    saveActiveConvId(convId);
+  }, [convId]);
+
+  // On mount: restore the resumed conversation's messages (instant, from localStorage)
+  // so the screen isn't blank after a reload. initConversations() refreshes the list.
+  useEffect(() => {
+    const saved = loadMessages(convId);
+    if (saved.length > 0) setMessages(saved);
     initConversations();
   }, []);
 

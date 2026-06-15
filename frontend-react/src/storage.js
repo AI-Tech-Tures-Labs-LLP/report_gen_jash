@@ -32,6 +32,28 @@ export function newConversationId() {
   return "conv_" + Date.now();
 }
 
+// ── Active conversation (so a page reload RESUMES the last chat instead of
+//    starting a blank one). Scoped per-user like everything else. ──
+const ACTIVE_SUFFIX = "active_conv";
+
+/** Remember which conversation is currently open. */
+export function saveActiveConvId(convId) {
+  try {
+    localStorage.setItem(userPrefix() + ACTIVE_SUFFIX, convId);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Get the last-open conversation id, or null if none. */
+export function loadActiveConvId() {
+  try {
+    return localStorage.getItem(userPrefix() + ACTIVE_SUFFIX) || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Save messages for a specific conversation. */
 export function saveMessages(convId, messages) {
   try {

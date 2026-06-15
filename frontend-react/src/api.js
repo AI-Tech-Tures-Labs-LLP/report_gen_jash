@@ -1,6 +1,8 @@
 // API client for the backend. The main entry is askStream() which calls the
 // backend /ask endpoint (intent router) and streams SSE events back.
 
+import { getAuthHeaders } from "./auth.js";
+
 /**
  * Pretty-print the pipeline cost/speed metrics to the dev-tools console.
  * Backend attaches `metrics` (from _build_metrics) to every chat + report
@@ -53,7 +55,7 @@ export function logMetrics(metrics, source = "request") {
 export async function askStream(question, conversationId, onEvent) {
   const res = await fetch("/ask", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ question, conversation_id: conversationId }),
   });
   if (!res.ok || !res.body) {

@@ -41,6 +41,75 @@ def save_conversation(
     )
 
 
+def add_turn(
+    user_id: str,
+    conv_id: str,
+    question: str,
+    answer: str,
+    sql: str | None = None,
+    query_result: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    """Append one Q/A turn to a conversation's LLM-memory log (Mongo).
+
+    This is the AI's working memory for follow-up questions — kept in a `turns`
+    array on the conversation doc, SEPARATE from the UI `messages` array (which the
+    frontend owns). Stores the prior query_result so follow-ups can reference the
+    actual numbers. Replaces the old Postgres chat_history.add_turn.
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    # Cap stored result rows to keep the doc small (memory only needs a sample).
+    capped = (query_result or [])[:200] if query_result else None
+    turn = {
+        "question": question,
+        "answer": answer,
+        "sql": sql or "",
+        "query_result": capped,
+        "created_at": now,
+    }
+    db.conversations.update_one(
+        {"user_id": user_id, "conv_id": conv_id},
+        {
+            "$push": {"turns": turn},
+            "$set": {"updated_at": now},
+            "$setOnInsert": {
+                "user_id": user_id,
+                "conv_id": conv_id,
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+
+
+def get_recent_turns(user_id: str, conv_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """Return the most recent `limit` turns for a conversation (oldest first).
+
+    Used to give the LLM recent context for follow-ups. Replaces the old Postgres
+    chat_history.get_recent_history. Returns [] if the conversation has no turns.
+    """
+    db = get_db()
+    doc = db.conversations.find_one(
+        {"user_id": user_id, "conv_id": conv_id},
+        {"turns": {"$slice": -limit}, "_id": 0},
+    )
+    if not doc or not doc.get("turns"):
+        return []
+    return doc["turns"]
+
+
+def get_full_turns(user_id: str, conv_id: str) -> List[Dict[str, Any]]:
+    """Return ALL turns for a conversation (oldest first) — for the history sidebar."""
+    db = get_db()
+    doc = db.conversations.find_one(
+        {"user_id": user_id, "conv_id": conv_id},
+        {"turns": 1, "_id": 0},
+    )
+    if not doc or not doc.get("turns"):
+        return []
+    return doc["turns"]
+
+
 def get_user_conversations(user_id: str) -> List[Dict[str, Any]]:
     """List all conversations for a user (newest first), without full messages."""
     db = get_db()

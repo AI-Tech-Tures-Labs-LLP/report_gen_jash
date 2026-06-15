@@ -63,6 +63,12 @@ Rules:
 - If it could plausibly be answered from the business data, prefer "data" (or "report" if broad).
 - Only use "conversational"/"out_of_scope"/"refuse" when the question is clearly NOT a data request.
 - When genuinely torn between "data" and "report", choose "data" (cheap; UI offers a Report button).
+- FOLLOW-UPS: if RECENT CONVERSATION is provided and the current message refers back to it
+  ("break the top one down by month", "what about last year", "show that as a chart", "which of
+  those is highest"), RESOLVE the reference against the prior turns and classify it as the DATA (or
+  report) question it actually is. Do NOT call it "conversational" just because it is short or uses
+  a pronoun — a pronoun pointing at prior DATA is still a data question. Only use "conversational"
+  if the message is genuinely smalltalk/greeting EVEN WITH the prior context in view.
 
 ALSO rate SQL complexity (only matters for mode "data"; ignore for other modes):
 - "simple"  → a single flat fact from ONE table, no JOIN, no GROUP BY, no time-bucketing, no
@@ -123,7 +129,8 @@ def answer_conversational(question: str, mode: str = "conversational",
 _VALID_MODES = ("report", "data", "conversational", "out_of_scope", "refuse")
 
 
-def classify_query_intent(question: str, client: ClaudeClient | None = None) -> dict:
+def classify_query_intent(question: str, client: ClaudeClient | None = None,
+                          recent_context: str = "") -> dict:
     """Route a main-input question. Gatekeeps whether to touch the DB at all.
 
     Cheap Haiku call. Returns {"mode": one of _VALID_MODES, "reason": str}.
@@ -131,14 +138,27 @@ def classify_query_intent(question: str, client: ClaudeClient | None = None) -> 
     - conversational        → greeting / capability / smalltalk (NO SQL)
     - out_of_scope / refuse → not our data / injection-abuse (NO SQL, polite reply)
 
+    `recent_context`: a short summary of the last few turns. CRITICAL for follow-ups —
+    without it, a question like "break the top one down by month" looks ambiguous and
+    gets mis-routed to "conversational". With prior turns, the router resolves the
+    reference and routes it as the data/report question it really is.
+
     Falls back to "data" on error (safe: the question probably IS about data, and the
     SQL path + validator still guard execution).
     """
     client = client or ClaudeClient()
     try:
+        if recent_context:
+            user_msg = (
+                f"RECENT CONVERSATION (for resolving follow-up references):\n{recent_context}\n\n"
+                f"CURRENT USER MESSAGE: {question}\n\nClassify the CURRENT message's intent "
+                f"(resolve pronouns like 'that'/'the top one' using the recent conversation)."
+            )
+        else:
+            user_msg = f"USER QUESTION: {question}\n\nClassify intent."
         response = client.call_agent(
             system_prompt=_INTENT_SYSTEM,
-            user_message=f"USER QUESTION: {question}\n\nClassify intent.",
+            user_message=user_msg,
             agent_name="Intent Router",
             model=_config.CLAUDE_HAIKU_MODEL,
             max_tokens=200,
