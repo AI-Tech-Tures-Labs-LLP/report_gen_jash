@@ -64,8 +64,17 @@ Rules:
 - Only use "conversational"/"out_of_scope"/"refuse" when the question is clearly NOT a data request.
 - When genuinely torn between "data" and "report", choose "data" (cheap; UI offers a Report button).
 
+ALSO rate SQL complexity (only matters for mode "data"; ignore for other modes):
+- "simple"  → a single flat fact from ONE table, no JOIN, no GROUP BY, no time-bucketing, no
+  ranking, no ratio across tables. Examples: "how many customers do we have", "how many open
+  orders", "count of products", "how many vendors". A trivial COUNT/SUM on one table.
+- "complex" → ANYTHING involving joins, grouping/"by <dimension>", top-N/ranking, time trends,
+  margins/profit/cost (these need the allocation bridge), component values (diamond/gold — fan-out
+  risk), ratios, or multiple metrics. Examples: "revenue by category", "top 5 customers", "monthly
+  trend", "gross margin", "diamond value". When UNSURE, choose "complex" (safer — uses the stronger model).
+
 Output ONLY a JSON object: {"mode": "report"|"data"|"conversational"|"out_of_scope"|"refuse",
-"reason": "<one short phrase>"}"""
+"complexity": "simple"|"complex", "reason": "<one short phrase>"}"""
 
 
 # A friendly, on-brand reply for non-data turns (conversational/out_of_scope/refuse).
@@ -142,10 +151,15 @@ def classify_query_intent(question: str, client: ClaudeClient | None = None) -> 
             mode = "data"
         if mode not in _VALID_MODES:
             mode = "data"
-        return {"mode": mode, "reason": parsed.get("reason", "")}
+        # Complexity gates the SQL model (simple→Haiku, complex→Sonnet). Default to "complex"
+        # on anything unexpected — the strong model is the SAFE default for this fan-out-heavy DB.
+        complexity = (parsed.get("complexity") or "complex").strip().lower()
+        if complexity != "simple":
+            complexity = "complex"
+        return {"mode": mode, "complexity": complexity, "reason": parsed.get("reason", "")}
     except Exception as exc:
         logger.warning("Intent classification failed (%s) — defaulting to data", exc)
-        return {"mode": "data", "reason": "classifier error — safe default"}
+        return {"mode": "data", "complexity": "complex", "reason": "classifier error — safe default"}
 
 
 # ── Report modification (replaces DSPy ReportModification) ───────────────────
@@ -215,9 +229,14 @@ Output a JSON object with exactly two keys:
 Output ONLY the JSON object — no markdown, no code fences."""
 
 
-def answer_chat_question(question: str, client: ClaudeClient | None = None
-                         ) -> Iterator[dict]:
+def answer_chat_question(question: str, client: ClaudeClient | None = None,
+                         sql_model: str | None = None) -> Iterator[dict]:
     """Answer a chat question by generating + executing SQL, then interpreting.
+
+    `sql_model`: which Claude model runs the SQL-generation agent. Defaults to the
+    standard (Sonnet) model. The caller passes the cheaper Haiku model for questions
+    the intent router rated "simple" (flat single-table facts) to save cost — complex
+    questions stay on Sonnet because this DB's fan-out/bridge joins need the stronger model.
 
     Yields staged progress events for SSE streaming, mirroring the shape the
     frontend expects:
@@ -268,6 +287,7 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None
         tools=SQL_AGENT_TOOLS,
         tool_handlers=TOOL_HANDLERS,
         agent_name="Chat SQL Agent",
+        model=sql_model,  # None → default (Sonnet); Haiku for router-rated "simple" questions
         use_cache=True,
         on_tool_result=_capture,
     )

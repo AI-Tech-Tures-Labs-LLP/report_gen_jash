@@ -41,11 +41,13 @@ def ask_endpoint(req: QuestionRequest):
         conversation_id = req.conversation_id or "default"
         logger.info("ASK request | conversation_id=%s | question=%s", conversation_id, req.question)
 
-        # ── Step 1: classify intent (cheap Haiku) — GATEKEEPER: decides if we touch the DB at all ──
+        # ── Step 1: classify intent (cheap Haiku) — GATEKEEPER: decides if we touch the DB at all,
+        #            AND rates SQL complexity so we pick the cheapest SAFE model for the SQL step. ──
         yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
         intent = classify_query_intent(req.question)
         mode = intent.get("mode", "data")
-        logger.info("ASK routed → %s (%s)", mode, intent.get("reason", ""))
+        complexity = intent.get("complexity", "complex")
+        logger.info("ASK routed → %s / %s (%s)", mode, complexity, intent.get("reason", ""))
         yield f"data: {_json.dumps({'stage': 'routed', 'data': {'mode': mode, 'reason': intent.get('reason', '')}})}\n\n"
 
         # ── Step 1b: NON-DATA turns → answer directly, NO SQL, NO database ──
@@ -100,8 +102,16 @@ def ask_endpoint(req: QuestionRequest):
         else:
             question_with_context = req.question
 
+        # Pick the SQL model: Haiku for router-rated "simple" single-table facts (cost win),
+        # Sonnet otherwise. Force Sonnet whenever there's conversation history — a follow-up
+        # must reason over prior context/results, which the cheaper model handles less reliably.
+        from core import config as _cfg
+        use_haiku_sql = (complexity == "simple") and not history
+        sql_model = _cfg.CLAUDE_HAIKU_MODEL if use_haiku_sql else None  # None → default Sonnet
+        logger.info("ASK chat SQL model → %s", "haiku (simple)" if use_haiku_sql else "sonnet")
+
         try:
-            for event in answer_chat_question(question_with_context):
+            for event in answer_chat_question(question_with_context, sql_model=sql_model):
                 if event["stage"] == "complete":
                     result = event["data"]
                     add_turn(
