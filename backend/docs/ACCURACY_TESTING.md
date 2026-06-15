@@ -2046,6 +2046,116 @@ rounds on MECHANICAL errors (ambiguous column, alias, false-DROP) — determinis
   semantic, not reasoning-depth). Order rationale: each phase de-risks the next; 1+2 lock "never wrong",
   3 makes it cheaper/faster by prevention.
 
+### RT-029 — the 3-phase root-cause plan, BUILT (2026-06-11). All boot-tested, app OK. Re-test pending.
+Executed the audit's phased plan in one sitting (Joel approved all 3):
+- **Phase 1 — finished deterministic repair layer** (cost/flailing fix):
+  • `_enrich_sql_error` now has a precise AMBIGUOUS-COLUMN hint ("qualify `<alias>.col` everywhere incl.
+    WHERE/GROUP BY/IN") — kills the RT-028 ×6-round waster. • `validator.py` false-DROP fixed: forbidden-
+    keyword scan now runs on the comment-stripped SQL with string literals + quoted idents BLANKED, so a
+    'TEARDROP' shape name or "-- DROP" comment no longer false-blocks; a real chained `; DROP` still caught.
+- **Phase 2 — fan-out gate is now a DATA-DRIVEN REGISTRY** (`_FANOUT_REGISTRY` in claude_tools.py), measured
+  from live DB, replacing the 3-table hardcode. Covers the 4 previously-UNTESTED time-bombs:
+  finished_goods_inventory 36.7×, job_card 5.84×, po_line_items 3.42×, raw_material_lot_usage 3.81× — plus
+  the known diamond 2.56×/2.40×. Blocks summing a PARENT amount (line_total/total_amount/pricing-per-unit)
+  across ANY fan-out join; ALLOWS each table's OWN per-row col (po_line_diamond.amount, rm.qty_used_gm —
+  verified safe). Extending coverage = add one registry line. Verified 8 cases (incl. inventory/job_card
+  block, own-col allow, no false positives).
+- **Phase 3 — lightweight CODE semantic layer** (`ai/metric_library.py` + `get_metric_sql` tool): 11 core
+  metrics (revenue, cogs, gross_profit, margin, units, gold/diamond/making component, vendor_cogs via the
+  allocation BRIDGE, rm gold/diamond consumed) each with a DB-VERIFIED canonical SQL fragment + a note on the
+  trap it avoids. SQL agent is told to call get_metric_sql FIRST for cost/profit/margin/component/consumed
+  metrics → fetches the correct join instead of inventing one (root-cause fix for RT-025/RT-028 CLASS).
+  ALL 11 fragments executed against live DB and run clean (revenue 11.27B, cogs 8.35B, vendor_cogs-bridge
+  7.59B, diamond_component 1.92B, etc.). Advisory (tool), not a gate — the fan-out gate + guards still enforce.
+EXPECTATION on re-test: sell-vs-vendor + raw-material queries answer CORRECTLY (semantic layer gives the
+join), fewer flail rounds (ambiguous-col/alias hints), inventory/job_card queries can't silently inflate
+(registry). Goal "answer, never wrong" should now be STRUCTURALLY met for the tested + the 4 new fan-out paths.
+
+### RT-033 — ROOT-CAUSE fixes for the overstock cascade (3 universal fixes). Boot-tested. Live-test pending.
+**Date:** 2026-06-15. After 3 runs of "which products are overstocked" all failed (misroute→drift→flail→
+empty), stopped whack-a-mole and fixed the CASCADE at its roots. Diagnosed 4 stages: (1) MISROUTE — keyword
+"overstock" → SIG-017 → drift machine; (2) SQL drowns in 20+ multi-CTE drift queries; (3) MY OWN validator
+made it WORSE — read keyword `WHERE` as a table alias, emitted bogus "duplicate alias 'WHERE'" hints, spiraled
+the agent; (4) empty end → fake narrative. THREE universal fixes:
+  • **Fix B (validator bug — code):** `_prevalidate_sql` alias check now skips when the captured "alias" is a
+    SQL clause KEYWORD (added module-level `_SQL_KEYWORDS`: where/group/order/on/join/limit/…). The regex
+    `FROM <tbl> <word>` was matching `FROM t WHERE`/`JOIN t ON` and calling WHERE/ON an alias. This was MY
+    code actively causing the death-spiral via false hints. Verified: FROM..WHERE / JOIN..ON / FROM..GROUP
+    now clean; a GENUINE duplicate alias (sol used for 2 tables) still caught. Universal — fixes ALL queries.
+  • **Fix A (misroute — prompt + code gate):** prompt rewritten — DRIFT requires CAUSAL/CHANGE-OVER-TIME
+    intent ("why did X move / what's driving / vs baseline"); ALL ranking/listing/"which X" questions are
+    STANDARD_REPORT even if they contain a signal keyword; flipped the dangerous "when in doubt → DRIFT"
+    default to "→ STANDARD_REPORT (drift is 10× cost, must be earned)". CODE ENFORCEMENT `_enforce_report_
+    routing`: if classifier says DRIFT but the question is ranking/listing with NO causal cue, downgrade to
+    STANDARD_REPORT in code. Verified: overstock/slow-moving/top-returns → STANDARD; "why dropping"/"what's
+    causing"/"track over time" → DRIFT preserved. This kills the whole misroute CLASS (the #1 cost driver:
+    ~$3.70→~$0.30 for these questions) — not just overstock.
+  • **Fix C (re-confirmed):** the RT-032 `_data_failed` stamp → hard REJECT remains in place as the final
+    backstop if any investigation still ends empty.
+Expected on live re-test: "overstock" routes to STANDARD_REPORT, a few rounds, real ranked data, ~$0.30 —
+no drift machine, no WHERE-alias spiral. App OK. LESSON (the meta-fix): we kept returning here because we
+patched SYMPTOMS (guard the empty output) not ROOTS (don't enter the expensive fragile path; don't let my
+own validator emit false hints). These 3 are root-level.
+
+### RT-032 — the RT-031 fix DID NOT FIRE (re-test still APPROVED an empty report). Re-fixed properly.
+**Date:** 2026-06-15. Re-ran the overstock query. Same total SQL failure (21 rounds/701s, JSON broke, all
+6 KPIs=0/SQL:(none), all 6 charts=0 rows, 6 lineage violations) — and **QA STILL said "APPROVED (warnings)
+9/12".** My RT-031 empty-guard did NOT work. ROOT CAUSE of the miss: I checked emptiness at VERDICT time on
+`final_report` — but on the drift path the NARRATOR rebuilds the report object from its own JSON and puts
+hand-typed story values BACK into the KPIs ("52 days", "34.6→51.3"), so by verdict time the KPIs looked
+NON-empty and my check passed them. I checked the wrong object at the wrong stage (honest mistake).
+PROPER FIX: stamp `_data_failed` at the SQL STAGE (in _run_sql_agent, right after the guards, BEFORE the
+narrator can mask it) when ≥50% KPIs are empty+untraced or ≥50% charts have 0 rows; CARRY that stamp from
+report_with_data onto final_report after the narrator rebuilds it; the verdict now hard-REJECTs on the
+stamp alone, ignoring whatever values the narrator wrote. Verified end-to-end: failed report gets stamped;
+stamp survives a narrator that writes FAKE values back → still REJECTED; healthy report not stamped → APPROVED.
+LESSON: guard state must live on the EARLIEST unambiguous object and be explicitly propagated — re-deriving
+it downstream is fragile when an LLM stage rebuilds the object. Cost this run: $3.72 / 1049s (misroute+flail).
+STILL OPEN (unchanged, separate): the overstock→DRIFT misroute and the detective's variant_sku/CTE flailing.
+
+### RT-031 — ☠️ WORST RESULT: empty FAILED drift investigation got APPROVED 12/12. Goal VIOLATED. Fixed.
+**Date:** 2026-06-15. Query "which products are overstocked relative to how fast they are selling." THREE
+compounding failures:
+  1. MISROUTE (separate issue, NOT yet fixed): the Context/Signal agent classified this simple RANKING
+     question as DRIFT_INVESTIGATION (SIG-017 Stock Build-Up) → fired the 11-tab/4-phase drift machine. Massive
+     over-escalation. This is a CLASSIFIER-scope problem, logged separately — do NOT whack-a-mole it here.
+  2. SQL FAILED COMPLETELY: Drift Detective flailed 14 rounds / 527s on self-inflicted CTE errors (built
+     `sales_8w` CTEs that didn't SELECT variant_sku then joined on it; pm-reference + alias collisions). NOTE:
+     variant_sku DOES exist on sales_order_line/_pricing/fgi — the errors were the agent's own CTE construction,
+     not a schema gap. Final JSON too broken to parse ("SQL agent JSON parse failed"). EVERY KPI = 0, SQL:(none);
+     EVERY chart = 0 rows. Lineage guards correctly fired 6 violations.
+  3. ☠️ DRIFT QA APPROVED IT 12/12. The narrator wrote a confident 50k-char HIGH-severity story with FAKE
+     specifics ("ratio jumped 0.4 pts in 2 weeks, peaked 3.5×") over ZERO data, and QA gave a clean APPROVED.
+     **This is "a wrong answer shown as right" — Joel's one non-negotiable — VIOLATED on the drift path.**
+ROOT CAUSE of the violation: the severity/empty gate at verdict time (1) didn't include untraced_kpi/lineage
+in _SEVERE, and (2) had NO check for a wholesale-empty report. The drift path rebuilds the report through the
+narrator, and an all-empty result sailed past has_accuracy_warnings to a clean 12/12.
+FIX (verdict gate, both report + drift paths): added `untraced_kpi` to _SEVERE; added report_integrity
+status=='violations' to the severe trigger; added an EMPTY-INVESTIGATION guard — if ≥50% of KPIs are
+empty+untraced OR ≥50% of charts have 0 rows, force "REJECTED (no data — investigation produced empty
+results)", needs_retry=False (re-writing the narrative won't conjure data). Verified: empty drift → REJECTED;
+healthy → APPROVED; 1/6-empty → APPROVED (no false reject). App OK.
+STILL OPEN (separate, by design): (a) the overstock→drift MISROUTE — the classifier is too eager to call
+ranking questions "drift"; (b) the SQL agent's self-inflicted CTE-alias flailing on hard multi-CTE queries
+(14 rounds) — Phase-1 hints help but multi-CTE variant_sku-threading is a deeper gap. Both are CAPABILITY/cost,
+not "wrong-answer-shown-as-right" (that is now gated). Cost this run: $2.65 / 830s — the misroute + flail.
+
+### RT-030 — re-test sell-vs-vendor: numbers CORRECT (11/12 APPROVED) but Phase 2 OVER-BLOCKED. Fixed.
+**Date:** 2026-06-15. Re-ran "sold-for vs cost-from-vendors by category". **All KPIs DB-verified correct**
+(avg selling ₹66,711.30, margin/unit ₹17,296.94, margin% 35.02, revenue ₹11,267,974,058.97, orders 16,941;
+Chart 3 revenue via sales_invoice_lines = ₹11.27B ✓). **No fabrication, no cross-domain flag — QA APPROVED
+11/12. Goal HELD.** BUT it took 9 rounds / 264s because my new fan-out registry OVER-BLOCKED: I listed
+`sales_order_line` (2.07× vs ORDER) as a fan-out table, so the gate wrongly blocked `SUM(solp.line_total)`
++ pricing-col sums that join sol — even though sales_order_line_pricing is 1:1 WITH the line (line grain,
+NOT double-counting). ~20 false blocks → the model flailed (EXISTS, sales_invoice_lines workarounds) before
+landing correct. Over-block is recoverable (right answer) but re-introduced the flailing cost Phase 1 was
+meant to cut. FIX: made the gate GRAIN-AWARE — sales_order_line is LINE grain, so line_total/pricing-per-unit
+sums across it are SAFE (allowed); only an ORDER-level amount (total_amount) across sol, OR a line/pricing
+amount across a genuine SUB-LINE child (diamond/job_card/inventory/po_items/rm_usage), is blocked. Re-verified
+8 cases: the false positive now ALLOWS; all genuine fan-outs (diamond line_total, order total_amount, inventory
+total_amount) still BLOCK; correct own-col sums allowed. App OK. LESSON: a data-driven registry is right, but
+"fan-out factor >1" alone isn't sufficient — must encode the GRAIN at which each amount column lives.
+
 ---
 
 ## TODO (SQL ROBUSTNESS / SPEED — deferred per Joel, correctness first)

@@ -110,17 +110,28 @@ _DATE_CONTEXT_PLACEHOLDER_
 
 Classify the request as ONE of:
 
-- **DRIFT_INVESTIGATION** — The user wants to track, monitor, or investigate a metric deviation, 
-  performance gap, anomaly, or trend against a baseline. Trigger phrases include: "why is X dropping", 
-  "track X", "monitor X", "X seems high/low", "flag when X exceeds", "what's causing X to change", 
-  "investigate X", "X underperforming", "X spiking", "X is off". 
-  → Produces a drift card with causal decomposition.
+- **DRIFT_INVESTIGATION** — ONLY when the user is asking about a CHANGE / DEVIATION / CAUSE over time:
+  why a metric MOVED, what's DRIVING a shift, or to monitor a metric against a BASELINE. The request
+  must carry CAUSAL or TEMPORAL-CHANGE intent. Qualifying phrases: "why is X dropping/rising", "what's
+  CAUSING X to change", "X is spiking/declining/underperforming", "track/monitor X over time", "X vs
+  last month/baseline", "X seems off". The defining test: is the user asking **why something CHANGED**?
+  → Produces a drift card with causal decomposition (EXPENSIVE: 4-phase, ~20 queries — use only when warranted).
 
-- **STANDARD_REPORT** — The user wants a descriptive analytics report, overview, ranking, or summary.
-  Trigger phrases: "show me", "give me a report on", "what is our X", "breakdown of X", "top X by Y".
-  → Produces standard KPI + chart dashboard.
+- **STANDARD_REPORT** — Any DESCRIPTIVE request: a report, overview, RANKING, LISTING, comparison, or
+  current-state snapshot. This includes ALL "which / what / list / top / show / how many / compare X"
+  questions — even when the metric name resembles a signal (e.g. "which products are OVERSTOCKED",
+  "slowest-moving items", "highest-margin categories", "products with most returns"). Asking WHICH items
+  have a property is a RANKING, NOT a drift investigation. Trigger phrases: "show me", "report on",
+  "what is our X", "which X", "list X", "breakdown of X", "top/bottom X by Y", "compare X".
+  → Produces standard KPI + chart dashboard (cheaper, robust).
 
-When in doubt between modes, classify as DRIFT_INVESTIGATION — it is the richer output.
+DECISION TEST (apply literally):
+  • Is the user asking **WHY a metric CHANGED / what is DRIVING a deviation**? → DRIFT_INVESTIGATION.
+  • Is the user asking **WHICH / WHAT / HOW MUCH (a ranking, list, or current state)**? → STANDARD_REPORT.
+WHEN IN DOUBT, classify as STANDARD_REPORT. Drift is the EXPENSIVE path and must be EARNED by clear
+causal/temporal-change intent — defaulting to it wastes ~10× the cost on questions that only need a report.
+A signal-library keyword appearing in the question is NOT sufficient: "overstocked"/"slow-moving"/"declining"
+as a DESCRIPTOR of items to rank is STANDARD_REPORT; only a request to investigate the CHANGE is DRIFT.
 
 ---
 
@@ -658,10 +669,14 @@ Run one DIMENSIONAL_CUT query per dimension. Execute all dimensions.
 ## MODE B — STANDARD_REPORT queries
 
 For each data_requirement in KPIs and charts:
-1. Write a SQL query
-2. Execute it with execute_sql_query
-3. Retry on failure with corrected SQL
-4. Collect all results
+1. If the metric is a cost / profit / margin / component-value / vendor-cost / "consumed in
+   production" metric, FIRST call get_metric_sql(<metric or keyword>) to get the canonical,
+   DB-verified join — then adapt it (add GROUP BY / filters) keeping its join structure. This
+   prevents inventing a wrong join (the most common cause of confidently-wrong numbers).
+2. Otherwise write a SQL query directly from the schema.
+3. Execute it with execute_sql_query
+4. Retry on failure with corrected SQL (read the FIX hint in the error — it is precise)
+5. Collect all results
 
 ---
 

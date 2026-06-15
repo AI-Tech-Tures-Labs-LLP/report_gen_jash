@@ -44,8 +44,15 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     if not re.match(r"^\s*(SELECT|WITH)\b", check_str, re.IGNORECASE):
         return False, "Only SELECT queries are allowed."
 
-    # Check for forbidden keywords
-    match = _FORBIDDEN_PATTERN.search(stripped)
+    # Check for forbidden keywords — but ONLY against the comment-stripped SQL with
+    # string LITERALS blanked out. A product name or comment containing "DROP"/"DELETE"
+    # (e.g. a 'TEARDROP' shape, or "-- DROP the old logic") is NOT a DDL command and must
+    # not be rejected (RT-028: a legit query was falsely blocked on a 'DROP' substring,
+    # wasting a Sonnet round). We already require the statement to START with SELECT/WITH,
+    # so a real DDL verb can only appear as a chained/sub-statement — which this still catches.
+    safe_str = re.sub(r"'(?:[^']|'')*'", "''", check_str)   # blank single-quoted string literals
+    safe_str = re.sub(r'"[^"]*"', '""', safe_str)            # blank double-quoted identifiers
+    match = _FORBIDDEN_PATTERN.search(safe_str)
     if match:
         return False, f"Forbidden keyword detected: {match.group().upper()}"
 

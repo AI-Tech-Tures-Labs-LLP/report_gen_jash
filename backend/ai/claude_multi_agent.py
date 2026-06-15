@@ -48,6 +48,40 @@ _SONNET = config.CLAUDE_MODEL        # Hard SQL (cross-domain, fan-out, many joi
 _HAIKU  = config.CLAUDE_HAIKU_MODEL  # Simple SQL + all non-SQL agents — fast & cheap
 
 
+def _enforce_report_routing(context: dict, question: str) -> dict:
+    """Fix A (RT-033) — deterministic guard against the keyword-driven DRIFT misroute.
+
+    DRIFT_INVESTIGATION is the EXPENSIVE path (4-phase, ~20 queries, ~10× cost) and must be
+    EARNED by genuine CAUSAL / CHANGE-OVER-TIME intent ("why did X drop", "what's driving X",
+    "X vs last month"). The LLM classifier over-fires it on RANKING questions that merely contain
+    a signal-library keyword ("which products are OVERSTOCKED" → SIG-017). Prompts steer; this code
+    ENFORCES: if the classifier said DRIFT but the question is a ranking/listing with NO causal/
+    temporal-change cue, downgrade to STANDARD_REPORT. Universal — keyed on intent words, not the topic.
+    """
+    if not isinstance(context, dict) or context.get("intent_mode") != "DRIFT_INVESTIGATION":
+        return context
+    q = (question or "").lower()
+    # Causal / change-over-time cues that JUSTIFY drift.
+    _causal = ("why", "caus", "driv", "dropp", "declin", "spik", "surg", "fall", "fell", "rising",
+               "rose", "increas", "decreas", "trend", "change", "changed", "shift", "deviat",
+               "anomal", "underperform", "vs last", "versus last", "compared to last", "over time",
+               "month over month", "week over week", "since ", "baseline", "investigat", "what happened")
+    # Ranking / listing / snapshot cues that indicate a STANDARD report.
+    _ranking = ("which ", "what are", "list ", "top ", "bottom ", "rank", "show me", "how many",
+                "breakdown", "distribution", "compare ", "by category", "by product", "by vendor")
+    has_causal = any(w in q for w in _causal)
+    has_ranking = any(w in q for w in _ranking)
+    if has_ranking and not has_causal:
+        logger.warning("[Routing] Classifier said DRIFT but question is a ranking/listing with no "
+                       "causal cue — downgrading to STANDARD_REPORT (signal '%s' ignored).",
+                       context.get("signal_id"))
+        context["intent_mode"] = "STANDARD_REPORT"
+        context["_routing_downgraded_from_drift"] = context.get("signal_id", True)
+        context.pop("signal_id", None)
+        context.pop("signal_name", None)
+    return context
+
+
 def _route_sql_model(question: str, blueprint: dict, context: dict) -> tuple[str, str]:
     """OPTION B — deterministic SQL-model router. Decide Haiku vs Sonnet from MEASURABLE
     schema/blueprint signals, NOT from an LLM's guess about the question (RT-025 taught us
@@ -1079,6 +1113,14 @@ class ClaudeReportPipeline:
                 if isinstance(cleaned_report, dict) and cleaned_report.get("data_quality_notes"):
                     final_report["data_quality_notes"] = cleaned_report["data_quality_notes"]
 
+            # Carry the SQL-stage DATA-FAILURE stamp onto the final report — the narrator
+            # rebuilds the object from its own JSON, so the stamp (set in _run_sql_agent on
+            # report_with_data) would otherwise be LOST, letting an empty investigation get
+            # approved (RT-031/RT-032). This is the durable truth the verdict honors.
+            if isinstance(report_with_data, dict) and report_with_data.get("_data_failed") \
+               and isinstance(final_report, dict):
+                final_report["_data_failed"] = report_with_data["_data_failed"]
+
             # Deterministic currency formatting — code has the FINAL word on every ₹
             # figure, regardless of what the LLM wrote (bulletproof P4 fix).
             _enforce_currency_formatting(final_report)
@@ -1129,13 +1171,25 @@ class ClaudeReportPipeline:
             # read as APPROVED at all — force at least CONDITIONAL so the user treats the number
             # as untrustworthy. Universal: keyed on the flag, not on any specific value.
             _SEVERE = {"cross_domain_cost_fabrication", "material_total_inflated",
-                       "revenue_exceeds_total", "fabricated_formula"}
-            _has_severe = any(
-                (it.get("_accuracy_flag") in _SEVERE)
-                for it in (list(final_report.get("kpis", []) or []) + list(final_report.get("charts", []) or []))
-                if isinstance(it, dict)
-            ) or any(c.get("_invariant") for c in (final_report.get("charts", []) or []) if isinstance(c, dict))
-            if _has_severe and verdict.startswith("APPROVED"):
+                       "revenue_exceeds_total", "fabricated_formula", "untraced_kpi"}
+            _kpis = [k for k in (final_report.get("kpis", []) or []) if isinstance(k, dict)]
+            _charts = [c for c in (final_report.get("charts", []) or []) if isinstance(c, dict)]
+            _has_severe = any(it.get("_accuracy_flag") in _SEVERE for it in (_kpis + _charts)) \
+                or any(c.get("_invariant") for c in _charts) \
+                or (final_report.get("report_integrity", {}) or {}).get("status") == "violations"
+            # EMPTY-INVESTIGATION GUARD (RT-031/RT-032): the SQL stage can FAIL entirely — every
+            # KPI 0/None with no SQL, every chart 0 rows (drift detective flailed 21 rounds, JSON
+            # broke). The narrator then writes a confident story over NOTHING and can put fake values
+            # BACK into the KPIs — so we CANNOT re-derive emptiness here. Instead we honor the durable
+            # `_data_failed` stamp set at the SQL stage (before the narrator), carried onto final_report.
+            if final_report.get("_data_failed"):
+                df = final_report["_data_failed"]
+                verdict, status_col = "REJECTED (no data — investigation produced empty results)", _RED
+                needs_retry = False  # re-writing the narrative won't conjure data; surface honestly
+                feedback = (f"Data failure: {df.get('empty_kpis')}/{df.get('total_kpis')} KPIs and "
+                            f"{df.get('empty_charts')}/{df.get('total_charts')} charts had no query-backed "
+                            f"data. The SQL stage could not produce results — report is not trustworthy.")
+            elif _has_severe and verdict.startswith("APPROVED"):
                 verdict, status_col = "CONDITIONAL (accuracy — value may be wrong)", _RED
             _tee(
                 f"  {_c('QA VERDICT', _BOLD)}: {_c(verdict, status_col, _BOLD)}  "
@@ -1242,7 +1296,7 @@ class ClaudeReportPipeline:
         )
 
         try:
-            return self.client.extract_json(response)
+            ctx = self.client.extract_json(response)
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning("Context agent JSON parse failed: %s", exc)
             return {
@@ -1255,6 +1309,7 @@ class ClaudeReportPipeline:
                 "filters": {},
                 "key_metrics_to_analyze": [],
             }
+        return _enforce_report_routing(ctx, question)
 
     def _run_ba_agent(
         self,
@@ -1427,6 +1482,27 @@ class ClaudeReportPipeline:
         # trustworthy `report_integrity` stamp. This is the correctness backstop that
         # generalizes beyond the specific guards above.
         _check_invariants(report)
+        # DATA-FAILURE STAMP (RT-031/RT-032): decide HERE, at the SQL stage, whether the
+        # investigation actually produced data — BEFORE the narrator can overwrite empty KPIs
+        # with hand-typed story values. This durable flag is the single source of truth the QA
+        # verdict honors; checking post-narrator (as the first attempt did) is unreliable because
+        # the narrator rebuilds the report and masks the emptiness. Universal, value-independent.
+        _kpis = [k for k in (report.get("kpis") or []) if isinstance(k, dict)]
+        _charts = [c for c in (report.get("charts") or []) if isinstance(c, dict)]
+        def _untraced(k):
+            sql = str(k.get("sql") or k.get("executed_sql") or "")
+            return not _re.search(r"\bfrom\b", sql, _re.IGNORECASE)
+        _empty_kpis = sum(1 for k in _kpis if k.get("value") in (0, "0", "", None) and _untraced(k))
+        _empty_charts = sum(1 for c in _charts if not (c.get("data") or []))
+        if (_kpis and _empty_kpis >= max(1, len(_kpis) * 0.5)) or \
+           (_charts and _empty_charts >= max(1, len(_charts) * 0.5)):
+            report["_data_failed"] = {
+                "empty_kpis": _empty_kpis, "total_kpis": len(_kpis),
+                "empty_charts": _empty_charts, "total_charts": len(_charts),
+            }
+            logger.warning("[Data Failure] SQL stage produced %d/%d empty KPIs, %d/%d empty charts — "
+                           "stamped _data_failed; QA will REJECT regardless of narrative.",
+                           _empty_kpis, len(_kpis), _empty_charts, len(_charts))
         return report
 
     def _run_data_analyst_agent(self, report: dict, context: dict | None = None) -> dict:
