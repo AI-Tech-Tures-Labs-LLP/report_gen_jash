@@ -19,6 +19,9 @@ export default defineConfig({
       "^/history": "http://localhost:8000",
       "^/schema": "http://localhost:8000",
       "^/relationships": "http://localhost:8000",
+      "^/auth": "http://localhost:8000",
+      "^/conversations": "http://localhost:8000",
+      "^/reports/": "http://localhost:8000",
     },
   },
 });

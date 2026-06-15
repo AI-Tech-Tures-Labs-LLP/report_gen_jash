@@ -101,8 +101,8 @@ export async function generateReport(question) {
   return data;
 }
 
-/** Persist a generated report to localStorage and open the backend report view. */
-export function openReport(question, reportData) {
+/** Persist a generated report to localStorage AND MongoDB, then open the view. */
+export function openReport(question, reportData, convId) {
   const reportId = "rpt_" + Date.now();
   try {
     localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(reportData));
@@ -114,6 +114,28 @@ export function openReport(question, reportData) {
   } catch {
     /* storage full — still try to open */
   }
+  // Sync report to MongoDB in the background
+  syncReportToMongo(reportId, question, reportData, convId);
   window.open(`/report-view?id=${reportId}`, "_blank");
   return reportId;
+}
+
+/** Save report to MongoDB via the backend API. */
+async function syncReportToMongo(reportId, question, reportData, convId) {
+  try {
+    const { getAuthHeaders } = await import("./auth.js");
+    const res = await fetch("/reports/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({
+        report_id: reportId,
+        conv_id: convId || null,
+        question,
+        report_data: reportData,
+      }),
+    });
+    if (!res.ok) console.warn("Failed to sync report to MongoDB:", res.status);
+  } catch (err) {
+    console.warn("Report sync to MongoDB failed:", err);
+  }
 }

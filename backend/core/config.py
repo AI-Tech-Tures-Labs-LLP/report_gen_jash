@@ -25,6 +25,16 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
 _DEFAULT_PRICING = {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75}
 
 
+# ── MongoDB ─────────────────────────────────────────────────────────────────
+# Change MONGO_URI in your .env to connect to any MongoDB instance (local or Atlas).
+MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "sql_analyst")
+
+# ── JWT ──────────────────────────────────────────────────────────────────────
+JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production-use-a-long-random-string")
+JWT_EXPIRY_DAYS: int = int(os.getenv("JWT_EXPIRY_DAYS", "7"))
+
+
 def estimate_cost(model: str, input_tokens: int, output_tokens: int,
                   cache_read_tokens: int = 0, cache_creation_tokens: int = 0) -> float:
     """Estimate USD cost of a Claude call from token counts.

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { getTheme } from "./theme.js";
 import { askStream, openReport } from "./api.js";
-import { loadConversations, saveConversations, newConversationId } from "./storage.js";
+import { loadConversations, saveConversations, newConversationId, saveMessages, loadMessages, deleteConversation } from "./storage.js";
+import { getAuthHeaders, logout, getUser } from "./auth.js";
 import ChatMessage from "./components/ChatMessage.jsx";
 import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
@@ -29,6 +30,8 @@ export default function App() {
   const [convs, setConvs] = useState(() => loadConversations());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const threadRef = useRef(null);
+  const syncTimer = useRef(null); // debounce MongoDB sync
+  const isLoadingConv = useRef(false); // prevent sync during conversation switch
 
   useEffect(() => {
     localStorage.setItem("sqlbot_theme", themeMode);
@@ -38,6 +41,81 @@ export default function App() {
   useEffect(() => {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [messages, status]);
+
+  // Persist messages whenever they change (skip empty — that's a new chat)
+  useEffect(() => {
+    if (messages.length === 0) return;
+    if (isLoadingConv.current) return; // don't re-sync while switching conversations
+
+    saveMessages(convId, messages);
+
+    // Debounce MongoDB sync (300ms) to coalesce rapid message updates
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
+      const title = convs.find((c) => c.id === convId)?.title || "Chat";
+      syncToMongo(convId, title, messages);
+    }, 300);
+  }, [messages, convId]);
+
+  // Load conversations from MongoDB on mount — migrate localStorage data if needed
+  useEffect(() => {
+    initConversations();
+  }, []);
+
+  async function initConversations() {
+    try {
+      const res = await fetch("/conversations", { headers: getAuthHeaders() });
+      if (!res.ok) return;
+      const mongoConvs = await res.json();
+
+      if (mongoConvs.length > 0) {
+        // MongoDB has data — use it as the source of truth
+        const mapped = mongoConvs.map((c) => ({ id: c.conv_id, title: c.title }));
+        setConvs(mapped);
+        saveConversations(mapped);
+      } else {
+        // MongoDB is empty — migrate existing localStorage conversations
+        const localConvs = loadConversations();
+        if (localConvs.length > 0) {
+          console.log(`Migrating ${localConvs.length} conversations to MongoDB...`);
+          for (const c of localConvs) {
+            const msgs = loadMessages(c.id);
+            if (msgs.length > 0) {
+              await syncToMongo(c.id, c.title, msgs);
+            }
+          }
+          console.log("Migration complete.");
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to init conversations from MongoDB:", err);
+    }
+  }
+
+  async function syncToMongo(cId, title, msgs) {
+    try {
+      const res = await fetch("/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ conv_id: cId, title, messages: msgs }),
+      });
+      if (!res.ok) console.warn("Failed to sync conversation to MongoDB:", res.status);
+    } catch (err) {
+      console.warn("Sync to MongoDB failed:", err);
+    }
+  }
+
+  async function deleteFromMongo(cId) {
+    try {
+      const res = await fetch(`/conversations/${cId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) console.warn("Failed to delete conversation from MongoDB:", res.status);
+    } catch (err) {
+      console.warn("Delete from MongoDB failed:", err);
+    }
+  }
 
   function pushMessage(m) {
     setMessages((prev) => [...prev, { id: Date.now() + Math.random(), ...m }]);
@@ -71,7 +149,7 @@ export default function App() {
       if (finalData && finalData.mode === "report" && finalData.report) {
         // Report intent → the full report is ALREADY generated. Store it once and
         // show an "Open Report" card that just re-opens the stored tab (no regen).
-        const reportId = openReport(q, finalData);
+        const reportId = openReport(q, finalData, convId);
         pushMessage({ role: "ai", reportId });
       } else if (finalData) {
         // Only offer "Generate Report" for real DATA answers. Non-data turns
@@ -93,6 +171,75 @@ export default function App() {
   function newChat() {
     setMessages([]);
     setConvId(newConversationId());
+  }
+
+  function switchConversation(targetConvId) {
+    if (targetConvId === convId) return;
+    // Try loading from MongoDB first, fallback to localStorage
+    loadConvFromMongo(targetConvId);
+  }
+
+  async function loadConvFromMongo(targetConvId) {
+    isLoadingConv.current = true; // prevent sync useEffect from firing during load
+    try {
+      const res = await fetch(`/conversations/${targetConvId}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.messages && data.messages.length > 0) {
+          setConvId(targetConvId);
+          setMessages(data.messages);
+          saveMessages(targetConvId, data.messages);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load conversation from MongoDB:", err);
+    }
+    // Fallback to localStorage
+    const saved = loadMessages(targetConvId);
+    setConvId(targetConvId);
+    setMessages(saved);
+    // Use setTimeout to re-enable sync after React commits the state update
+  } 
+
+  // Re-enable sync after loading completes (runs after state settles)
+  useEffect(() => {
+    if (isLoadingConv.current) {
+      // Allow one render cycle, then re-enable sync
+      const t = setTimeout(() => { isLoadingConv.current = false; }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [convId]);
+
+  async function handleDeleteConversation(e, targetConvId) {
+    e.stopPropagation();
+
+    // Clean up any report data in localStorage for this conversation
+    const msgs = loadMessages(targetConvId);
+    for (const m of msgs) {
+      if (m.reportId) {
+        localStorage.removeItem("sqlbot_report_" + m.reportId);
+        localStorage.removeItem("sqlbot_report_" + m.reportId + "_question");
+        localStorage.removeItem("sqlbot_report_" + m.reportId + "_theme");
+      }
+    }
+
+    // Remove from localStorage (conversations list + messages)
+    const remaining = deleteConversation(targetConvId);
+    setConvs(remaining);
+
+    // Remove from MongoDB (cascades: deletes conversation + all its reports)
+    await deleteFromMongo(targetConvId);
+
+    // If deleting the active conversation, start a new chat
+    if (targetConvId === convId) {
+      newChat();
+    }
+  }
+
+  function handleSignOut() {
+    logout();
+    window.location.href = "/";
   }
 
   const welcome = messages.length === 0;
@@ -134,9 +281,10 @@ export default function App() {
                 return (
                   <div
                     key={c.id}
-                    onClick={() => { if (isActive) return; newChat(); }}
+                    onClick={() => switchConversation(c.id)}
+                    className="sidebar-conv-item"
                     style={{
-                      padding: "0.6rem 0.75rem", borderRadius: 8, fontSize: "0.8rem",
+                      padding: "0.6rem 0.75rem", paddingRight: "2rem", borderRadius: 8, fontSize: "0.8rem",
                       fontWeight: isActive ? 600 : 500,
                       color: isActive ? "#b8860b" : t.textMuted, cursor: "pointer",
                       background: isActive ? "linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(184, 134, 11, 0.08) 100%)" : "transparent",
@@ -151,10 +299,50 @@ export default function App() {
                       <div style={{ position: "absolute", left: 0, top: "20%", bottom: "20%", width: 3, background: "linear-gradient(135deg,#d4af37 0%,#b8860b 100%)", borderRadius: "0 3px 3px 0" }} />
                     )}
                     {c.title}
+                    <button
+                      onClick={(e) => handleDeleteConversation(e, c.id)}
+                      className="sidebar-delete-btn"
+                      title="Delete conversation"
+                      style={{
+                        position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                        background: "none", border: "none", cursor: "pointer",
+                        color: t.textMuted, padding: 4, borderRadius: 6,
+                        opacity: 0, transition: "opacity 0.15s, color 0.15s",
+                        display: "grid", placeItems: "center",
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
                   </div>
                 );
               })
             )}
+          </div>
+
+          {/* Sign Out Button */}
+          <div style={{ padding: "0.6rem", borderTop: `1px solid ${t.border}` }}>
+            <button
+              onClick={handleSignOut}
+              className="sidebar-signout-btn"
+              style={{
+                width: "100%", padding: "0.55rem 0.75rem", borderRadius: 8,
+                border: `1px solid ${t.border}`, background: "transparent",
+                color: t.textMuted, fontSize: "0.78rem", fontWeight: 500,
+                cursor: "pointer", display: "flex", alignItems: "center",
+                gap: "0.5rem", justifyContent: "center",
+                transition: "all 0.15s ease", fontFamily: "inherit",
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Sign Out
+            </button>
           </div>
         </aside>
       )}
@@ -188,7 +376,7 @@ export default function App() {
                 ) : (
                   <>
                     <ChatMessage msg={m} t={t} />
-                    {m.showOffer && <ReportOffer question={m.question} t={t} />}
+                    {m.showOffer && <ReportOffer question={m.question} t={t} convId={convId} />}
                   </>
                 )}
               </div>
