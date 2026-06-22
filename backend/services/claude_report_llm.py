@@ -300,14 +300,13 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
             f"Answer this question by writing and executing PostgreSQL.\n\n"
             f"QUESTION: {question}\n\n"
             f"Use the validate_sql_query and execute_sql_query tools. After you "
-            f"have the results, respond with a JSON object containing the final "
-            f'"sql" you ran and the "data" rows (as returned by the tool). '
-            f"Output ONLY that JSON object."
+            f"have the results, output ONLY this JSON object: {{\"sql\": \"<the sql you ran>\"}}"
         ),
         tools=SQL_AGENT_TOOLS,
         tool_handlers=TOOL_HANDLERS,
         agent_name="Chat SQL Agent",
         model=sql_model,  # None → default (Sonnet); Haiku for router-rated "simple" questions
+        max_tokens=4096,  # chat only needs a short JSON response — cap to reduce generation overhead
         use_cache=True,
         on_tool_result=_capture,
     )
@@ -353,6 +352,7 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
                 f"RESULTS (JSON, up to 50 rows): {json.dumps(rows[:50], default=str)}"
             ),
             agent_name="Chat Interpreter",
+            model=_config.CLAUDE_HAIKU_MODEL,
             use_cache=True,
         )
         try:

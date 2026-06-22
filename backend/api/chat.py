@@ -4,6 +4,7 @@
 `/chat/stream` endpoint was removed; nothing called it.)
 """
 
+import concurrent.futures as _futures
 import json as _json
 import logging
 
@@ -56,11 +57,24 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
                 f"User: {t['question']}\nAssistant: {t['answer']}" for t in history
             )
 
-        # ── Step 1: classify intent (cheap Haiku) — GATEKEEPER: decides if we touch the DB at all,
-        #            AND rates SQL complexity so we pick the cheapest SAFE model for the SQL step.
-        #            Gets recent context so follow-up references route correctly. ──
+        # ── Step 1: classify intent AND warm the schema cache in parallel. ──
+        # These two are fully independent: the classifier only needs the question text;
+        # the schema fetch only needs the DB connection. Running them concurrently hides
+        # the ~1.5s classifier round-trip behind the schema load that would happen anyway.
+        from db.schema import format_schema as _warm_schema
+        from db.relationships import format_relationships as _warm_rels
+        from db.profiler import get_data_profile as _warm_profile
+
         yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
-        intent = classify_query_intent(req.question, recent_context=router_context)
+
+        with _futures.ThreadPoolExecutor(max_workers=2) as _pool:
+            _intent_future = _pool.submit(classify_query_intent, req.question, None, router_context)
+            _schema_future = _pool.submit(lambda: (_warm_schema(), _warm_rels(), _warm_profile()))
+            intent = _intent_future.result()
+            # schema result is discarded here — the call populates the module-level
+            # in-memory caches inside schema.py / relationships.py / profiler.py so
+            # answer_chat_question() reads from cache instead of hitting the DB again.
+            _schema_future.result()
         mode = intent.get("mode", "data")
         complexity = intent.get("complexity", "complex")
         logger.info("ASK routed → %s / %s (%s)", mode, complexity, intent.get("reason", ""))

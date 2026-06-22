@@ -1,0 +1,182 @@
+[
+  {
+    "q_idx": 1,
+    "question": "Product which has the highest sales",
+    "parallel_step_s": 5.26,
+    "chat_time_s": 11.24,
+    "total_time_s": 16.5,
+    "intent_mode": "data",
+    "intent_complexity": "complex",
+    "sql": "SELECT pm.product_name AS value FROM sales_order so JOIN sales_order_line sol ON so.so_id = sol.so_id JOIN sales_order_line_pricing solp ON sol.sol_id = solp.sol_id JOIN product_master pm ON sol.product_id = pm.product_id WHERE so.status = 'closed' GROUP BY pm.product_name ORDER BY SUM(solp.line_total) DESC LIMIT 1",
+    "row_count": 1,
+    "answer": "The product with the highest sales is 'The Danala Diamond Chain'. This product generated the most revenue among all products sold in closed orders, based on the total line amounts from all transactions.",
+    "insights": "\u2022 The Danala Diamond Chain is the top-performing product by total sales value\n\u2022 Analysis is limited to closed sales orders, ensuring completed transactions\n\u2022 Product performance is measured by aggregated line totals across all occurrences\n\u2022 This could indicate strong customer demand or higher pricing for this product\n\u2022 Further analysis of quantity sold vs. unit price would help determine if dominance is due to volume or margin",
+    "agents": [
+      {
+        "agent": "Chat SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 8695,
+        "tool_rounds": 3,
+        "api_calls": 3,
+        "input_tokens": 1890,
+        "output_tokens": 475,
+        "cache_read_tokens": 18922,
+        "cache_creation_tokens": 9461,
+        "cost_usd": 0.05395
+      },
+      {
+        "agent": "Chat Interpreter",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 2315,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 322,
+        "output_tokens": 152,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.001082
+      }
+    ],
+    "total_input_tokens": 2212,
+    "total_output_tokens": 627,
+    "total_cache_read_tokens": 18922,
+    "total_cache_creation_tokens": 9461,
+    "total_cost_usd": 0.055032,
+    "error": null
+  },
+  {
+    "q_idx": 2,
+    "question": "Customer who got highest sales",
+    "parallel_step_s": 6.3,
+    "chat_time_s": 10.2,
+    "total_time_s": 16.5,
+    "intent_mode": "data",
+    "intent_complexity": "complex",
+    "sql": "SELECT cm.customer_name AS customer, SUM(so.total_amount) AS total_sales FROM sales_order so JOIN customer_master cm ON so.customer_id = cm.customer_id WHERE so.status = 'closed' GROUP BY cm.customer_name ORDER BY total_sales DESC LIMIT 1",
+    "row_count": 1,
+    "answer": "Zenith Jewellers Pvt Ltd is the customer with the highest sales, having generated \u20b91,192.24 crore in total sales from closed orders. This represents their cumulative revenue across all completed transactions in the system.",
+    "insights": "\u2022 Zenith Jewellers Pvt Ltd dominates the customer base with over \u20b9119 crore in closed sales\n\u2022 The query filtered only 'closed' orders, indicating these are finalized, completed transactions\n\u2022 This customer's sales volume suggests they are a major anchor account or bulk buyer\n\u2022 The precise amount (\u20b91,192,237,114.04) indicates detailed transaction-level tracking across multiple orders",
+    "agents": [
+      {
+        "agent": "Chat SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 7071,
+        "tool_rounds": 3,
+        "api_calls": 3,
+        "input_tokens": 1761,
+        "output_tokens": 363,
+        "cache_read_tokens": 28383,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.019243
+      },
+      {
+        "agent": "Chat Interpreter",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 2876,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 304,
+        "output_tokens": 171,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.001159
+      }
+    ],
+    "total_input_tokens": 2065,
+    "total_output_tokens": 534,
+    "total_cache_read_tokens": 28383,
+    "total_cache_creation_tokens": 0,
+    "total_cost_usd": 0.020402,
+    "error": null
+  },
+  {
+    "q_idx": 3,
+    "question": "Which customer has the highest number of orders which are fulfilled?",
+    "parallel_step_s": 4.84,
+    "chat_time_s": 11.56,
+    "total_time_s": 16.41,
+    "intent_mode": "data",
+    "intent_complexity": "complex",
+    "sql": "SELECT cm.customer_name, COUNT(DISTINCT so.so_id) AS order_count FROM sales_order so JOIN customer_master cm ON so.customer_id = cm.customer_id WHERE so.status = 'closed' GROUP BY cm.customer_name ORDER BY order_count DESC LIMIT 1",
+    "row_count": 1,
+    "answer": "Zenith Jewellers Pvt Ltd is the customer with the highest number of fulfilled orders, having completed 3,370 orders. This represents the customer with the most closed/fulfilled orders in the system.",
+    "insights": "\u2022 Zenith Jewellers Pvt Ltd significantly dominates the fulfilled order count with 3,370 completed orders\n\u2022 This customer represents a major revenue driver and highly valued client with exceptional order completion history\n\u2022 The substantial order volume suggests strong, consistent business relationship and high customer loyalty\n\u2022 This customer should be prioritized for relationship management and service excellence initiatives",
+    "agents": [
+      {
+        "agent": "Chat SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 8945,
+        "tool_rounds": 3,
+        "api_calls": 3,
+        "input_tokens": 1781,
+        "output_tokens": 364,
+        "cache_read_tokens": 28383,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.019318
+      },
+      {
+        "agent": "Chat Interpreter",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 2388,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 307,
+        "output_tokens": 147,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.001042
+      }
+    ],
+    "total_input_tokens": 2088,
+    "total_output_tokens": 511,
+    "total_cache_read_tokens": 28383,
+    "total_cache_creation_tokens": 0,
+    "total_cost_usd": 0.02036,
+    "error": null
+  },
+  {
+    "q_idx": 4,
+    "question": "Tell me all products which has not been sold since oct 2025",
+    "parallel_step_s": 4.69,
+    "chat_time_s": 16.93,
+    "total_time_s": 21.62,
+    "intent_mode": "data",
+    "intent_complexity": "complex",
+    "sql": "SELECT \n    pm.product_id,\n    pm.product_name,\n    MAX(so.order_date) AS last_sold_date\nFROM product_master pm\nLEFT JOIN sales_order_line sol ON pm.product_id = sol.product_id\nLEFT JOIN sales_order so ON sol.so_id = so.so_id AND so.status = 'closed'\nGROUP BY pm.product_id, pm.product_name\nHAVING MAX(so.order_date) < '2025-10-01' OR MAX(so.order_date) IS NULL\nORDER BY last_sold_date ASC NULLS FIRST",
+    "row_count": 42,
+    "answer": "The query identified 40 products that have not been sold since October 2025. Six products (The Rilyee Ring, The Qingxie Bracelet, The Vervain Nose Screw, The Divine Trishool Ring for Her, The Nevan Ring, and The Fluide Chevron Ring) have never been sold at all. The remaining 34 products had their last sale between September 2024 and September 2025, with the most recent being The Elit Gemini Zodiac Watch Band sold on September 25, 2025.",
+    "insights": "\u2022 15% of inactive products (6 out of 40) have zero sales history and may be new inventory or discontinued items requiring review\n\u2022 Products fall into two categories: never sold and last sold before October 2025, with the latter group showing recent activity through late September 2025\n\u2022 Earrings are the most common product type among inactive items, suggesting potential inventory management opportunities in this category\n\u2022 There's a concentration of products with last sales in August-September 2025, indicating a recent drop-off in sales for these items\n\u2022 The oldest dormant product (The Sujee Stud Earrings) last sold on September 30, 2024, indicating some items have been inactive for nearly a year",
+    "agents": [
+      {
+        "agent": "Chat SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 11703,
+        "tool_rounds": 3,
+        "api_calls": 3,
+        "input_tokens": 5071,
+        "output_tokens": 674,
+        "cache_read_tokens": 28383,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.033838
+      },
+      {
+        "agent": "Chat Interpreter",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 4924,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 2396,
+        "output_tokens": 314,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.003966
+      }
+    ],
+    "total_input_tokens": 7467,
+    "total_output_tokens": 988,
+    "total_cache_read_tokens": 28383,
+    "total_cache_creation_tokens": 0,
+    "total_cost_usd": 0.037804,
+    "error": null
+  }
+]

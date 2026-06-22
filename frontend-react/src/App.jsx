@@ -31,6 +31,7 @@ export default function App() {
   const [convs, setConvs] = useState(() => loadConversations());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const threadRef = useRef(null);
+  const textareaRef = useRef(null);
   const syncTimer = useRef(null); // debounce MongoDB sync
   const isLoadingConv = useRef(false); // prevent sync during conversation switch
 
@@ -135,6 +136,7 @@ export default function App() {
     const q = (question ?? input).trim();
     if (!q || loading) return;
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
     setStatus("Understanding your request…");
     pushMessage({ role: "user", text: q });
@@ -409,8 +411,14 @@ export default function App() {
             transition: "border-color 0.15s, box-shadow 0.15s",
           }} className="input-box-focus">
             <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                const el = e.target;
+                el.style.height = "auto";
+                el.style.height = Math.min(el.scrollHeight, 160) + "px";
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
               }}
@@ -419,7 +427,8 @@ export default function App() {
               spellCheck={false}
               style={{
                 flex: 1, resize: "none", border: "none", outline: "none", background: "transparent",
-                color: t.text, fontSize: "0.92rem", lineHeight: 1.55, maxHeight: 140, padding: "0.4rem 0",
+                color: t.text, fontSize: "0.92rem", lineHeight: 1.55,
+                maxHeight: 160, overflowY: "auto", padding: "0.4rem 0",
               }}
             />
             <button
