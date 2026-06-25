@@ -1,7 +1,16 @@
-"""Conversation memory stored in PostgreSQL (Neon).
+"""DEPRECATED — legacy Postgres conversation memory. NO LONGER USED.
 
-Keeps the last N turns per conversation so the AI can
-use recent context for follow‑up questions.
+Chat history (both the LLM's working memory and the UI history) now lives in MongoDB,
+per-user, in db/user_data.py (add_turn / get_recent_turns / get_full_turns) — co-located
+with auth, not in the central business/ERP Postgres. The /ask path and the (removed)
+/history endpoints no longer call anything here.
+
+This module is retained ONLY so the existing `chat_history` Postgres TABLE and any old
+rows are not silently lost — Joel will drop that table manually. Nothing imports this file
+anymore; it can be deleted once the table is dropped. Do NOT wire new code to it.
+
+Original purpose: kept the last N turns per conversation so the AI could use recent
+context for follow-up questions.
 """
 
 from __future__ import annotations
@@ -144,12 +153,17 @@ def get_turn_by_id(turn_id: int) -> Dict[str, Any] | None:
 
 
 def get_recent_history(conversation_id: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """Return the most recent `limit` turns for a conversation (oldest first)."""
+    """Return the most recent `limit` turns for a conversation (oldest first).
+
+    Includes the stored `query_result` (deserialized) so callers can give the
+    model the PRIOR NUMBERS — without them, follow-ups like "break that down by
+    month" lose the figures the previous answer was based on.
+    """
     _ensure_table()
     engine = get_engine()
     query = text(
         """
-        SELECT question, answer, sql_query, created_at
+        SELECT question, answer, sql_query, query_result, created_at
         FROM chat_history
         WHERE conversation_id = :conversation_id
         ORDER BY created_at DESC
@@ -161,6 +175,15 @@ def get_recent_history(conversation_id: str, limit: int = 5) -> List[Dict[str, A
             query, {"conversation_id": conversation_id, "limit": limit}
         ).mappings().all()
 
-    # Reverse so caller sees oldest → newest
-    return list(reversed([dict(r) for r in rows]))
+    # Reverse so caller sees oldest → newest; deserialize query_result JSON.
+    result = []
+    for r in reversed(rows):
+        row = dict(r)
+        if row.get("query_result"):
+            try:
+                row["query_result"] = json.loads(row["query_result"])
+            except (json.JSONDecodeError, TypeError):
+                row["query_result"] = None
+        result.append(row)
+    return result
 

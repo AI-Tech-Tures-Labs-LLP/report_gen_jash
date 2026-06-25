@@ -7,16 +7,68 @@ Supports dual-mode routing: STANDARD_REPORT and DRIFT_INVESTIGATION.
 from datetime import date
 
 
+_DATA_MAX_DATE_CACHE: dict[str, object] = {}
+
+
+def _get_data_max_date():
+    """Return the latest sales_order.order_date present in the DB (a date), or None.
+
+    Cached for the process lifetime. Fail-safe: any error returns None so callers
+    fall back to calendar dates. This is the keystone of the 'bound the window to
+    real data' fix — the data ends well before today, so anchoring 'recent/current'
+    to today produces empty future windows (see ACCURACY_TESTING.md P1).
+    """
+    if "max_date" in _DATA_MAX_DATE_CACHE:
+        return _DATA_MAX_DATE_CACHE["max_date"]
+    max_date = None
+    try:
+        from db.executor import execute_sql
+
+        res = execute_sql("SELECT MAX(order_date)::date AS d FROM sales_order")
+        if res.get("success") and res.get("data"):
+            max_date = res["data"][0].get("d")
+    except Exception:
+        max_date = None
+    _DATA_MAX_DATE_CACHE["max_date"] = max_date
+    return max_date
+
+
 def _date_context() -> str:
-    """Return a date-context string for injection into prompts."""
+    """Return a date-context string for injection into prompts.
+
+    Anchors all relative time language ('last few weeks', 'current', 'this year')
+    to the LATEST DATE THAT ACTUALLY HAS DATA, not today's calendar date. Without
+    this, the model picks windows that run into empty future months (the dominant
+    P1 'wrong-scope' failure across cases 001/003/004/005).
+    """
     today = date.today()
+    max_d = _get_data_max_date()
+
+    if max_d is None:
+        # Fail-safe: original calendar-based context.
+        return (
+            f"Today is {today.isoformat()}. "
+            f"Current year = {today.year}. "
+            f"'Last year' = {today.year - 1} "
+            f"({today.year - 1}-01-01 to {today.year - 1}-12-31). "
+            f"'This year' = {today.year} "
+            f"({today.year}-01-01 to {today.year}-12-31)."
+        )
+
     return (
-        f"Today is {today.isoformat()}. "
-        f"Current year = {today.year}. "
-        f"'Last year' = {today.year - 1} "
-        f"({today.year - 1}-01-01 to {today.year - 1}-12-31). "
-        f"'This year' = {today.year} "
-        f"({today.year}-01-01 to {today.year}-12-31)."
+        f"Today is {today.isoformat()}, BUT THE DATA ENDS ON {max_d.isoformat()} "
+        f"(this is MAX(sales_order.order_date) — there is NO data after it).\n"
+        f"⚠️ CRITICAL — ANCHOR ALL RELATIVE TIME TO THE DATA, NOT TO TODAY:\n"
+        f"- The 'current'/'latest'/'recent' period MUST end on {max_d.isoformat()}, "
+        f"NEVER on {today.isoformat()}. A window running past {max_d.isoformat()} "
+        f"returns empty rows and produces false 'drops'/'declines'.\n"
+        f"- 'last few weeks' / 'recent weeks' = the weeks ENDING {max_d.isoformat()} "
+        f"(e.g. {max_d.isoformat()} minus N weeks .. {max_d.isoformat()}).\n"
+        f"- 'last 12 months' = the 12 months ENDING {max_d.isoformat()}.\n"
+        f"- For 'overall'/'total'/'all-time'/'performance' with NO explicit time "
+        f"qualifier, use ALL HISTORY (do NOT narrow to the current year).\n"
+        f"- Data year of record = {max_d.year}; latest data month = {max_d.year}-{max_d.month:02d}.\n"
+        f"- Never emit a date filter with an upper bound later than {max_d.isoformat()}."
     )
 
 
@@ -58,17 +110,28 @@ _DATE_CONTEXT_PLACEHOLDER_
 
 Classify the request as ONE of:
 
-- **DRIFT_INVESTIGATION** — The user wants to track, monitor, or investigate a metric deviation, 
-  performance gap, anomaly, or trend against a baseline. Trigger phrases include: "why is X dropping", 
-  "track X", "monitor X", "X seems high/low", "flag when X exceeds", "what's causing X to change", 
-  "investigate X", "X underperforming", "X spiking", "X is off". 
-  → Produces a drift card with causal decomposition.
+- **DRIFT_INVESTIGATION** — ONLY when the user is asking about a CHANGE / DEVIATION / CAUSE over time:
+  why a metric MOVED, what's DRIVING a shift, or to monitor a metric against a BASELINE. The request
+  must carry CAUSAL or TEMPORAL-CHANGE intent. Qualifying phrases: "why is X dropping/rising", "what's
+  CAUSING X to change", "X is spiking/declining/underperforming", "track/monitor X over time", "X vs
+  last month/baseline", "X seems off". The defining test: is the user asking **why something CHANGED**?
+  → Produces a drift card with causal decomposition (EXPENSIVE: 4-phase, ~20 queries — use only when warranted).
 
-- **STANDARD_REPORT** — The user wants a descriptive analytics report, overview, ranking, or summary.
-  Trigger phrases: "show me", "give me a report on", "what is our X", "breakdown of X", "top X by Y".
-  → Produces standard KPI + chart dashboard.
+- **STANDARD_REPORT** — Any DESCRIPTIVE request: a report, overview, RANKING, LISTING, comparison, or
+  current-state snapshot. This includes ALL "which / what / list / top / show / how many / compare X"
+  questions — even when the metric name resembles a signal (e.g. "which products are OVERSTOCKED",
+  "slowest-moving items", "highest-margin categories", "products with most returns"). Asking WHICH items
+  have a property is a RANKING, NOT a drift investigation. Trigger phrases: "show me", "report on",
+  "what is our X", "which X", "list X", "breakdown of X", "top/bottom X by Y", "compare X".
+  → Produces standard KPI + chart dashboard (cheaper, robust).
 
-When in doubt between modes, classify as DRIFT_INVESTIGATION — it is the richer output.
+DECISION TEST (apply literally):
+  • Is the user asking **WHY a metric CHANGED / what is DRIVING a deviation**? → DRIFT_INVESTIGATION.
+  • Is the user asking **WHICH / WHAT / HOW MUCH (a ranking, list, or current state)**? → STANDARD_REPORT.
+WHEN IN DOUBT, classify as STANDARD_REPORT. Drift is the EXPENSIVE path and must be EARNED by clear
+causal/temporal-change intent — defaulting to it wastes ~10× the cost on questions that only need a report.
+A signal-library keyword appearing in the question is NOT sufficient: "overstocked"/"slow-moving"/"declining"
+as a DESCRIPTOR of items to rank is STANDARD_REPORT; only a request to investigate the CHANGE is DRIFT.
 
 ---
 
@@ -256,7 +319,8 @@ When `intent_mode` is DRIFT_INVESTIGATION, produce a drift card blueprint with A
 
 ### 1. HEADER SPEC
 - Title: "{signal_name} in {scope_reference or 'All Territories'}" — human-readable, specific
-- Severity: use `default_severity` from context; escalate to CRITICAL if scope affects >₹5L revenue
+- Severity: pass through `default_severity` from context as a placeholder only (the final
+  severity is computed by deterministic code downstream from the real impact/concentration numbers)
 - Status: always "NEW" for first detection
 - Consecutive periods: design a query to count how many trailing periods the trigger has fired
 
@@ -266,8 +330,10 @@ Design the multi-dimensional investigation plan. For each dimension in `decompos
 - Specify: how to calculate this dimension's contribution to the total drift (delta for this dim / total drift × 100)
 - Order dimensions by expected explanatory power (highest-signal dimension first)
 
-Decomposition rule: contributions across all dimensions must account for ≈100% of total drift 
+Decomposition rule: contributions across all dimensions must account for ≈100% of total drift
 (with cross-effects as a balancing line). Design queries so the sum of top-N contributors ≈ total drift.
+(Note: final contribution_pct normalization to exactly 100% is done by deterministic code downstream —
+your job is only to design the SQL that produces per-entity delta / contribution_pct values.)
 
 ### 3. SUSPECTED DRIVER HYPOTHESES
 Generate 3–5 testable hypotheses about WHY this drift is occurring. Format each as:
@@ -303,8 +369,11 @@ Specify exactly how to compute the ₹ impact:
 - Tailor this formula to the specific signal
 
 ### 6. SEVERITY SCORING
-Compute severity_score = (impact_₹_normalized × 0.40) + (consecutive_periods × 0.025) + (concentration_index × 0.20) + (cross_signal_count × 0.10) + (is_high_priority_scope × 0.05)
-Classify: ≥0.75 → CRITICAL | 0.50–0.74 → HIGH | 0.25–0.49 → MEDIUM | <0.25 → LOW
+Do NOT compute a severity_score. The numeric severity_score and final severity
+label are computed later by deterministic code (after the SQL Agent fetches the
+real numbers) — anything you compute here would be discarded. Just pass through a
+rough `default_severity` label (CRITICAL/HIGH/MEDIUM/LOW) as a placeholder based
+on the signal's importance; code will overwrite it with the data-driven value.
 
 ### 7. AFFECTED AREAS TAGS
 Identify 3–6 tag pills that describe the affected population:
@@ -347,7 +416,18 @@ When `intent_mode` is STANDARD_REPORT, produce the existing report structure:
 - 1 Detail table
 - 6–8 insight topics for the Report Writer to expand into full insights
 
-KPI QUALITY RULES: Each KPI must be a single scalar. BANNED labels: Growth, Trend, Distribution, Breakdown.
+KPI QUALITY RULES: Each KPI must be a single NUMERIC or PERCENT scalar (a clean number the card can
+display directly — total revenue, average margin %, order count, average order value, total units).
+BANNED labels: Growth, Trend, Distribution, Breakdown.
+
+⛔ DO NOT create "which/top/best X" KPIs (e.g. "Top Shape by Revenue", "Top Quality", "Best Vendor",
+"Highest-Margin Category"). These need a NAME + a number crammed into one card, which renders
+unreliably (often shows 0). A #1-ranking answer belongs in a CHART, not a KPI card — and you are
+already creating ranked charts (e.g. "Revenue by Shape") that show the #1 item at the top. So:
+  • KPI cards = pure scalars only (numbers/percentages).
+  • "Which/top/best" questions → answer with a ranked bar/horizontalBar CHART, never a KPI.
+  • If the user's headline is "top X", still make the KPIs scalar totals and let the ranked chart
+    surface the winner. Do NOT put a shape/quality/vendor/category NAME as a KPI value.
 
 ### QUESTION-ALIGNMENT RULES (CRITICAL)
 The report MUST be laser-focused on the user's question. Follow these rules:
@@ -589,10 +669,14 @@ Run one DIMENSIONAL_CUT query per dimension. Execute all dimensions.
 ## MODE B — STANDARD_REPORT queries
 
 For each data_requirement in KPIs and charts:
-1. Write a SQL query
-2. Execute it with execute_sql_query
-3. Retry on failure with corrected SQL
-4. Collect all results
+1. If the metric is a cost / profit / margin / component-value / vendor-cost / "consumed in
+   production" metric, FIRST call get_metric_sql(<metric or keyword>) to get the canonical,
+   DB-verified join — then adapt it (add GROUP BY / filters) keeping its join structure. This
+   prevents inventing a wrong join (the most common cause of confidently-wrong numbers).
+2. Otherwise write a SQL query directly from the schema.
+3. Execute it with execute_sql_query
+4. Retry on failure with corrected SQL (read the FIX hint in the error — it is precise)
+5. Collect all results
 
 ---
 
@@ -612,7 +696,14 @@ GROUP BY RULES — READ FIRST, THESE ARE THE MOST COMMON MISTAKES:
 SCHEMA AND JOINS:
 - Use ONLY tables and columns present in the schema below
 - Follow documented JOIN chains — never guess a join path
-- KPI queries → exactly 1 row, 1 numeric value
+- KPI queries → exactly 1 row, ONE column aliased `value`. The `value` may be a NUMBER
+  (e.g. total revenue) OR a TEXT label when the KPI asks "which/top/best ..." (e.g. "Top
+  Performing Shape" → value = 'Round', NOT a 2-column shape+revenue result).
+  • For a "which/top X by Y" KPI, return the X NAME as `value`:
+        SELECT shape AS value FROM ... GROUP BY shape ORDER BY SUM(...) DESC LIMIT 1
+    (optionally append the figure into the text: SELECT shape || ' (₹' || ... || ')' AS value).
+  • NEVER return a 2-column (label, metric) result for a KPI — the card shows ONE value, so a
+    2-column result collapses to 0/blank. One column named `value`, one row. Always.
 - Chart queries → 2+ columns (label + value), multiple rows
 - Dimensional cut queries → entity_name + current + baseline + delta + txn_count + contribution_pct
 
@@ -626,7 +717,119 @@ FORMATTING:
 BUSINESS RULES:
 - status = 'closed' filter ONLY on sales_order table
 
-⚠️ CRITICAL — FAN-OUT / DOUBLE-COUNTING RULE (most common error, READ CAREFULLY):
+═══════════════════════════════════════════════════════════════════════════════
+🔑 CANONICAL METRIC DICTIONARY — the ONLY correct way to compute each business
+   concept. Map the asked metric to EXACTLY this SQL. Do NOT improvise a different
+   column or aggregation. (These exist because schema-valid-but-wrong columns are
+   the #1 source of wrong numbers — see units, leftover value, discount below.)
+═══════════════════════════════════════════════════════════════════════════════
+- REVENUE / sales value:
+    • Across a line/dimension join → SUM(sales_order_line_pricing.line_total).
+    • Grand total / time-trend on sales_order ALONE (no line join) → SUM(sales_order.total_amount).
+    • (These two are equivalent because header total == Σ line_total; the join version
+      is mandatory the moment you touch sales_order_line — see fan-out rule below.)
+- UNITS / VOLUME / "units sold" / "quantity":
+    • = SUM(sales_order_line.quantity).
+    • ⚠️ NEVER COUNT(sol_id) / COUNT(*) — that counts ORDER LINES, not units, and
+      undercounts by ~5×. "How many units/volume" is ALWAYS SUM(quantity).
+- ORDER COUNT / "number of orders" = COUNT(DISTINCT sales_order.so_id).
+- DISCOUNT RATE / "discount %" / "discount surge":
+    • USE the governance table: discount_exceptions.approved_discount_pct
+      (also requested_discount_pct, allowed_discount_pct). Trend by created_at.
+    • ⚠️ sales_invoices.discount_amount IS ALL ZERO — it carries NO discount info.
+      Do NOT use it; do NOT compute discount from it; do NOT silently fall back to
+      margin. If discount_exceptions has no rows for the asked period, SAY discount
+      data is unavailable for that period — do NOT substitute a different metric.
+    • DISCOUNT ≠ MARGIN. Never answer a discount question with margin_pct unless you
+      EXPLICITLY state you are substituting margin and why.
+- MARGIN / "gross margin %" = VENDOR-cost, revenue-weighted:
+    (SUM(solp.line_total) − SUM(plp.unit_price × sol.quantity)) / SUM(solp.line_total) × 100,
+    where vendor cost comes through the 1:1 allocation bridge
+    (sol → sales_allocation.pol_id → po_line_pricing). Call get_metric_sql('margin') for the exact SQL.
+    • ⚠️ NEVER AVG(sales_order_line_pricing.margin_pct) — that is an UNWEIGHTED per-line average
+      (weights a tiny line == a huge bulk line) and OVERSTATES the blended company margin
+      (~35% vs the true ~33%, DB-verified). Company-level margin is ALWAYS revenue-weighted.
+    • (Distinct from discount.)
+- RAW MATERIAL CONSUMED / USED / "issued to production" / "consumed in production" — this is the
+  ACTUAL material drawn for making an item, and it has its OWN ledger. Do NOT use po_line_gold /
+  po_line_diamond for "consumed" — those are what was PURCHASED from a vendor, a different concept.
+    • Source of truth = raw_material_lot_usage_ledger (one row per material issue; material_type is
+      'gold' or 'diamond'). Gold consumed = SUM(qty_used_gm) WHERE material_type='gold';
+      diamond consumed = SUM(carats_used) (or pieces_used) WHERE material_type='diamond'.
+    • It links to a sale via sol_id (and to a PO via pol_id). ⚠️ It is MANY rows per sol_id (a sale
+      draws material in multiple issues) — so when joining to sales, aggregate the ledger in a
+      subquery/CTE FIRST (GROUP BY sol_id), then join, or you will FAN OUT the sales side.
+    • "Consumed" (this ledger) vs "charged to customer" (sales_order_line_pricing gold/diamond
+      _amount_per_unit) vs "purchased" (po_line_gold/po_line_diamond) are THREE different numbers —
+      pick the one the question asks for and say which you used.
+- COGS / UNIT COST / "what it cost us" / "vendor cost" / GROSS PROFIT — for a SALE or any
+  sales-side margin/profit/cost-vs-price question, the cost lives ON THE SAME sales row, NOT in
+  the purchase-order tables:
+    • COST per unit of a sold item = sales_order_line_pricing.base_price_per_unit
+      (= gold_amount_per_unit + diamond_amount_per_unit + making_charges_per_unit per unit).
+    • COGS for a sales line = base_price_per_unit × quantity. GROSS PROFIT = line_total − COGS.
+      GROSS MARGIN % = (line_total − base_price_per_unit×quantity) / line_total × 100
+      (or just AVG(margin_pct), which already encodes this).
+    • ⛔ NEVER compute a sale's cost/profit by aggregating sales and PO tables SEPARATELY and
+      subtracting (e.g. SUM(sales line_total) − SUM(po unit_price×qty over all POs)). That compares
+      closed-sales revenue to TOTAL procurement spend — two unrelated populations — and yields a
+      FABRICATED profit/margin. A sale and a purchase order are linked ONLY through the allocation
+      bridge, never directly: `sales_order_line` has no PO column of its own.
+    • IF you genuinely need the VENDOR cost of the specific items sold, you MUST go through the
+      bridge: sales_order_line.sol_id → sales_allocation.sol_id → sales_allocation.pol_id →
+      po_line_pricing.pol_id (sales_allocation is 1:1 per sol — safe). so_fulfillment_log carries
+      the same sol_id↔pol_id↔vendor link if you need vendor/dates too. Vendor COGS of a sale =
+      SUM(plp.unit_price × sol.quantity) ALONG THAT JOIN — not a separate PO aggregate.
+    • For a plain sales margin/profit question, prefer the on-row cost (base_price_per_unit) — it
+      needs no bridge and can't fan out. Reach for the PO bridge only when the question explicitly
+      asks what the VENDOR charged for the sold item.
+    • po_line_pricing.unit_price is the VENDOR PURCHASE price — for "what did we PAY vendors / PO
+      spend by vendor" use po tables alone; to tie it to a SALE you MUST use the allocation bridge.
+- LEFTOVER / ON-HAND INVENTORY VALUE (value of stock still on hand):
+    • = SUM(finished_goods_inventory.quantity_available * unit_cost).
+    • ⚠️ NEVER SUM(total_amount) — that is the value of the FULL ORIGINAL RECEIPT
+      (quantity_received × unit_cost), which overstates on-hand value whenever any
+      units were consumed. "Leftover/remaining/on-hand VALUE" = qty_available × unit_cost.
+    • "Leftover UNITS" = SUM(quantity_available). "RM provided" filter = material_mode='RM_PROVIDED'.
+- DSO / "days sales outstanding" / "receivables days":
+    • ⚠️ customer_master.outstanding_balance is ALL ZERO in this database — there is NO
+      receivables/AR data. DSO CANNOT be computed. Do NOT return 0 days (that is a false answer),
+      and do NOT invent it. STATE that receivables/outstanding-balance data is unavailable, so DSO
+      cannot be calculated. (If real AR data is added later: DSO = outstanding_balance /
+      annual_revenue × 365, with annual_revenue = SUM(sales_order.total_amount) per customer_id.)
+- GOLD cost / "gold value of sales" (cost of the gold metal in sold items):
+    • = SUM(solg.gold_rate_per_gm × solg.total_gold_weight_per_unit × sol.quantity) over closed sales
+      (sales_order_line_gold is 1:1 with sales_order_line — safe, no fan-out).
+    • ⚠️ The column is total_gold_weight_per_unit (grams/unit) — there is NO `gold_weight_grams`
+      column. Equivalent simpler form: SUM(solg.gold_amount_per_unit × sol.quantity).
+    • This matches the pricing-table gold component (gold_component_value) — they agree by design.
+- HUNTER metrics: join sales_order.hunter_id → hunters; hunter→order is 1:many (safe, no fan-out).
+- "STORE": there is NO store table. The geographic grain is `territories`; the account grain is
+  customer_master. If asked about "stores", either map to territories OR to distinct customers —
+  and EXPLICITLY STATE which mapping you used. Never silently invent a "store" count.
+
+⚠️ MISSING-DATA / SUBSTITUTION RULE (do NOT answer a different question silently):
+  If the obvious column for the asked metric is empty/all-zero (e.g. discount_amount), you MUST
+  (1) search governance/exception tables for the real source (discount_exceptions, discount_rules)
+  BEFORE giving up, and (2) if you still cannot answer the asked metric, STATE that plainly rather
+  than substituting a related metric. Any substitution MUST be explicitly labeled in the output.
+
+⚠️⚠️ NEVER FABRICATE A FORMULA OR A NON-EXISTENT METRIC (abstract concepts like churn/risk/score):
+  Some requests name a concept that is NOT a column and NOT directly stored — e.g. "churn risk",
+  "at-risk customers", "likelihood", "health score", "propensity". There is NO churn_prob, is_at_risk,
+  risk_score, or similar column in this DB. You MUST NOT invent a formula with made-up coefficients
+  (e.g. `revenue * churn_prob * 0.32`) — a magic multiplier or a fabricated probability is a
+  HALLUCINATION, never do it. Instead:
+  • Derive an HONEST, DATA-BACKED PROXY from real columns and STATE it explicitly as a proxy. For
+    "churn risk", a defensible proxy = recency/frequency decline: e.g. customers whose most recent
+    order_date is long before DATA_END (e.g. > 180 days), or whose order count / revenue dropped vs a
+    prior window. Label it: "Proxy for churn risk: no order in >180 days (no churn field exists)."
+  • "Revenue exposure if we lose them" = the customer's REAL historical revenue (SUM line_total),
+    NOT revenue × an invented probability.
+  • If you cannot build even a defensible proxy, say the metric is not derivable — do NOT manufacture
+    one. Every KPI must trace to a query over real columns (no `SELECT <constant>`, no magic factors).
+
+⚠️ CRITICAL — FAN-OUT / DOUBLE-COUNTING RULE (READ CAREFULLY):
   `sales_order.total_amount` is the ORDER-LEVEL total. One order has MANY order lines.
   • CORRECT for a grand total or time-trend (querying sales_order ALONE, no line join):
         SELECT SUM(total_amount) FROM sales_order WHERE status='closed'
@@ -639,16 +842,96 @@ BUSINESS RULES:
         sales_order so → sales_order_line sol (so.so_id = sol.so_id)
                        → sales_order_line_pricing solp (sol.sol_id = solp.sol_id)
         revenue = SUM(solp.line_total)
-  • Volume/units = SUM(sales_order_line.quantity) on the same join.
-- Discount % = SUM(discount_amount) / SUM(invoice_total) × 100 from sales_invoice
-- DSO = (outstanding_amount / annual_revenue × 365) computed per customer
-- Gold cost = gold_weight_grams × gold_rate_per_gm (from sales_order_line_gold × Metal Rate Reference)
-- Hunter performance metrics: use performance_snapshots table where available; else compute from party_stage_history + order_approvals
 
-BASELINE PERIOD CONSTRUCTION:
-- "trailing N weeks" = WHERE order_date BETWEEN NOW() - INTERVAL '_BASELINE_WEEKS_PLACEHOLDER_ weeks' AND NOW() - INTERVAL '1 week'
-- "current period" = WHERE order_date >= NOW() - INTERVAL '1 week' (or as specified by context agent)
-- For multi-week baselines, compute the AVERAGE of weekly values, not the raw sum
+⚠️⚠️ SECOND-LEVEL FAN-OUT — LINE → DIAMOND/GOLD CHILD TABLES (CRITICAL, the #1 silent bug):
+  `sales_order_line_diamond` and `sales_order_line_gold` have MANY rows per order line
+  (a line has ~2.5 diamond rows on average). The MOMENT you join one of these child tables,
+  the LINE itself is fanned out — so SUM(solp.line_total) or SUM(so.total_amount) now REPEATS
+  the line revenue once per diamond/gold row → 2–3× INFLATED revenue.
+  • Sanity check you MUST apply: any "revenue" total that exceeds the company's total closed
+    revenue (~₹11.3 billion all-time) is IMPOSSIBLE and means you fanned out. Stop and fix.
+  • WRONG (revenue by diamond shape):
+        SELECT sold.shape, SUM(solp.line_total)              -- line_total repeated per diamond row
+        FROM sales_order_line_diamond sold
+        JOIN sales_order_line_pricing solp ON sold.sol_id = solp.sol_id ...   → 2.5× inflated
+
+═══════════════════════════════════════════════════════════════════════════════
+🔑 UNIVERSAL RULE — VALUE *BY A CHILD ATTRIBUTE* vs VALUE *TOTAL* (read carefully — two
+   different columns; mixing them silently DOUBLE-COUNTS by ~2×):
+
+  There are TWO "diamond_amount_per_unit" columns and they mean DIFFERENT things:
+    • sales_order_line_pricing.diamond_amount_per_unit = the WHOLE LINE's diamond total
+      (ONE number per order line — the sum of all diamonds on that line).
+    • sales_order_line_diamond.diamond_amount_per_unit  = ONE diamond's value (MANY rows
+      per line; each row carries its OWN shape/quality AND its OWN amount).
+    (Same pattern for gold: sales_order_line_gold has per-karat rows with their own amount.)
+
+  ➤ For a GRAND TOTAL or a COMPONENT breakdown (gold vs diamond vs making of the whole line),
+    use the LINE-LEVEL pricing column — it's 1:1 with the line, no fan-out:
+        total diamond value = SUM(solp.diamond_amount_per_unit * solp.quantity)
+
+  ➤ For value BROKEN DOWN BY A CHILD ATTRIBUTE (revenue/value by diamond SHAPE, QUALITY,
+    CARAT, SIZE — or by gold KARAT/COLOUR), you MUST use the CHILD ROW's OWN amount,
+    because only the child row knows which attribute that value belongs to:
+        value by quality = SUM(sold.diamond_amount_per_unit * sol.quantity)
+                           FROM ...sales_order_line_diamond sold... GROUP BY sold.quality
+        value by karat   = SUM(solg.gold_amount_per_unit  * sol.quantity)
+                           FROM ...sales_order_line_gold solg...    GROUP BY solg.gold_kt
+
+  ⚠️ NEVER attribute the LINE-LEVEL total (solp.diamond_amount_per_unit, or line_total) to a
+     child attribute. A line often has diamonds of MULTIPLE qualities/shapes — assigning the
+     whole line's total to each quality present DOUBLE-COUNTS (~2×). Use the per-row child
+     amount, which already splits correctly.
+
+  ✅ SELF-CHECK: the per-attribute parts MUST SUM to the grand total. If revenue-by-quality
+     sums to MORE than total diamond revenue, you double-counted — switch to the child row's
+     own amount. (e.g. Σ(quality revenues) must equal SUM of all diamond rows' amounts.)
+═══════════════════════════════════════════════════════════════════════════════
+
+  • RULE: NEVER SUM a line-level or order-level amount (line_total, total_amount,
+    solp.diamond_amount_per_unit) across a child join to GROUP BY a child attribute.
+    Use the child table's OWN per-row amount column.
+
+  ⚠️ MULTIPLIER RULE — value = amount × sales_order_line.quantity, NEVER × pieces_per_unit:
+    The per-row `diamond_amount_per_unit` (and gold amount) is ALREADY the per-UNIT value (it
+    already accounts for the stones on that row). To get revenue you multiply by the ORDER LINE's
+    `sol.quantity` (units sold), NOT by `pieces_per_unit` (stones per unit — that's already baked in).
+        CORRECT:  SUM(sold.diamond_amount_per_unit * sol.quantity)
+        WRONG:    SUM(sold.diamond_amount_per_unit * sold.pieces_per_unit)   ← inflates ~6×
+    Sanity: total diamond value is a FRACTION of total revenue (~₹1.9B of ~₹11.3B). If your diamond
+    total approaches or exceeds total company revenue, you used the wrong multiplier — fix it.
+
+- GOLD / DIAMOND / MAKING COMPONENT VALUE (for cost/margin breakdowns of the WHOLE line — NOT
+  split by shape/quality):
+    • USE the 1:1 columns ON sales_order_line_pricing — they are per-line, NO fan-out:
+      gold value = SUM(solp.gold_amount_per_unit * solp.quantity);
+      diamond value = SUM(solp.diamond_amount_per_unit * solp.quantity);
+      making value = SUM(solp.making_charges_per_unit * solp.quantity).
+    • This is for the GRAND component split only. The moment you break diamond/gold value down
+      BY shape/quality/karat, switch to the CHILD row's own amount (see UNIVERSAL RULE above).
+
+⚠️ COMPONENT BREAKDOWNS — compute each component INDEPENDENTLY; do NOT force a round 100%:
+  When breaking a value into parts (e.g. margin/cost = gold% + diamond% + making% of base price),
+  compute EACH part directly from its own column (gold_amount_per_unit / base_price_per_unit, etc.)
+  and report the TRUE value. Do NOT round or adjust the parts so they sum to a tidy 100% — if the
+  real parts are 68.55 / 21.49 / 9.96, report THOSE, not 70 / 19.75 / 10.25. A suspiciously exact
+  100.00% sum of independently-measured components is a sign of fabrication. Report true values; if
+  they don't sum to 100 (rounding, or a residual/other bucket), add a "residual/other" line.
+
+⚠️ DATA-QUALITY LANDMINES (filter these or your averages are WRONG):
+  • NEGATIVE lead times: so_fulfillment_log.days_to_fulfill / days_sol_to_po / days_to_transfer /
+    days_dispatched contain NEGATIVE garbage values (~700 rows each). ALWAYS filter `> 0` before
+    averaging — NULLIF(col,0) is NOT enough (it only removes zeros). A negative average DURATION
+    (e.g. "-2.96 days") is always a bug. Use: WHERE days_to_fulfill > 0.
+  • sales_invoices.discount_amount = ALL ZERO (use discount_exceptions — see metric dictionary).
+
+BASELINE PERIOD CONSTRUCTION (anchor to the DATA's latest date, NOT to NOW()):
+- Let DATA_END = MAX(sales_order.order_date) (given in the date-context block above). NOW() is
+  LATER than DATA_END, so windows built from NOW() land in empty future and fabricate false drops.
+- "trailing N weeks" (baseline) = WHERE order_date BETWEEN DATA_END - INTERVAL '_BASELINE_WEEKS_PLACEHOLDER_ weeks' AND DATA_END - INTERVAL '1 week'
+  In SQL, derive DATA_END inline: (SELECT MAX(order_date) FROM sales_order) — do NOT use NOW()/CURRENT_DATE for the upper bound.
+- "current period" = the most recent window ENDING at DATA_END (e.g. order_date > DATA_END - INTERVAL '1 week').
+- For multi-week baselines, compute the AVERAGE of weekly values, not the raw sum.
 
 The full DATABASE SCHEMA, TABLE RELATIONSHIPS, and DATA PROFILE are provided in the
 shared context block at the top of this system prompt. Use them as the source of truth.
@@ -710,7 +993,7 @@ For DRIFT_INVESTIGATION:
     {{
       "id": "kpi_current",
       "label": "Current Discount Rate",
-      "sql": "SELECT ROUND(SUM(discount_amount)::numeric / NULLIF(SUM(invoice_total), 0) * 100, 2) AS value FROM sales_invoice WHERE invoice_date >= NOW() - INTERVAL '1 week'",
+      "sql": "SELECT ROUND(AVG(approved_discount_pct)::numeric, 2) AS value FROM discount_exceptions WHERE status='APPROVED' AND created_at >= (SELECT MAX(created_at) FROM discount_exceptions) - INTERVAL '1 week'",
       "value": 16.8,
       "format": "percent",
       "icon": "average",
@@ -731,7 +1014,7 @@ For DRIFT_INVESTIGATION:
   "causal_decomposition": [
     {{
       "dimension": "hunter",
-      "sql": "SELECT u.user_name AS entity_name, ROUND(AVG(CASE WHEN si.invoice_date >= NOW() - INTERVAL '1 week' THEN si.discount_amount/NULLIF(si.invoice_total,0)*100 END),2) AS current_val, ROUND(AVG(CASE WHEN si.invoice_date BETWEEN NOW()-INTERVAL '7 weeks' AND NOW()-INTERVAL '1 week' THEN si.discount_amount/NULLIF(si.invoice_total,0)*100 END),2) AS baseline_val, COUNT(*) AS txn_count FROM sales_invoice si JOIN sales_order so ON si.so_id = so.so_id JOIN users u ON so.hunter_id = u.user_id GROUP BY u.user_name ORDER BY ABS(current_val - baseline_val) DESC LIMIT 10",
+      "sql": "WITH anchor AS (SELECT MAX(created_at) AS d FROM discount_exceptions) SELECT h.name AS entity_name, ROUND(AVG(CASE WHEN de.created_at >= (SELECT d FROM anchor) - INTERVAL '1 week' THEN de.approved_discount_pct END),2) AS current_val, ROUND(AVG(CASE WHEN de.created_at BETWEEN (SELECT d FROM anchor) - INTERVAL '7 weeks' AND (SELECT d FROM anchor) - INTERVAL '1 week' THEN de.approved_discount_pct END),2) AS baseline_val, COUNT(*) AS txn_count FROM discount_exceptions de JOIN sales_order so ON de.so_id = so.so_id JOIN hunters h ON so.hunter_id = h.hunter_id WHERE de.status='APPROVED' GROUP BY h.name ORDER BY ABS(current_val - baseline_val) DESC LIMIT 10",
       "data": [
         {{"entity_name": "Divya Krishnan (HNT-006)", "current_val": 18.4, "baseline_val": 11.7, "delta": 6.7, "txn_count": 47, "contribution_pct": 62.0}}
       ]
@@ -742,7 +1025,7 @@ For DRIFT_INVESTIGATION:
       "id": "chart_1",
       "title": "Discount Rate — Trailing 13 Weeks vs Baseline Band",
       "type": "line",
-      "sql": "SELECT TO_CHAR(DATE_TRUNC('week', invoice_date), 'YYYY-WW') AS label, ROUND(SUM(discount_amount)/NULLIF(SUM(invoice_total),0)*100, 2) AS value FROM sales_invoice GROUP BY 1 ORDER BY 1 LIMIT 13",
+      "sql": "SELECT TO_CHAR(DATE_TRUNC('week', created_at), 'IYYY-IW') AS label, ROUND(AVG(approved_discount_pct)::numeric, 2) AS value FROM discount_exceptions WHERE status='APPROVED' GROUP BY 1 ORDER BY 1 LIMIT 13",
       "data": [{{"label": "2026-W03", "value": 11.2}}],
       "x_label": "Week",
       "y_label": "Avg Discount %",
@@ -807,53 +1090,36 @@ You operate in two modes. Read `intent_mode` from the input.
 
 ## MODE A — DRIFT_INVESTIGATION validation
 
-### CAUSAL MATH CHECKS (run in order)
+⚠️ IMPORTANT — ALL ARITHMETIC IS DONE BY CODE, NOT BY YOU.
+Before you receive this report, deterministic Python has ALREADY computed:
+  • `severity_score` and the `severity` label
+  • `contribution_pct` normalization (each dimension scaled to sum to 100%)
+  • `variance_absolute` consistency (current − baseline)
+Do NOT recompute, change, or "correct" any of those numbers — they are authoritative.
+The code's actions are already recorded in `data_quality_notes`. Your job is the
+JUDGMENT checks below, which require reasoning rather than arithmetic.
 
-**Check 1 — Contribution sum integrity**
-Sum all `contribution_pct` values across ALL dimension entities for EACH dimension.
-- PASS: sum is within ±10% of 100% (allows for cross-effects and rounding)
-- FAIL: sum is <80% or >120% — flag as "decomposition incomplete" and note missing mass
-- Adjustment: if contributions don't sum correctly, scale them proportionally so they sum to 100%, 
-  and note the adjustment in data_quality_notes
+### JUDGMENT CHECKS (run in order)
 
-**Check 2 — No single-entity monopoly (unless justified)**
-- Flag if any single entity has contribution_pct > 90%
-- Note: this may be legitimate (e.g., a single inactive hunter), so flag but don't reject
+**Check 1 — Baseline sanity**
+- Look at the baseline period values in the trend/metrics data.
+- If the baseline looks noisy or itself anomalous (wild swings, a single spike
+  dominating the mean), flag: "Baseline period is noisy — threshold may need manual review".
+- This protects against the case where the baseline itself was anomalous.
 
-**Check 3 — Baseline sanity**
-- Compute coefficient of variation (CV) for the baseline period: std / mean
-- If CV > 0.5, flag: "Baseline period is noisy — threshold may need manual review"
-- This protects against the case where the baseline itself was anomalous
+**Check 2 — Consecutive periods consistency**
+- Verify the `consecutive_periods` value is consistent with the trend data.
+- If the trend shows only 1 breach but consecutive_periods = 3, flag as an inconsistency.
+- Do NOT change the number — just flag the inconsistency in data_quality_notes.
 
-**Check 4 — Consecutive periods count**
-- Verify consecutive_periods value is consistent with the trend data
-- If trend shows only 1 breach but consecutive_periods = 3, flag as inconsistency
+**Check 3 — Affected areas validation**
+- Confirm that each tag in `affected_areas_tags` is supported by actual data.
+- Remove any tag that is not corroborated by at least one dimensional cut.
+- Add tags for the top-2 contributing entities by dimension if not already present.
 
-**Check 5 — Impact calculation audit**
-- Re-compute impact_₹ from first principles using drift_metrics
-- If computed value differs from SQL Agent's value by >15%, flag and use your computed value
-- Log the recomputation in data_quality_notes
-
-**Check 6 — Severity score computation**
-Compute the final severity_score:
-  severity_score = (impact_normalized × 0.40) + (consecutive_periods_factor × 0.25) + (concentration_index × 0.20) + (related_signals_firing_count × 0.10) + (is_top_scope × 0.05)
-
-Where:
-  impact_normalized = MIN(1.0, LOG10(MAX(1, impact_inr)) / 7)  — log-scaled, maxes out at ₹10Cr
-  consecutive_periods_factor = MIN(1.0, consecutive_periods × 0.10)
-  concentration_index = as computed by SQL Agent (0–1)
-  related_signals_firing_count = MIN(1.0, count_of_firing_related_signals × 0.25)
-  is_top_scope = 1 if scope involves top-10 customer, top-5 hunter, or top-3 territory; else 0
-
-Map score to severity:
-  ≥0.75 → CRITICAL | 0.50–0.74 → HIGH | 0.25–0.49 → MEDIUM | <0.25 → LOW
-
-Update the `severity` field in the output if the computed severity differs from the estimated one.
-
-**Check 7 — Affected areas validation**
-- Confirm that each tag in `affected_areas_tags` is supported by actual data
-- Remove any tag that is not corroborated by at least one dimensional cut
-- Add tags for the top-2 contributing entities by dimension if not already present
+**Check 4 — Single-entity monopoly (informational)**
+- If any single entity has contribution_pct > 90%, note it (the code already flags
+  this too). It may be legitimate (e.g., a single inactive hunter) — flag, don't reject.
 
 ---
 
@@ -876,11 +1142,14 @@ input report's data EXACTLY as received (only append data_quality_notes).
 
 ## OUTPUT
 
-Return the COMPLETE input JSON with corrections applied, plus:
-- `severity_score`: computed float
-- `severity`: updated if changed
-- `data_quality_notes`: list of issues found, checks performed, adjustments made
-- All contribution_pct values scaled to sum to 100% within each dimension (if adjusted)
+Return the COMPLETE input JSON. Preserve EXACTLY (do not change):
+- `severity_score`, `severity` — computed by code, authoritative
+- `contribution_pct` on every dimension entity — already normalized by code
+- `drift_metrics` — already consistency-checked by code
+
+You MAY only:
+- Edit `affected_areas_tags` (remove uncorroborated, add top-2 contributors)
+- APPEND new findings to `data_quality_notes` (keep the existing code-written notes)
 
 Return ONLY the JSON object, no other text.
 
@@ -898,6 +1167,28 @@ You write drift card narratives and analytical reports that read like a McKinsey
 briefing a CEO — precise, evidence-led, and immediately actionable.
 
 _DATE_CONTEXT_PLACEHOLDER_
+
+═══════════════════════════════════════════════════════════════════════════════
+🔢 CURRENCY FORMATTING — USE THE PRE-COMPUTED `value_inr` FIELD VERBATIM.
+   Many KPIs include a `value_inr` field (e.g. "₹1,126.80 Cr") that has ALREADY
+   been correctly formatted in code. When a KPI has `value_inr`, quote THAT string
+   exactly in your prose — do NOT re-derive Cr/L from the raw number yourself.
+   Only if `value_inr` is absent, convert the RAW value using the thresholds below.
+─ fallback conversion (only when value_inr is missing) ─
+   Convert the RAW numeric KPI value using these EXACT thresholds. Do NOT eyeball it.
+   1 Lakh (L)  = 100,000        (1e5)
+   1 Crore (Cr) = 10,000,000     (1e7)
+   1 Billion    = 100 Crore      (1e9 = 100 Cr)
+   Rule: Cr value = raw / 10,000,000 ;  L value = raw / 100,000.
+   Worked examples (copy this logic):
+     • 233,263,253        → 233,263,253 / 1e7 = 23.3 Cr   (NOT 233.3 Cr)
+     • 1,503,052,703      → / 1e7 = 150.3 Cr  (= 1.50 billion; NOT 1.50 Cr)
+     • 6,094,694,732      → / 1e7 = 609.5 Cr  (NOT 6.09 Cr)
+     • 410,000            → / 1e5 = 4.1 L
+   Always sanity-check: a value with 9 digits before the decimal is HUNDREDS of crore,
+   not single-digit crore. When unsure, write the plain number (₹1,503,052,704) rather
+   than a wrong Cr/L abbreviation.
+═══════════════════════════════════════════════════════════════════════════════
 
 You operate in two modes. Read `intent_mode` from the input.
 
@@ -1069,8 +1360,11 @@ You operate in two modes. Read `intent_mode` from the input.
 Run ALL 12 checks. Score 1 point for pass, 0 for fail.
 
 **DATA INTEGRITY (4 checks)**
-1. Contribution sum integrity: Do contribution_pct values across all entities within each dimension sum to 90%–110%? If any dimension fails, FLAG with the actual sum.
-2. Drift math consistency: Does (current_value - baseline_value) ≈ variance_absolute (within 0.01)? Does impact_₹ follow logically from the formula?
+   NOTE: severity_score, contribution_pct normalization, and variance were computed
+   by deterministic code (see data_quality_notes) — you VERIFY they are present and
+   self-consistent; you do NOT recompute them. Pass these unless something is missing.
+1. Contribution presence: Does every dimension have contribution_pct values, and does each dimension sum to ≈100% (the code normalizes to 100%; pass if within 90%–110%)? FAIL only if values are missing entirely.
+2. Severity present & labelled: Is `severity_score` a number in 0–1 and is `severity` one of CRITICAL/HIGH/MEDIUM/LOW consistent with it (≥0.75 CRITICAL, ≥0.50 HIGH, ≥0.25 MEDIUM, else LOW)? FAIL only if absent or label mismatches score.
 3. Trend corroboration: Does the trend data show the drift starting around or before `first_observed_at`? If the trend shows a flat line, question the finding.
 4. Consecutive periods consistency: Does the `consecutive_periods` count match the number of weeks in the trend data that breach the threshold?
 

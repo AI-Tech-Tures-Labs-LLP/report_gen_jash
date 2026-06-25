@@ -45,7 +45,7 @@ class EnhancedReportPipeline:
     
     def __init__(
         self,
-        enable_logging: bool = True,
+        enable_logging: bool = False,  # DB logging is write-only (nothing reads it) — off by default
         enable_signals: bool = True,
         enable_caching: bool = True,
         enable_optimization: bool = True

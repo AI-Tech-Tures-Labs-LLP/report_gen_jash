@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import chat, reports, history, meta, frontend
+from api import chat, reports, meta, frontend, auth, conversations
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s  %(name)s  %(message)s")
 logger = logging.getLogger("api")
@@ -65,9 +65,10 @@ app.add_middleware(
 # ── Routers (api/ layer) ──────────────────────────────────────────────────────
 app.include_router(chat.router)
 app.include_router(reports.router)
-app.include_router(history.router)
 app.include_router(meta.router)
 app.include_router(frontend.router)
+app.include_router(auth.router)
+app.include_router(conversations.router)
 
 # Static assets mount (must be registered on the app, not a router)
 frontend.mount_static(app)

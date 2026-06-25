@@ -639,9 +639,13 @@
                     appendReportSuccessMessage(question, reportId);
                     reportWindow = window.open(`/report-view?id=${reportId}`, "_blank");
                 } else if (finalData) {
-                    // ── Chat path: show answer + ALWAYS offer a report ──
+                    // ── Chat path: show answer; offer a report ONLY for real data answers ──
+                    // Non-data turns (greeting/off-topic/refused) send report_eligible=false /
+                    // non_data=true → no report card for those.
                     appendAIMessage(finalData);
-                    appendReportOfferCard(question);
+                    if (finalData.report_eligible !== false && !finalData.non_data) {
+                        appendReportOfferCard(question);
+                    }
                 } else {
                     appendErrorMessage("No response received from server.");
                 }

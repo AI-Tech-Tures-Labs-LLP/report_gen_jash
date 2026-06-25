@@ -13,12 +13,14 @@ export default defineConfig({
       // proxied, the backend would serve the OLD vanilla report.html instead.
       // Use exact-match regexes so /report-view is NOT caught by the /report rule.
       "^/ask": "http://localhost:8000",
-      "^/chat/stream": "http://localhost:8000",
       "^/report$": "http://localhost:8000",
       "^/report/": "http://localhost:8000",
       "^/history": "http://localhost:8000",
       "^/schema": "http://localhost:8000",
       "^/relationships": "http://localhost:8000",
+      "^/auth": "http://localhost:8000",
+      "^/conversations": "http://localhost:8000",
+      "^/reports/": "http://localhost:8000",
     },
   },
 });

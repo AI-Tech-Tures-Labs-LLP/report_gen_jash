@@ -105,6 +105,7 @@ class ClaudeClient:
         model: str | None = None,
         use_cache: bool = True,
         cached_prefix: str | None = None,
+        on_tool_result: Callable[[str, dict, Any], None] | None = None,
     ) -> str:
         """Call Claude with a system prompt, user message, and optional tools.
 
@@ -115,6 +116,12 @@ class ClaudeClient:
         across many agents in a run. It is placed as the FIRST system block with its
         own cache_control breakpoint, so the first agent creates the cache and every
         later agent (within the 5-min TTL) reads it at ~10% cost instead of re-sending.
+
+        `on_tool_result`: optional callback invoked as on_tool_result(tool_name,
+        parsed_result, raw_result) for EACH tool call whose result parsed to a dict.
+        Lets a caller capture a tool's actual structured output (e.g. the rows an
+        execute_sql_query tool returned) instead of relying on the model to echo it
+        back as JSON. Additive — default None leaves all existing callers unchanged.
 
         Returns the final text response from Claude.
         """
@@ -342,6 +349,13 @@ class ClaudeClient:
                         try:
                             parsed = json.loads(result_str)
                             if isinstance(parsed, dict):
+                                # Let the caller capture this tool's structured
+                                # output (additive; never raises into the loop).
+                                if on_tool_result is not None:
+                                    try:
+                                        on_tool_result(tool_name, parsed, result)
+                                    except Exception as cb_exc:
+                                        logger.warning("on_tool_result callback failed: %s", cb_exc)
                                 if "error" in parsed:
                                     is_error = True
                                     result_preview = str(parsed["error"])[:150]

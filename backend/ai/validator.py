@@ -44,8 +44,15 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     if not re.match(r"^\s*(SELECT|WITH)\b", check_str, re.IGNORECASE):
         return False, "Only SELECT queries are allowed."
 
-    # Check for forbidden keywords
-    match = _FORBIDDEN_PATTERN.search(stripped)
+    # Check for forbidden keywords — but ONLY against the comment-stripped SQL with
+    # string LITERALS blanked out. A product name or comment containing "DROP"/"DELETE"
+    # (e.g. a 'TEARDROP' shape, or "-- DROP the old logic") is NOT a DDL command and must
+    # not be rejected (RT-028: a legit query was falsely blocked on a 'DROP' substring,
+    # wasting a Sonnet round). We already require the statement to START with SELECT/WITH,
+    # so a real DDL verb can only appear as a chained/sub-statement — which this still catches.
+    safe_str = re.sub(r"'(?:[^']|'')*'", "''", check_str)   # blank single-quoted string literals
+    safe_str = re.sub(r'"[^"]*"', '""', safe_str)            # blank double-quoted identifiers
+    match = _FORBIDDEN_PATTERN.search(safe_str)
     if match:
         return False, f"Forbidden keyword detected: {match.group().upper()}"
 
@@ -71,12 +78,20 @@ def check_sql_against_schema(sql: str, schema: dict[str, list[dict]]) -> tuple[b
 
     sql_upper = sql.upper()
 
-    # Extract table references (FROM / JOIN)
+    # Collect CTE names (WITH x AS (...), y AS (...)) so they aren't mistaken for
+    # missing tables — a CTE is a valid FROM/JOIN target but never in the schema.
+    cte_names = {
+        m.lower()
+        for m in re.findall(r'(?:\bWITH\b|,)\s*"?(\w+)"?\s+AS\s*\(', sql, re.IGNORECASE)
+    }
+
+    # Extract table references (FROM / JOIN), ignoring CTE references.
     table_refs = re.findall(
         r'(?:FROM|JOIN)\s+"?(\w+)"?', sql, re.IGNORECASE
     )
     for tref in table_refs:
-        if tref.lower() not in all_tables:
+        t = tref.lower()
+        if t not in all_tables and t not in cte_names:
             issues.append(f"Table '{tref}' not found in schema")
 
     # Basic check: if GROUP BY is present, verify SELECT has aggregation or is in GROUP BY
