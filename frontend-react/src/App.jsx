@@ -34,6 +34,7 @@ export default function App() {
   const textareaRef = useRef(null);
   const syncTimer = useRef(null); // debounce MongoDB sync
   const isLoadingConv = useRef(false); // prevent sync during conversation switch
+  const abortRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem("sqlbot_theme", themeMode);
@@ -149,6 +150,8 @@ export default function App() {
       return next;
     });
 
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const finalData = await askStream(q, convId, (event) => {
         if (event.stage === "routed") {
@@ -156,7 +159,7 @@ export default function App() {
         } else if (event.stage !== "complete") {
           setStatus(event.data?.message || event.text || "Working…");
         }
-      });
+      }, controller.signal);
 
       if (finalData && finalData.mode === "report" && finalData.report) {
         // Report intent → the full report is ALREADY generated. Store it once and
@@ -173,10 +176,13 @@ export default function App() {
         pushMessage({ role: "ai", error: "No response received from server." });
       }
     } catch (err) {
-      pushMessage({ role: "ai", error: err.message || "Something went wrong.", ts: new Date().toISOString() });
+      if (err.name !== 'AbortError') {
+        pushMessage({ role: "ai", error: err.message || "Something went wrong.", ts: new Date().toISOString() });
+      }
     } finally {
       setLoading(false);
       setStatus("");
+      abortRef.current = null;
     }
   }
 
@@ -431,23 +437,41 @@ export default function App() {
                 maxHeight: 160, overflowY: "auto", padding: "0.4rem 0",
               }}
             />
-            <button
-              onClick={() => handleSubmit()}
-              disabled={loading || !input.trim()}
-              title="Send"
-              style={{
-                border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
-                cursor: loading || !input.trim() ? "default" : "pointer",
-                opacity: loading || !input.trim() ? 0.45 : 1, color: "#fff",
-                background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
-                display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
-                boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
+            {loading ? (
+              <button
+                onClick={() => abortRef.current?.abort()}
+                title="Stop generating"
+                style={{
+                  border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
+                  cursor: "pointer", color: "#fff",
+                  background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                  display: "grid", placeItems: "center",
+                  boxShadow: "0 2px 10px rgba(239,68,68,0.3)",
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSubmit()}
+                disabled={!input.trim()}
+                title="Send"
+                style={{
+                  border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
+                  cursor: !input.trim() ? "default" : "pointer",
+                  opacity: !input.trim() ? 0.45 : 1, color: "#fff",
+                  background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                  display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
+                  boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            )}
           </div>
           <p style={{ color: t.textMuted, fontSize: "0.68rem", textAlign: "center", marginTop: "0.45rem", letterSpacing: "0.01em" }}>
             Press Enter to send · Shift+Enter for new line
