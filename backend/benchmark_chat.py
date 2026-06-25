@@ -84,11 +84,17 @@ def _parallel_intent_and_warm(question: str) -> dict:
 
 def run_benchmark():
     print(SEP)
-    print("  CHAT PIPELINE BENCHMARK  (Change 1 + Change 2 active)")
+    print("  CHAT PIPELINE BENCHMARK  (Changes 1-7 active)")
     print(f"  {len(QUESTIONS)} questions")
     print(f"  Sonnet: {config.CLAUDE_MODEL}  |  Haiku: {config.CLAUDE_HAIKU_MODEL}")
-    print(f"  Change 1: Interpreter -> Haiku")
-    print(f"  Change 2: Intent + schema warm in parallel, cache reset before each Q")
+    print(f"  Ch1: Interpreter -> Haiku")
+    print(f"  Ch2: Intent + schema warm in parallel")
+    print(f"  Ch3: SQL Agent max_tokens=4096")
+    print(f"  Ch4: SQL Agent no row echo")
+    print(f"  Ch5: Mongo write -> background thread (UI only)")
+    print(f"  Ch6: Validator warn-only for heuristic patterns")
+    print(f"  Ch7: Interpreter input column pruning")
+    print(f"  Ch8: History fetch parallel with intent+schema (UI only)")
     print(SEP)
 
     all_results = []

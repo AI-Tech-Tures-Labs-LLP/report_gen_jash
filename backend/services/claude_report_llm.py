@@ -344,12 +344,38 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
     answer = ""
     insights = ""
     if sql:
+        # Slim the rows sent to the interpreter — prune to only the columns
+        # present in the SQL SELECT list. Wide rows (10-20 cols) from complex
+        # queries waste Haiku output tokens on columns the interpreter never
+        # references. The interpreter only narrates what the SELECT returned.
+        import re as _re
+        _select_cols: set[str] = set()
+        _sel_match = _re.search(r'\bselect\b(.*?)\bfrom\b', sql, _re.IGNORECASE | _re.DOTALL)
+        if _sel_match:
+            for _part in _sel_match.group(1).split(","):
+                # grab the alias (AS alias) or last word of "table.col"
+                _alias = _re.search(r'\bas\s+(\w+)', _part, _re.IGNORECASE)
+                if _alias:
+                    _select_cols.add(_alias.group(1).lower())
+                else:
+                    _bare = _re.search(r'(\w+)\s*$', _part.strip())
+                    if _bare:
+                        _select_cols.add(_bare.group(1).lower())
+        # Only prune if we detected columns AND rows are wide (>3 keys)
+        _rows_for_interp = rows[:50]
+        if _select_cols and _rows_for_interp and len(next(iter(_rows_for_interp), {}).keys()) > 3:
+            _rows_for_interp = [
+                {k: v for k, v in row.items() if k.lower() in _select_cols}
+                or row  # fallback to full row if pruning produced empty dict
+                for row in _rows_for_interp
+            ]
+
         interpret_response = client.call_agent(
             system_prompt=_CHAT_INTERPRET_SYSTEM,
             user_message=(
                 f"QUESTION: {question}\n\n"
                 f"SQL RUN: {sql}\n\n"
-                f"RESULTS (JSON, up to 50 rows): {json.dumps(rows[:50], default=str)}"
+                f"RESULTS (JSON, up to 50 rows): {json.dumps(_rows_for_interp, default=str)}"
             ),
             agent_name="Chat Interpreter",
             model=_config.CLAUDE_HAIKU_MODEL,

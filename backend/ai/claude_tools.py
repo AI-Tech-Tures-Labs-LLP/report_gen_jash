@@ -566,26 +566,45 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
 
 
 def handle_validate_sql_query(sql: str) -> str:
-    """Validate SQL against schema and check for anti-patterns."""
-    issues: list[str] = []
+    """Validate SQL against schema and check for anti-patterns.
+
+    Patterns are split into two tiers:
+    - HARD issues  → valid: false  — always wrong, Claude must rewrite
+    - SOFT warnings → valid: true  — heuristic/context-dependent, Claude is
+                                     informed but NOT forced into a rewrite round
+    """
+    # Patterns that are heuristic / context-dependent and produce too many
+    # false positives when treated as hard failures. Claude still sees the
+    # warning text, but the query is not blocked.
+    _WARN_ONLY_PATTERNS = {
+        "top_per_group_missing_partition_by",  # fires on correct multi-col GROUP BY without LIMIT
+        "dual_metric_limit_not_dual_rank",     # ORDER BY multi-col + LIMIT is often intentional
+        "per_unit_instead_of_per_order",       # question context decides which is correct
+        "case_when_status_with_where_filter",  # not always wrong — depends on intent
+    }
+
+    issues:   list[str] = []
+    warnings: list[str] = []
 
     try:
-        # Schema validation
+        # Schema validation — always hard
         schema = get_schema()
         schema_valid, schema_issues = check_sql_against_schema(sql, schema)
         if not schema_valid:
             issues.extend(schema_issues)
 
-        # Pattern checker (includes GROUP BY aggregate/alias contamination check)
+        # Pattern checker — split into hard vs soft by pattern name
         pattern_issues = check_sql_patterns(sql)
-        if pattern_issues:
-            for pi in pattern_issues:
-                msg = f"{pi['pattern_name']}: {pi.get('description', pi.get('fix', ''))}"
-                if pi.get('correction'):
-                    msg += f"\nHOW TO FIX: {pi['correction']}"
+        for pi in pattern_issues:
+            msg = f"{pi['pattern_name']}: {pi.get('description', pi.get('fix', ''))}"
+            if pi.get('correction'):
+                msg += f"\nHOW TO FIX: {pi['correction']}"
+            if pi["pattern_name"] in _WARN_ONLY_PATTERNS:
+                warnings.append(msg)
+            else:
                 issues.append(msg)
 
-        # Safety check
+        # Safety check — always hard
         is_safe, reason = validate_sql(sql)
         if not is_safe:
             issues.append(f"Safety: {reason}")
@@ -594,8 +613,15 @@ def handle_validate_sql_query(sql: str) -> str:
         issues.append(f"Validation error: {str(exc)}")
 
     if issues:
-        return json.dumps({"valid": False, "issues": issues})
-    return json.dumps({"valid": True, "message": "SQL is valid"})
+        payload = {"valid": False, "issues": issues}
+        if warnings:
+            payload["warnings"] = warnings
+        return json.dumps(payload)
+
+    payload = {"valid": True, "message": "SQL is valid"}
+    if warnings:
+        payload["warnings"] = warnings
+    return json.dumps(payload)
 
 
 def handle_get_metric_sql(metric: str = "") -> str:

@@ -47,34 +47,40 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
         conversation_id = req.conversation_id or "default"
         logger.info("ASK request | user=%s conv=%s | question=%s", user_id, conversation_id, req.question)
 
-        # Fetch history ONCE, up front — the router needs it too (a follow-up like
-        # "break the top one down" is unroutable without knowing what "the top one" is).
-        history = get_recent_turns(user_id, conversation_id, limit=5)
-        # Compact context for the cheap router: just the Q/A text of recent turns (no result rows).
-        router_context = ""
-        if history:
-            router_context = "\n".join(
-                f"User: {t['question']}\nAssistant: {t['answer']}" for t in history
-            )
-
-        # ── Step 1: classify intent AND warm the schema cache in parallel. ──
-        # These two are fully independent: the classifier only needs the question text;
-        # the schema fetch only needs the DB connection. Running them concurrently hides
-        # the ~1.5s classifier round-trip behind the schema load that would happen anyway.
+        # ── Step 1: history fetch + intent classify + schema warm — all in parallel. ──
+        # Three fully independent operations:
+        #   • history fetch  — MongoDB read, needs only (user_id, conv_id)
+        #   • intent classify — Haiku API call, needs only the question text
+        #   • schema warm    — DB reads that populate module-level caches
+        # Running all three concurrently hides the ~100ms Mongo fetch and the
+        # ~1.5s classifier behind the schema load that would happen anyway.
         from db.schema import format_schema as _warm_schema
         from db.relationships import format_relationships as _warm_rels
         from db.profiler import get_data_profile as _warm_profile
 
         yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
 
-        with _futures.ThreadPoolExecutor(max_workers=2) as _pool:
-            _intent_future = _pool.submit(classify_query_intent, req.question, None, router_context)
-            _schema_future = _pool.submit(lambda: (_warm_schema(), _warm_rels(), _warm_profile()))
-            intent = _intent_future.result()
-            # schema result is discarded here — the call populates the module-level
-            # in-memory caches inside schema.py / relationships.py / profiler.py so
-            # answer_chat_question() reads from cache instead of hitting the DB again.
+        with _futures.ThreadPoolExecutor(max_workers=3) as _pool:
+            _history_future = _pool.submit(get_recent_turns, user_id, conversation_id, 5)
+            # Intent classifier needs router_context from history — but for the FIRST
+            # message of a session history is empty, so we can classify with "" safely.
+            # For follow-ups the classifier still works (it resolves pronouns from context),
+            # and history arrives before answer_chat_question needs it.
+            _intent_future  = _pool.submit(classify_query_intent, req.question, None, "")
+            _schema_future  = _pool.submit(lambda: (_warm_schema(), _warm_rels(), _warm_profile()))
+            history = _history_future.result()
+            intent  = _intent_future.result()
+            # schema result discarded — side effect populates module-level caches
             _schema_future.result()
+
+        # Build compact router context from the now-fetched history (used for logging only;
+        # the classifier already ran — on follow-ups the full history is injected into the
+        # SQL agent prompt below, which is where it matters most for accuracy).
+        router_context = ""
+        if history:
+            router_context = "\n".join(
+                f"User: {t['question']}\nAssistant: {t['answer']}" for t in history
+            )
         mode = intent.get("mode", "data")
         complexity = intent.get("complexity", "complex")
         logger.info("ASK routed → %s / %s (%s)", mode, complexity, intent.get("reason", ""))
@@ -143,15 +149,21 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
             for event in answer_chat_question(question_with_context, sql_model=sql_model):
                 if event["stage"] == "complete":
                     result = event["data"]
-                    add_turn(
-                        user_id, conversation_id, req.question, result["answer"], result["sql"],
-                        query_result=(result["data"][:200] if result.get("data") else None),
-                    )
                     result["row_count"] = len(result.get("data") or [])
                     result["mode"] = "chat"
                     # Per Joel's goal: ALWAYS offer a report on the fast-chat path.
                     result["report_eligible"] = True
+                    # Yield the final event FIRST so the user gets their answer
+                    # immediately, then persist to Mongo in a background thread.
+                    # History is only needed on the NEXT question — the ~100ms
+                    # write latency is fully hidden from the user.
                     yield f"data: {_json.dumps(event, default=str)}\n\n"
+                    _futures.ThreadPoolExecutor(max_workers=1).submit(
+                        add_turn,
+                        user_id, conversation_id, req.question,
+                        result["answer"], result["sql"],
+                        result["data"][:200] if result.get("data") else None,
+                    )
                 else:
                     yield f"data: {_json.dumps(event)}\n\n"
         except Exception as exc:
