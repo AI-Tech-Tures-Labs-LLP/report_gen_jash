@@ -10,6 +10,7 @@ export default function ChatMessage({ msg, t }) {
           style={{
             background: t.userBubble,
             color: t.userText,
+            WebkitTextFillColor: t.userText,
             padding: "0.7rem 1rem",
             borderRadius: "14px 14px 4px 14px",
             maxWidth: "75%",

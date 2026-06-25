@@ -94,7 +94,7 @@ export default function App() {
   const welcome = messages.length === 0;
 
   return (
-    <div style={{ display: "flex", height: "100%", background: t.bg, color: t.text, fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ display: "flex", height: "100%", background: t.bg, color: t.text, fontFamily: "'Figtree', sans-serif" }}>
       {/* ── Sidebar ── */}
       {sidebarOpen && (
         <aside
@@ -108,9 +108,9 @@ export default function App() {
           <div style={{ padding: "0.85rem 1rem", height: 50, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${t.border}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontWeight: 700, fontSize: "0.92rem", color: t.text }}>
               <div style={{
-                width: 28, height: 28, background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                width: 28, height: 28, background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
                 borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
-                boxShadow: "0 2px 8px rgba(212,175,55,0.3)"
+                boxShadow: "0 2px 8px rgba(219,131,16,0.3)"
               }}>
                 <svg viewBox="0 0 24 24" width="16" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
@@ -134,7 +134,7 @@ export default function App() {
                     style={{
                       padding: "0.6rem 0.75rem", borderRadius: 8, fontSize: "0.8rem",
                       fontWeight: isActive ? 600 : 500,
-                      color: isActive ? "#b8860b" : t.textMuted, cursor: "pointer",
+                      color: isActive ? "#b86a08" : t.textMuted, cursor: "pointer",
                       background: isActive ? "linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(184, 134, 11, 0.08) 100%)" : "transparent",
                       border: isActive ? "1px solid rgba(212, 175, 55, 0.3)" : "1px solid transparent",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 3,
@@ -144,7 +144,7 @@ export default function App() {
                     title={c.title}
                   >
                     {isActive && (
-                      <div style={{ position: "absolute", left: 0, top: "20%", bottom: "20%", width: 3, background: "linear-gradient(135deg,#d4af37 0%,#b8860b 100%)", borderRadius: "0 3px 3px 0" }} />
+                      <div style={{ position: "absolute", left: 0, top: "20%", bottom: "20%", width: 3, background: "linear-gradient(135deg,#DB8310 0%,#b86a08 100%)", borderRadius: "0 3px 3px 0" }} />
                     )}
                     {c.title}
                   </div>
@@ -192,7 +192,7 @@ export default function App() {
           )}
           {loading && status && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", color: t.textMuted, fontSize: "0.82rem", padding: "0.5rem 0.25rem" }}>
-              <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: "#d4af37", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+              <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: "#DB8310", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
               <span style={{ fontWeight: 500 }}>{status}</span>
             </div>
           )}
@@ -228,9 +228,9 @@ export default function App() {
                 border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
                 cursor: loading || !input.trim() ? "default" : "pointer",
                 opacity: loading || !input.trim() ? 0.45 : 1, color: "#fff",
-                background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
                 display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
-                boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
+                boxShadow: "0 2px 10px rgba(219,131,16,0.3)"
               }}
             >
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -253,9 +253,9 @@ function Welcome({ t, onChip }) {
       <div style={{ display: "grid", placeItems: "center", marginBottom: "1.25rem" }}>
         <div style={{
           width: 60, height: 60,
-          background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+          background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
           borderRadius: 14, display: "flex", color: "#fff",
-          boxShadow: "0 4px 20px rgba(212,175,55,0.35)",
+          boxShadow: "0 4px 20px rgba(219,131,16,0.35)",
           alignItems: "center", justifyContent: "center",
         }}>
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -263,7 +263,7 @@ function Welcome({ t, onChip }) {
           </svg>
         </div>
       </div>
-      <h2 style={{ fontSize: "1.65rem", fontWeight: 800, marginBottom: "0.6rem", background: "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI SQL Analyst</h2>
+      <h2 style={{ fontSize: "1.65rem", fontWeight: 800, marginBottom: "0.6rem", background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI SQL Analyst</h2>
       <p style={{ color: t.textMuted, fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 1.75rem", lineHeight: 1.65 }}>
         Ask anything about your data. I'll write the SQL, run it, and explain the results — or generate a full analytics report.
       </p>
@@ -275,7 +275,7 @@ function Welcome({ t, onChip }) {
             style={{
               border: `1px solid ${c.report ? "rgba(212, 175, 55, 0.4)" : t.border}`,
               background: c.report ? "rgba(212, 175, 55, 0.06)" : t.bgCard,
-              color: c.report ? "#b8860b" : t.text,
+              color: c.report ? "#b86a08" : t.text,
               borderRadius: 20, padding: "0.48rem 1rem", fontSize: "0.8rem", cursor: "pointer",
               fontWeight: 500, boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
               transition: "all 0.15s ease",
@@ -301,9 +301,9 @@ function Switcher({ t, label, value, options, onChange }) {
             onClick={() => onChange(o.v)}
             style={{
               border: "none", borderRadius: 16, padding: "0.35rem 0.85rem", fontSize: "0.76rem", cursor: "pointer",
-              background: value === o.v ? "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)" : "transparent",
+              background: value === o.v ? "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)" : "transparent",
               color: value === o.v ? "#fff" : t.textMuted, fontWeight: value === o.v ? 600 : 400,
-              boxShadow: value === o.v ? "0 2px 8px rgba(212,175,55,0.25)" : "none",
+              boxShadow: value === o.v ? "0 2px 8px rgba(219,131,16,0.25)" : "none",
               transition: "all 0.15s ease",
             }}
           >

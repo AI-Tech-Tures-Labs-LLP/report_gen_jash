@@ -172,7 +172,7 @@ function buildChart(canvas, chartSpec, data, theme) {
           position: isPieType(chartType) ? "right" : "top",
           labels: {
             color: defaults.textColor,
-            font: { family: "'Inter', sans-serif", size: 11, weight: 500 },
+            font: { family: "'Figtree', sans-serif", size: 11, weight: 500 },
             padding: 12, usePointStyle: true, pointStyleWidth: 8, boxWidth: 8, boxHeight: 8,
           },
         },
@@ -185,8 +185,8 @@ function buildChart(canvas, chartSpec, data, theme) {
           borderWidth: 1,
           padding: { top: 10, bottom: 10, left: 14, right: 14 },
           cornerRadius: 10, caretSize: 6, caretPadding: 8,
-          titleFont: { family: "'Inter', sans-serif", size: 12, weight: 700 },
-          bodyFont: { family: "'Inter', sans-serif", size: 11, weight: 500 },
+          titleFont: { family: "'Figtree', sans-serif", size: 12, weight: 700 },
+          bodyFont: { family: "'Figtree', sans-serif", size: 11, weight: 500 },
           titleMarginBottom: 8, bodySpacing: 6, boxPadding: 6,
           displayColors: true, usePointStyle: true,
           callbacks: {
@@ -235,24 +235,24 @@ function buildChart(canvas, chartSpec, data, theme) {
     config.options.scales = {
       [valueAxisKey]: {
         grid: { color: defaults.gridColor, drawBorder: false },
-        ticks: { color: defaults.textColor, font: { family: "'Inter'", size: 11, weight: 500 }, callback: numFmtCallback, maxTicksLimit: 8, padding: 4 },
+        ticks: { color: defaults.textColor, font: { family: "'Figtree'", size: 11, weight: 500 }, callback: numFmtCallback, maxTicksLimit: 8, padding: 4 },
         title: (isHorizontal ? chartSpec.x_label : chartSpec.y_label) ? {
           display: true, text: isHorizontal ? chartSpec.x_label : chartSpec.y_label,
-          color: defaults.textColor, font: { family: "'Inter'", size: 11, weight: 700 }, padding: { top: 8 },
+          color: defaults.textColor, font: { family: "'Figtree'", size: 11, weight: 700 }, padding: { top: 8 },
         } : undefined,
         stacked: isStacked, beginAtZero: true,
       },
       [labelAxisKey]: {
         grid: { color: isHorizontal ? "transparent" : defaults.gridColor, drawBorder: false },
         ticks: {
-          color: defaults.textColor, font: { family: "'Inter'", size: isHorizontal ? 11 : 10, weight: 500 },
+          color: defaults.textColor, font: { family: "'Figtree'", size: isHorizontal ? 11 : 10, weight: 500 },
           maxRotation: smartRotation, minRotation: smartRotation > 0 ? smartRotation - 10 : 0,
           autoSkip: true, autoSkipPadding: 8, maxTicksLimit: isHorizontal ? 20 : 14,
           callback: isHorizontal ? undefined : labelFmtCallback,
         },
         title: (isHorizontal ? chartSpec.y_label : chartSpec.x_label) ? {
           display: true, text: isHorizontal ? chartSpec.y_label : chartSpec.x_label,
-          color: defaults.textColor, font: { family: "'Inter'", size: 11, weight: 700 }, padding: { top: 8 },
+          color: defaults.textColor, font: { family: "'Figtree'", size: 11, weight: 700 }, padding: { top: 8 },
         } : undefined,
         stacked: isStacked,
       },
