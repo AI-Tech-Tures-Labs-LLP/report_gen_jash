@@ -287,20 +287,24 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
     # trusting the model to echo the rows back as JSON (it often truncates or drops
     # them). The tool already ran the query — re-parsing its actual output is both
     # cheaper and more accurate than re-running SQL from the model's JSON echo.
-    _last_exec: dict = {}
+    _exec_results: list[dict] = []
 
     def _capture(tool_name: str, parsed: dict, _raw) -> None:
         if tool_name == "execute_sql_query" and parsed.get("success") is True:
-            _last_exec["sql"] = parsed.get("executed_sql", "")
-            _last_exec["data"] = parsed.get("data") or []
+            _exec_results.append({
+                "sql": parsed.get("executed_sql", ""),
+                "data": parsed.get("data") or [],
+            })
 
     sql_response = client.call_agent(
         system_prompt=sql_system,
         user_message=(
             f"Answer this question by writing and executing PostgreSQL.\n\n"
             f"QUESTION: {question}\n\n"
-            f"Use the validate_sql_query and execute_sql_query tools. After you "
-            f"have the results, output ONLY this JSON object: {{\"sql\": \"<the sql you ran>\"}}"
+            f"Use the validate_sql_query and execute_sql_query tools. If the question needs "
+            f"two separate tables (e.g. 'show products AND variants as two tables'), call "
+            f"execute_sql_query TWICE — one query per table, do NOT merge with UNION. "
+            f"After all queries are done, output ONLY this JSON object: {{\"sql\": \"<the first sql you ran>\"}}"
         ),
         tools=SQL_AGENT_TOOLS,
         tool_handlers=TOOL_HANDLERS,
@@ -316,27 +320,25 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
     try:
         parsed = client.extract_json(sql_response)
         sql = parsed.get("sql", "") or ""
-        rows = parsed.get("data") or []
     except (json.JSONDecodeError, ValueError):
         # Fallback: the agent returned prose; treat the whole thing as the answer
         logger.warning("Chat SQL agent returned non-JSON; using text fallback")
 
-    # Prefer the ACTUAL tool execution result over the model's JSON echo.
-    # The tool's captured rows are authoritative; the echo can be truncated/wrong.
-    if _last_exec.get("data"):
-        rows = _last_exec["data"]
-        sql = sql or _last_exec.get("sql", "")
-    if not sql and _last_exec.get("sql"):
-        sql = _last_exec["sql"]
-
-    # Last resort: agent named SQL but we captured no rows (e.g. it only validated,
-    # never executed) — run it once so the answer isn't empty.
-    if sql and not rows:
+    # Build tables list from ALL captured execute_sql_query results (in execution order).
+    # This naturally supports both single-query and two-table questions.
+    tables: list[dict] = [r for r in _exec_results if r.get("data")]
+    if tables:
+        sql = sql or tables[0]["sql"]
+        rows = tables[0]["data"]
+    elif sql:
+        # Last resort: agent named SQL but captured no rows — run it once.
         result = execute_sql(sql)
         if result.get("success"):
             rows = result.get("data") or []
+            if rows:
+                tables = [{"sql": sql, "data": rows}]
 
-    yield {"stage": "execute", "data": {"row_count": len(rows)}}
+    yield {"stage": "execute", "data": {"row_count": sum(len(t["data"]) for t in tables)}}
 
     # ── Stage 2: Interpret the results into answer + insights ──
     yield {"stage": "interpret", "data": {"message": "Interpreting results..."}}
@@ -344,12 +346,20 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
     answer = ""
     insights = ""
     if sql:
+        results_for_interp = (
+            json.dumps(
+                [{"table": i + 1, "sql": t["sql"], "rows": t["data"][:50]} for i, t in enumerate(tables)],
+                default=str,
+            )
+            if len(tables) > 1
+            else json.dumps(rows[:50], default=str)
+        )
         interpret_response = client.call_agent(
             system_prompt=_CHAT_INTERPRET_SYSTEM,
             user_message=(
                 f"QUESTION: {question}\n\n"
                 f"SQL RUN: {sql}\n\n"
-                f"RESULTS (JSON, up to 50 rows): {json.dumps(rows[:50], default=str)}"
+                f"RESULTS (JSON, up to 50 rows): {results_for_interp}"
             ),
             agent_name="Chat Interpreter",
             model=_config.CLAUDE_HAIKU_MODEL,
@@ -373,6 +383,7 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
         "data": {
             "sql": sql,
             "data": rows,
+            "tables": tables,
             "answer": answer,
             "insights": insights,
             "metrics": metrics,

@@ -139,7 +139,7 @@ export default function App() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
     setStatus("Understanding your request…");
-    pushMessage({ role: "user", text: q });
+    pushMessage({ role: "user", text: q, ts: new Date().toISOString() });
 
     // register conversation in sidebar
     setConvs((prev) => {
@@ -162,18 +162,18 @@ export default function App() {
         // Report intent → the full report is ALREADY generated. Store it once and
         // show an "Open Report" card that just re-opens the stored tab (no regen).
         const reportId = openReport(q, finalData, convId);
-        pushMessage({ role: "ai", reportId });
+        pushMessage({ role: "ai", reportId, ts: new Date().toISOString() });
       } else if (finalData) {
         // Only offer "Generate Report" for real DATA answers. Non-data turns
         // (greeting/off-topic/refused) set report_eligible=false / non_data=true,
         // so no report card appears for them.
         const offerReport = finalData.report_eligible !== false && !finalData.non_data;
-        pushMessage({ role: "ai", data: finalData, showOffer: offerReport, question: q });
+        pushMessage({ role: "ai", data: finalData, showOffer: offerReport, question: q, ts: new Date().toISOString() });
       } else {
         pushMessage({ role: "ai", error: "No response received from server." });
       }
     } catch (err) {
-      pushMessage({ role: "ai", error: err.message || "Something went wrong." });
+      pushMessage({ role: "ai", error: err.message || "Something went wrong.", ts: new Date().toISOString() });
     } finally {
       setLoading(false);
       setStatus("");
@@ -387,7 +387,7 @@ export default function App() {
                   <ReportSuccess reportId={m.reportId} t={t} />
                 ) : (
                   <>
-                    <ChatMessage msg={m} t={t} />
+                    <ChatMessage msg={m} t={t} themeMode={themeMode} />
                     {m.showOffer && <ReportOffer question={m.question} t={t} convId={convId} />}
                   </>
                 )}
