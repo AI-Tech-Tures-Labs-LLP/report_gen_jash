@@ -440,12 +440,6 @@ already creating ranked charts (e.g. "Revenue by Shape") that show the #1 item a
   they CANNOT share one query or one table. Never return product_master results for a "variants" ask,
   or variant results for a "products" ask.
 
-⚠️ TWO-ENTITY TABLE REQUESTS (e.g. "one table for products AND one for variants"):
-- The `table` slot holds exactly ONE listing. It cannot hold two separate entity lists.
-- When the user asks for two ranked lists in a REPORT, use ONE as the `table` (the primary entity
-  the user cares most about) and add a `horizontalBar` chart for the second entity.
-- Example: table = "Top 10 Products Detail", chart = "Top 10 Variants by Units Sold" (horizontalBar).
-- NEVER cram two unrelated entity lists into a single `table` row-set.
 
 ### QUESTION-ALIGNMENT RULES (CRITICAL)
 The report MUST be laser-focused on the user's question. Follow these rules:
@@ -731,12 +725,6 @@ FORMATTING:
 - Use NULLIF(denominator, 0) for all divisions to prevent divide-by-zero
 - ROUND all percentages to 2 decimal places
 - Use ₹ prefix for currency labels only in the chart title, not in data values
-
-TWO-TABLE QUESTIONS: When the user explicitly asks for two SEPARATE tables or lists
-(e.g. "show top 10 products AND top 10 variants as two tables", "give me two tables: one for X,
-one for Y"), call execute_sql_query TWICE — one focused query per table, in order. Do NOT merge
-them into a UNION (that destroys the separation). Do NOT convert to charts. The system captures
-every execute_sql_query result and presents each as its own labelled table in the UI.
 
 BUSINESS RULES:
 - status = 'closed' filter ONLY on sales_order table
