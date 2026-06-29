@@ -301,7 +301,7 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
             f"QUESTION: {question}\n\n"
             f"Use the validate_sql_query and execute_sql_query tools. After you "
             f"have the results, output ONLY this JSON object: {{\"sql\": \"<the sql you ran>\"}}"
-        ),
+        ),    
         tools=SQL_AGENT_TOOLS,
         tool_handlers=TOOL_HANDLERS,
         agent_name="Chat SQL Agent",

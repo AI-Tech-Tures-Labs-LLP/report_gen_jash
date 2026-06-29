@@ -429,6 +429,18 @@ already creating ranked charts (e.g. "Revenue by Shape") that show the #1 item a
   • If the user's headline is "top X", still make the KPIs scalar totals and let the ranked chart
     surface the winner. Do NOT put a shape/quality/vendor/category NAME as a KPI value.
 
+### ENTITY DISAMBIGUATION (CRITICAL — READ BEFORE DESIGNING ANY REPORT)
+
+⚠️ PRODUCT vs VARIANT — these are DIFFERENT entities. Never mix them up:
+- `product_master` = the parent product family (e.g., "Gold Necklace"). One product → many variants.
+- `product_variant` = a specific SKU/variation (e.g., "Gold Necklace - 18K - 5gm").
+- When the user says "product", group by product_master / product_name.
+- When the user says "variant", group by product_variant / variant_name or SKU.
+- A "top products" query and a "top variants" query are SEPARATE questions on SEPARATE grains —
+  they CANNOT share one query or one table. Never return product_master results for a "variants" ask,
+  or variant results for a "products" ask.
+
+
 ### QUESTION-ALIGNMENT RULES (CRITICAL)
 The report MUST be laser-focused on the user's question. Follow these rules:
 1. The FIRST 3 KPIs must directly answer the user's primary question subject.
@@ -808,6 +820,36 @@ BUSINESS RULES:
   customer_master. If asked about "stores", either map to territories OR to distinct customers —
   and EXPLICITLY STATE which mapping you used. Never silently invent a "store" count.
 
+⚠️ PRODUCT vs VARIANT — these are DIFFERENT grains (read carefully before every product/variant query):
+  • `product_master` = the parent product family (e.g. "Gold Necklace"). Group by product_master.product_name
+    for "top products / best-selling products / product ranking" questions.
+  • `product_variant` = a specific SKU/variation (e.g. "Gold Necklace - 18K - 5gm"). Group by
+    product_variant.variant_name (or sku_code) for "top variants / best-selling variants" questions.
+  • NEVER use product_master to answer a "variants" question, or vice versa.
+  • A "top products" query and a "top variants" query are TWO SEPARATE queries on TWO SEPARATE groupings —
+    they cannot be merged into one. Write them independently.
+
+⚠️ PRODUCT ATTRIBUTE QUERIES — use `product_variant` FIRST, not sales tables:
+  For questions about static product specs (gold weight, stone type, product dimensions, material details):
+  • ALWAYS check `product_variant` FIRST — it holds per-SKU static attributes
+    (e.g. gold_weight_gm, metal_type, stone_details, making_charges).
+  • Example: "list products with less than 3 gm of gold" → filter product_variant.gold_weight_gm < 3.
+    DO NOT go to sales_order_line_gold or sales_order_gold_line for this — those tables record gold
+    charged in a specific SALE, not the static spec of a product.
+  • Rule of thumb:
+    - "Which products HAVE property X" (weight, karat, stone type) → product_variant
+    - "How much gold was SOLD / charged to customers" → sales_order_line_gold (linked to a sale)
+    - "How much gold was CONSUMED in production" → raw_material_lot_usage_ledger
+  Using a sales-linked gold table for a product-spec question is a long, unnecessary join that can
+  also give wrong answers (a product spec is fixed; gold charged per sale may vary).
+
+⚠️ SELECT ONLY WHAT WAS ASKED — do NOT over-fetch columns:
+  If the user asks for quantity only, return quantity (and the grouping label). Do NOT add revenue,
+  order count, margin, or other unrequested metrics just because they are easy to compute.
+  • "how much quantity was sold by product" → SELECT product_name, SUM(quantity). That is all.
+  • Only add extra columns when the user explicitly asked for them, or when they are REQUIRED to make
+    the result interpretable (e.g. a label column for a ranking). More columns ≠ more helpful.
+
 ⚠️ MISSING-DATA / SUBSTITUTION RULE (do NOT answer a different question silently):
   If the obvious column for the asked metric is empty/all-zero (e.g. discount_amount), you MUST
   (1) search governance/exception tables for the real source (discount_exceptions, discount_rules)
@@ -917,6 +959,78 @@ BUSINESS RULES:
   real parts are 68.55 / 21.49 / 9.96, report THOSE, not 70 / 19.75 / 10.25. A suspiciously exact
   100.00% sum of independently-measured components is a sign of fabrication. Report true values; if
   they don't sum to 100 (rounding, or a residual/other bucket), add a "residual/other" line.
+
+═══════════════════════════════════════════════════════════════════════════════
+🔑 RETURN ORDER FLOW — 4-TABLE MAP AND SQL RULES
+   Customer returns touch EXACTLY four tables in a fixed sequence. Use this map
+   for every returns-related question — never guess a different path.
+═══════════════════════════════════════════════════════════════════════════════
+
+RETURN FLOW (always in this order):
+  1. return_sol            → return request recorded when customer initiates a return
+  2. inventory_movements   → physical movement logged with move_type = 'return'
+  3. finished_goods_inventory → available_qty increased; status set to 'active'
+  4. sales_payments        → refund paid out to customer (transaction_type = 'refund')
+
+─── return_sol (RETURN REQUEST TABLE) ───────────────────────────────────────
+  One row per return request submitted by a customer.
+  Link to origin sale: return_sol.so_id → sales_order.so_id
+  return_id is the primary key; use it to count returns and to join to sales_payments.
+
+  ⚠️ received_date TRAP — this column is the date the CUSTOMER RECEIVED THE ORIGINAL
+    DELIVERY (i.e. the original order's delivery date). It is NOT the date the returned
+    goods arrived back at the warehouse. Never filter or label it as "return arrival date",
+    "date goods were returned", or "date return was received at warehouse". If you need
+    WHEN the return was initiated, look for a return_date or created_at column; if WHEN
+    the returned stock re-entered inventory, join to inventory_movements.
+
+  Canonical return metrics:
+    Return count          = COUNT(return_id) FROM return_sol [+ optional WHERE filters]
+    Return rate (%)       = COUNT(DISTINCT rs.return_id) * 100.0
+                            / NULLIF(COUNT(DISTINCT so.so_id), 0)
+                            FROM sales_order so LEFT JOIN return_sol rs ON so.so_id = rs.so_id
+                            (apply the SAME date filter to both sides of the join)
+
+─── inventory_movements (RETURN MOVE_TYPE) ──────────────────────────────────
+  When a return is accepted and stock re-enters the warehouse, one new row is
+  inserted in inventory_movements with move_type = 'return'.
+  Existing move_type values for non-return flows are unaffected.
+  Filter: WHERE move_type = 'return'  — to isolate return stock movements only.
+
+─── finished_goods_inventory (POST-RETURN STOCK STATE) ──────────────────────
+  After a return is accepted:
+    • available_qty for the returned finished_goods_id is INCREASED by the returned quantity.
+    • status is set to 'active' for those finished_goods_id rows.
+  available_qty in this table is always the CURRENT on-hand quantity — it already
+  reflects all accepted returns. Query it directly for current inventory levels;
+  do NOT add a separate return adjustment on top.
+
+─── sales_payments (PAYMENT vs REFUND — TWO NEW COLUMNS) ────────────────────
+  Two new columns distinguish money RECEIVED from customers vs money PAID BACK:
+    transaction_type : 'refund' → money paid OUT to the customer (return refund)
+                       NULL     → normal payment received FROM a customer
+    reference_id     : return_id of the linked return when transaction_type='refund'
+                       NULL for all ordinary (non-refund) payment rows
+
+  ⚠️ ALWAYS FILTER sales_payments BY QUESTION TYPE — mixing both directions produces
+     an INCORRECT total (inbound and outbound money cancel each other out or inflate):
+
+    Payments RECEIVED from customers (cash inflow only):
+        WHERE transaction_type IS NULL
+
+    Total refunds paid to customers (cash outflow only):
+        WHERE transaction_type = 'refund'
+
+    Net cash from sales (inflow minus refunds):
+        SUM(CASE WHEN transaction_type IS NULL THEN amount ELSE 0 END)
+        - SUM(CASE WHEN transaction_type = 'refund' THEN amount ELSE 0 END)
+
+    Link a refund back to its return request:
+        JOIN sales_payments sp ON sp.reference_id = rs.return_id
+        WHERE sp.transaction_type = 'refund'
+
+  ⚠️ NEVER aggregate ALL rows of sales_payments without a WHERE filter — that mixes
+     inbound customer payments with outbound refunds and gives a wrong net figure.
 
 ⚠️ DATA-QUALITY LANDMINES (filter these or your averages are WRONG):
   • NEGATIVE lead times: so_fulfillment_log.days_to_fulfill / days_sol_to_po / days_to_transfer /
