@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getTheme } from "./theme.js";
-import { askStream, openReport } from "./api.js";
+import { askStream, openReport, generateReport } from "./api.js";
 import { loadConversations, saveConversations, newConversationId, saveMessages, loadMessages, deleteConversation, saveActiveConvId, loadActiveConvId } from "./storage.js";
 import { getAuthHeaders, logout, getUser } from "./auth.js";
 import ChatMessage from "./components/ChatMessage.jsx";
@@ -8,12 +8,22 @@ import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
 
 const CHIPS = [
-  { q: "What is the total revenue this year?", label: "Total revenue this year" },
-  { q: "Top 10 customers by revenue", label: "Top 10 customers" },
-  { q: "Which vendor has the highest purchase order value?", label: "Top vendor by PO value" },
-  { q: "What is the average order value?", label: "Average order value" },
-  { q: "Generate a sales performance report", label: "Sales Performance Report", report: true },
-  { q: "Generate a gold products analysis report", label: "Gold Products Analysis", report: true },
+  { q: "What is the total revenue this year?",                         label: "Total revenue this year" },
+  { q: "Top 10 customers by revenue",                                  label: "Top 10 customers" },
+  { q: "Which vendor has the highest purchase order value?",           label: "Top vendor by PO value" },
+  { q: "What is the average order value?",                             label: "Average order value" },
+  { q: "Show me the current inventory and stock status",               label: "Inventory & stock status" },
+];
+
+
+// Hardcoded report queries — clicking these calls /report directly,
+// skipping intent classification entirely for faster generation.
+const REPORT_CHIPS = [
+  { q: "Give sales performance report", label: "Sales Performance" },
+  { q: "Give gold analysis report", label: "Gold Products Analysis" },
+  { q: "Give customer analytics report", label: "Customer Analytics" },
+  { q: "Give vendor and PO report", label: "Vendor & PO Report" },
+  { q: "Give monthly revenue trends report", label: "Monthly Revenue Trends" },
 ];
 
 export default function App() {
@@ -130,6 +140,33 @@ export default function App() {
 
   function pushMessage(m) {
     setMessages((prev) => [...prev, { id: Date.now() + Math.random(), ...m }]);
+  }
+
+  async function handleDirectReport(question) {
+    if (loading) return;
+    setLoading(true);
+    setStatus("Generating report directly…");
+    pushMessage({ role: "user", text: question });
+
+    // register conversation in sidebar
+    setConvs((prev) => {
+      if (prev.find((c) => c.id === convId)) return prev;
+      const next = [{ id: convId, title: question.slice(0, 40) }, ...prev];
+      saveConversations(next);
+      return next;
+    });
+
+    try {
+      // Directly call /report — skips intent classification & schema warm for speed
+      const reportData = await generateReport(question);
+      const reportId = openReport(question, reportData, convId);
+      pushMessage({ role: "ai", reportId });
+    } catch (err) {
+      pushMessage({ role: "ai", error: err.message || "Report generation failed." });
+    } finally {
+      setLoading(false);
+      setStatus("");
+    }
   }
 
   async function handleSubmit(question) {
@@ -379,7 +416,7 @@ export default function App() {
         {/* Thread */}
         <div ref={threadRef} style={{ flex: 1, overflowY: "auto", padding: "1.5rem", maxWidth: 840, width: "100%", margin: "0 auto", position: "relative" }}>
           {welcome ? (
-            <Welcome t={t} onChip={(q) => handleSubmit(q)} />
+            <Welcome t={t} onChip={(q) => handleSubmit(q)} onReport={(q) => handleDirectReport(q)} />
           ) : (
             messages.map((m) => (
               <div key={m.id}>
@@ -458,9 +495,9 @@ export default function App() {
   );
 }
 
-function Welcome({ t, onChip }) {
+function Welcome({ t, onChip, onReport }) {
   return (
-    <div style={{ textAlign: "center", marginTop: "8vh", animation: "fadeIn 0.3s ease both" }}>
+    <div style={{ textAlign: "center", marginTop: "6vh", animation: "fadeIn 0.3s ease both" }}>
       <div style={{ display: "grid", placeItems: "center", marginBottom: "1.25rem" }}>
         <div style={{
           width: 60, height: 60,
@@ -475,18 +512,20 @@ function Welcome({ t, onChip }) {
         </div>
       </div>
       <h2 style={{ fontSize: "1.65rem", fontWeight: 800, marginBottom: "0.6rem", background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI SQL Analyst</h2>
-      <p style={{ color: t.textMuted, fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 1.75rem", lineHeight: 1.65 }}>
+      <p style={{ color: t.textMuted, fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 1.5rem", lineHeight: 1.65 }}>
         Ask anything about your data. I'll write the SQL, run it, and explain the results — or generate a full analytics report.
       </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center", maxWidth: 640, margin: "0 auto" }}>
+
+      {/* Quick Ask chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center", maxWidth: 640, margin: "0 auto 1.75rem" }}>
         {CHIPS.map((c) => (
           <button
             key={c.q}
             onClick={() => onChip(c.q)}
             style={{
-              border: `1px solid ${c.report ? "rgba(212, 175, 55, 0.4)" : t.border}`,
-              background: c.report ? "rgba(212, 175, 55, 0.06)" : t.bgCard,
-              color: c.report ? "#b86a08" : t.text,
+              border: `1px solid ${t.border}`,
+              background: t.bgCard,
+              color: t.text,
               borderRadius: 20, padding: "0.48rem 1rem", fontSize: "0.8rem", cursor: "pointer",
               fontWeight: 500, boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
               transition: "all 0.15s ease",
@@ -496,6 +535,45 @@ function Welcome({ t, onChip }) {
             {c.label}
           </button>
         ))}
+      </div>
+
+      {/* Quick Reports — directly calls /report, skipping chat routing */}
+      <div style={{ maxWidth: 680, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", justifyContent: "center", marginBottom: "0.65rem" }}>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#DB8310" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#DB8310", textTransform: "uppercase", letterSpacing: "0.1em" }}>Quick Reports</span>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#DB8310" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center" }}>
+          {REPORT_CHIPS.map((c) => (
+            <button
+              key={c.q}
+              onClick={() => onReport(c.q)}
+              className="rpt-welcome-chip"
+              style={{
+                border: "1px solid rgba(219,131,16,0.45)",
+                background: "linear-gradient(135deg, rgba(219,131,16,0.08) 0%, rgba(248,213,124,0.06) 100%)",
+                color: "#b86a08",
+                borderRadius: 20, padding: "0.5rem 1.1rem", fontSize: "0.8rem", cursor: "pointer",
+                fontWeight: 600, transition: "all 0.15s ease",
+                display: "flex", alignItems: "center", gap: "0.35rem",
+                boxShadow: "0 1px 4px rgba(219,131,16,0.12)",
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: "0.67rem", color: t.textMuted, marginTop: "0.55rem" }}>
+          Instant reports — generated directly without chat routing
+        </p>
       </div>
     </div>
   );

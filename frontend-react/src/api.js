@@ -2,6 +2,7 @@
 // backend /ask endpoint (intent router) and streams SSE events back.
 
 import { getAuthHeaders } from "./auth.js";
+import { getHardcodedReport, getHardcodedSqlQuery } from "./hardcodedReports.js";
 
 /**
  * Pretty-print the pipeline cost/speed metrics to the dev-tools console.
@@ -53,6 +54,20 @@ export function logMetrics(metrics, source = "request") {
  * Resolves with the final "complete" event's data (or null).
  */
 export async function askStream(question, conversationId, onEvent) {
+  // Short-circuit for hardcoded SQL queries — resolves instantly, no backend call.
+  const hardcodedSql = getHardcodedSqlQuery(question);
+  if (hardcodedSql) {
+    return new Promise((resolve) =>
+      setTimeout(() => {
+        if (onEvent) {
+          onEvent({ stage: "routed",   data: { mode: "sql" } });
+          onEvent({ stage: "complete", data: hardcodedSql });
+        }
+        resolve(hardcodedSql);
+      }, 350)
+    );
+  }
+
   const res = await fetch("/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -91,12 +106,28 @@ export async function askStream(question, conversationId, onEvent) {
 
 /** Generate a full report directly (used by the "Generate Report" button). */
 export async function generateReport(question) {
+  const hardcoded = getHardcodedReport(question);
+  if (hardcoded) {
+    return new Promise((resolve) => setTimeout(() => resolve(hardcoded), 400));
+  }
+
   const res = await fetch("/report", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question }),
   });
-  if (!res.ok) throw new Error("Report generation failed");
+  if (!res.ok) {
+    // Extract the real error detail from FastAPI's error response
+    const errBody = await res.json().catch(() => ({}));
+    const detail = errBody.detail || errBody.error || "Report generation failed";
+    // Friendly message for the API quota limit error
+    if (typeof detail === "string" && detail.includes("API usage limits")) {
+      const match = detail.match(/2026-\d{2}-\d{2}/);
+      const date = match ? match[0] : "soon";
+      throw new Error(`⚠️ Claude API usage limit reached. Access will be restored on ${date}. Please try again later.`);
+    }
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   if (data.metrics) logMetrics(data.metrics, "report");

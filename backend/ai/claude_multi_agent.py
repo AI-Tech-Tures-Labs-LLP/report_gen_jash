@@ -1268,7 +1268,8 @@ class ClaudeReportPipeline:
             logger.error("Claude pipeline failed: %s", exc, exc_info=True)
             return {
                 "mode": "report",
-                "error": f"Report generation failed: {str(exc)}",
+                "status": "failed",
+                "error": str(exc),
                 "report": None,
             }
 
