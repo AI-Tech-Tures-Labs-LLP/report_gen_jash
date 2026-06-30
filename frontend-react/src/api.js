@@ -53,7 +53,7 @@ export function logMetrics(metrics, source = "request") {
  *   {stage:"routing"|"routed"|"report_generating"|"analyze"|"sql"|"execute"|"interpret"|"complete", data:{...}}
  * Resolves with the final "complete" event's data (or null).
  */
-export async function askStream(question, conversationId, onEvent) {
+export async function askStream(question, conversationId, onEvent, signal) {
   // Short-circuit for hardcoded SQL queries — resolves instantly, no backend call.
   const hardcodedSql = getHardcodedSqlQuery(question);
   if (hardcodedSql) {
@@ -72,6 +72,7 @@ export async function askStream(question, conversationId, onEvent) {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ question, conversation_id: conversationId }),
+    signal,
   });
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
