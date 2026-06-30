@@ -84,7 +84,10 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
         mode = intent.get("mode", "data")
         complexity = intent.get("complexity", "complex")
         logger.info("ASK routed → %s / %s (%s)", mode, complexity, intent.get("reason", ""))
-        yield f"data: {_json.dumps({'stage': 'routed', 'data': {'mode': mode, 'reason': intent.get('reason', '')}})}\n\n"
+        # `complexity` is included so the frontend can show a derived, fully-templated
+        # "reasoning" line (focused lookup vs broader analysis). It is process framing
+        # only — never a data claim — so it can't contradict the final answer.
+        yield f"data: {_json.dumps({'stage': 'routed', 'data': {'mode': mode, 'complexity': complexity, 'reason': intent.get('reason', '')}})}\n\n"
 
         # ── Step 1b: NON-DATA turns → answer directly, NO SQL, NO database ──
         if mode in ("conversational", "out_of_scope", "refuse"):

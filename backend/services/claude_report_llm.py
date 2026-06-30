@@ -305,6 +305,10 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
         if tool_name == "execute_sql_query" and _is_answer_query(parsed):
             _last_exec["sql"] = parsed.get("executed_sql", "")
             _last_exec["data"] = parsed.get("data") or []
+            # row_count is the TRUE total (the tool reports it even when it caps the
+            # returned data at 50); truncated says the returned sample was capped.
+            _last_exec["row_count"] = parsed.get("row_count", len(_last_exec["data"]))
+            _last_exec["truncated"] = bool(parsed.get("truncated"))
 
     def _stop_on_answer(tool_name: str, parsed: dict) -> bool:
         # Stop the loop only once a REAL data query has succeeded — never on a
@@ -361,7 +365,12 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
         if result.get("success"):
             rows = result.get("data") or []
 
-    yield {"stage": "execute", "data": {"row_count": len(rows)}}
+    # Surface the TRUE total row count (tool reports it even when it caps the sample at
+    # 50) + whether the returned sample was truncated — drives the frontend "N+ rows"
+    # signal honestly. Falls back to len(rows) when no captured count is available.
+    _exec_total = _last_exec.get("row_count", len(rows))
+    _exec_truncated = bool(_last_exec.get("truncated"))
+    yield {"stage": "execute", "data": {"row_count": _exec_total, "truncated": _exec_truncated}}
 
     # ── Stage 2: Interpret the results into answer + insights ──
     yield {"stage": "interpret", "data": {"message": "Interpreting results..."}}
