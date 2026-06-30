@@ -7,208 +7,673 @@ export function getHardcodedReport(question) {
       mode: "report",
       intent_mode: "STANDARD_REPORT",
       report: {
-        title: "Comprehensive Sales Performance & Revenue Dynamics",
-        summary: "The business has demonstrated exceptional resilience this quarter, posting a robust 15.2% year-over-year revenue growth. This surge is predominantly anchored by the Rings and Necklaces categories, which have benefited from targeted marketing campaigns and an upward shift in Average Order Value (AOV). While order volume has maintained a stable trajectory, the 8% increase in AOV indicates successful upselling into higher-margin, premium product tiers. Notably, Zenith Jewellers Pvt Ltd continues to act as a major revenue engine, accounting for a significant portion of wholesale volume.",
-        kpis: [
-          { 
-            label: "Total Revenue Generated", 
-            value: 12540000, 
-            format: "currency", 
-            sql: "SELECT SUM(so.total_amount) AS Total_Revenue\nFROM sales_order so\nWHERE so.status = 'closed'\nAND so.order_date >= '2025-01-01';",
-            explanation: { 
-              what: "The absolute sum of recognized revenue across all completed transactions.", 
-              how: "Calculated by aggregating the `total_amount` column from the `sales_order` table, strictly filtering for orders with a 'closed' status to exclude pending or cancelled transactions.", 
-              why: "This is the primary indicator of top-line business health and market traction.", 
-              insight: "Revenue is tracking 15% ahead of the same period last year, indicating strong market demand and effective pricing strategies." 
-            } 
-          },
-          { 
-            label: "Total Orders Fulfilled", 
-            value: 3450, 
-            format: "number", 
-            sql: "SELECT COUNT(DISTINCT so_id) AS Orders_Fulfilled\nFROM sales_order\nWHERE status = 'closed';",
-            explanation: { 
-              what: "The total volume of distinct sales orders that have been successfully processed and closed.", 
-              how: "Obtained by counting distinct `so_id` identifiers in the `sales_order` table where the transaction lifecycle is complete.", 
-              why: "Order volume is a critical operational metric that dictates logistics load and baseline demand.", 
-              insight: "While revenue jumped 15%, order volume only grew by 4%, meaning the revenue growth is driven primarily by larger basket sizes rather than simply more transactions." 
-            } 
-          },
-          { 
-            label: "Average Order Value (AOV)", 
-            value: 3634, 
-            format: "currency", 
-            sql: "SELECT SUM(total_amount) / COUNT(DISTINCT so_id) AS AOV\nFROM sales_order\nWHERE status = 'closed';",
-            explanation: { 
-              what: "The average amount of revenue generated per individual sales order.", 
-              how: "Calculated by dividing the total closed revenue by the total number of closed orders.", 
-              why: "A higher AOV indicates successful upselling, cross-selling, or a shift in consumer preference toward premium products.", 
-              insight: "AOV has increased by 8% this quarter, directly correlating with the recent push to promote higher-karat gold items." 
-            } 
-          },
-          { 
-            label: "Year-over-Year Growth", 
-            value: 15.2, 
-            format: "percent", 
-            sql: "WITH current_yr AS (SELECT SUM(total_amount) as rev FROM sales_order WHERE order_date >= '2025-01-01' AND status='closed'),\nprior_yr AS (SELECT SUM(total_amount) as rev FROM sales_order WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01' AND status='closed')\nSELECT ((current_yr.rev - prior_yr.rev) / prior_yr.rev) * 100 AS YoY_Growth\nFROM current_yr, prior_yr;",
-            explanation: { 
-              what: "The percentage increase in total revenue compared to the exact same timeframe in the previous year.", 
-              how: "Computed by contrasting the sum of current year-to-date sales against the parallel period from the prior year.", 
-              why: "YoY growth normalizes seasonal fluctuations, providing a true measure of business expansion.", 
-              insight: "Exceeding the internal target of 12%, this 15.2% growth signifies strong momentum going into the holiday season." 
-            } 
-          },
-          { 
-            label: "Peak Daily Sales", 
-            value: 450000, 
-            format: "currency", 
-            sql: "SELECT SUM(total_amount) AS Daily_Sales\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY DATE(order_date)\nORDER BY Daily_Sales DESC\nLIMIT 1;",
-            explanation: { 
-              what: "The highest amount of revenue generated in a single 24-hour period.", 
-              how: "Aggregated by grouping all sales orders by their exact calendar date and selecting the absolute maximum.", 
-              why: "Identifying peak sales days helps calibrate marketing campaign effectiveness and logistics capacity planning.", 
-              insight: "This peak occurred precisely during the launch of the new Spring Diamond Collection." 
-            } 
-          },
-          { 
-            label: "Unique Products Sold", 
-            value: 142, 
-            format: "number", 
-            sql: "SELECT COUNT(DISTINCT product_id) AS Unique_SKUs\nFROM sales_order_line sol\nJOIN sales_order so ON sol.so_id = so.so_id\nWHERE so.status = 'closed';",
-            explanation: { 
-              what: "The total count of distinct product SKUs that appeared in at least one closed order.", 
-              how: "Calculated by counting distinct `product_id` references within the `sales_order_line` table for all closed orders.", 
-              why: "Measures catalog utilization and breadth of demand. A low number indicates over-reliance on a few hero products.", 
-              insight: "Out of 300 active SKUs, only 142 generated sales, indicating a strong Pareto (80/20) distribution where a minority of products drive the majority of revenue." 
-            } 
-          }
-        ],
-        charts: [
-          {
-            title: "Revenue Contribution by Category",
-            type: "bar",
-            sql: "SELECT pm.category AS label, SUM(sol.line_total) AS value\nFROM sales_order_line sol\nJOIN product_master pm ON sol.product_id = pm.product_id\nJOIN sales_order so ON sol.so_id = so.so_id\nWHERE so.status = 'closed'\nGROUP BY pm.category\nORDER BY value DESC;",
-            data: [
-              { label: "Rings", value: 4500000 },
-              { label: "Necklaces", value: 3800000 },
-              { label: "Earrings", value: 2500000 },
-              { label: "Bracelets", value: 1740000 }
-            ],
-            explanation: { 
-              what: "A breakdown of total revenue segmented by the primary product category.", 
-              how: "Sums the `line_total` from order lines, joining with the `product_master` to group by `category`.", 
-              why: "Highlights which product lines are the primary cash cows for the business.", 
-              insight: "Rings and Necklaces combined account for over 65% of all revenue, acting as the foundation of the business." 
+      "title": "Sales Performance Report \u2014 All Territories (2024-01-13 to 2026-03-05)",
+      "summary": "Over 26 months (2024-01-13 to 2026-03-05), the business closed 16,941 orders totalling \u20b91,126.80 Cr in revenue, achieving a 92.29% payment collection rate and a stable 35.02% blended margin.\nThe Stack Hunter App channel is the dominant revenue engine, generating \u20b97.38 Cr (65.5% of total) from only 5,873 orders\u2014an implied AOV of \u20b91.26 L, nearly 4\u00d7 higher than online (\u20b93.5 L AOV) and 2.5\u00d7 higher than offline (\u20b93.5 L AOV).\nRings and Earrings together contribute \u20b95.32 Cr (47.3% of revenue).\nHowever, customer concentration poses material risk: the top 5 customers (Zenith \u20b91.19 Cr, Royal Gems \u20b9967 M, Heritage Gold \u20b9710 M, Modern Jewels \u20b9548 M, Diamond Palace \u20b9470 M) account for \u20b93.89 Cr or 34.5% of total revenue.\nA single churn event from Zenith alone would represent a 10.6% revenue loss.\nLeadership should prioritize customer diversification and continuation of the Stack Hunter App channel's hunter enablement to sustain margin and AOV growth.",
+      "kpis": [
+            {
+                  "label": "Total Revenue",
+                  "value": "1126.80",
+                  "format": "currency",
+                  "value_inr": "\u20b91126.80 Cr",
+                  "sql": "SELECT SUM(total_amount) AS total_revenue\nFROM sales_order\nWHERE status = 'closed'\nAND order_date BETWEEN '2024-01-13' AND '2026-03-05';",
+                  "explanation": {
+                        "what": "Total revenue",
+                        "how": "Sum of total amount for closed orders",
+                        "why": "Key business metric",
+                        "insight": "Revenue is strong and achieving targets."
+                  }
+            },
+            {
+                  "label": "Total Orders",
+                  "value": "16941",
+                  "format": "number",
+                  "sql": "SELECT COUNT(so_id) AS total_orders\nFROM sales_order\nWHERE status = 'closed'\nAND order_date BETWEEN '2024-01-13' AND '2026-03-05';",
+                  "explanation": {
+                        "what": "Total volume",
+                        "how": "Count of closed orders",
+                        "why": "Volume metric",
+                        "insight": "Stable volume driven by Stack Hunter App."
+                  }
+            },
+            {
+                  "label": "Average Order Value (AOV)",
+                  "value": "665000",
+                  "format": "currency",
+                  "value_inr": "\u20b96.65 L",
+                  "sql": "SELECT SUM(total_amount) / COUNT(so_id) AS aov\nFROM sales_order\nWHERE status = 'closed'\nAND order_date BETWEEN '2024-01-13' AND '2026-03-05';",
+                  "explanation": {
+                        "what": "Average Order Value",
+                        "how": "Total Revenue / Total Orders",
+                        "why": "Efficiency metric",
+                        "insight": "AOV is increasing steadily, heavily driven by stack hunter app."
+                  }
+            },
+            {
+                  "label": "Average Margin %",
+                  "value": "35.02",
+                  "format": "percent",
+                  "sql": "SELECT AVG((total_amount - total_cost) / total_amount) * 100 AS avg_margin\nFROM sales_order\nWHERE status = 'closed'\nAND order_date BETWEEN '2024-01-13' AND '2026-03-05';",
+                  "explanation": {
+                        "what": "Average Margin",
+                        "how": "Average of profit margins",
+                        "why": "Profitability metric",
+                        "insight": "Margin is stable but masked by high volatility across categories."
+                  }
+            },
+            {
+                  "label": "Paid Orders %",
+                  "value": "92.29",
+                  "format": "percent",
+                  "sql": "SELECT (COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) * 100.0) / COUNT(so_id) AS paid_pct\nFROM sales_order\nWHERE status = 'closed'\nAND order_date BETWEEN '2024-01-13' AND '2026-03-05';",
+                  "explanation": {
+                        "what": "Paid rate",
+                        "how": "Paid orders / Total closed orders",
+                        "why": "Collection metric",
+                        "insight": "High collection rate limits exposure."
+                  }
+            },
+            {
+                  "label": "Active Customers",
+                  "value": "126",
+                  "format": "number",
+                  "sql": "SELECT COUNT(DISTINCT customer_id) AS active_customers\nFROM sales_order\nWHERE status = 'closed'\nAND order_date BETWEEN '2024-01-13' AND '2026-03-05';",
+                  "explanation": {
+                        "what": "Active Customers",
+                        "how": "Distinct customer count",
+                        "why": "Customer base",
+                        "insight": "Stable customer base with 5 whales concentrating revenue."
+                  }
             }
-          },
-          {
-            title: "Monthly Revenue Trajectory",
-            type: "line",
-            sql: "SELECT DATE_TRUNC('month', order_date) AS month_start, SUM(total_amount) AS revenue\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY month_start\nORDER BY month_start ASC;",
-            data: [
-              { label: "Jan", value: 1800000 },
-              { label: "Feb", value: 1950000 },
-              { label: "Mar", value: 2100000 },
-              { label: "Apr", value: 2300000 },
-              { label: "May", value: 2150000 },
-              { label: "Jun", value: 2240000 }
-            ],
-            explanation: { 
-              what: "The month-over-month progression of total recognized revenue.", 
-              how: "Groups closed orders into monthly buckets based on their `order_date`.", 
-              why: "Visualizes the seasonal ebb and flow of the business, identifying growth trends or contraction periods.", 
-              insight: "Revenue peaked in April during the spring campaign, followed by a slight seasonal cooling in May before recovering in June." 
+      ],
+      "charts": [
+            {
+                  "title": "Monthly Revenue Trend",
+                  "type": "line",
+                  "sql": "SELECT DATE_TRUNC('month', order_date) AS month, SUM(total_amount) AS revenue\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY month ORDER BY month;",
+                  "explanation": {
+                        "what": "Revenue over time",
+                        "how": "Sum of revenue grouped by month",
+                        "why": "Shows revenue trends",
+                        "insight": "Revenue peaks around festive/wedding season post-Oct."
+                  },
+                  "data": [
+                        {
+                              "label": "2024-01",
+                              "value": 10000000
+                        },
+                        {
+                              "label": "2024-03",
+                              "value": 25000000
+                        },
+                        {
+                              "label": "2024-06",
+                              "value": 18000000
+                        },
+                        {
+                              "label": "2024-09",
+                              "value": 30000000
+                        },
+                        {
+                              "label": "2024-11",
+                              "value": 60000000
+                        },
+                        {
+                              "label": "2025-01",
+                              "value": 65000000
+                        },
+                        {
+                              "label": "2025-04",
+                              "value": 30000000
+                        },
+                        {
+                              "label": "2025-07",
+                              "value": 35000000
+                        },
+                        {
+                              "label": "2025-10",
+                              "value": 85000000
+                        },
+                        {
+                              "label": "2025-12",
+                              "value": 90000000
+                        },
+                        {
+                              "label": "2026-02",
+                              "value": 65000000
+                        }
+                  ]
+            },
+            {
+                  "title": "Revenue by Order Type",
+                  "type": "bar",
+                  "sql": "SELECT order_type AS label, SUM(total_amount) AS value\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY order_type;",
+                  "explanation": {
+                        "what": "Revenue split by order channel",
+                        "how": "Sum of revenue grouped by order type",
+                        "why": "Shows channel performance",
+                        "insight": "Stack Hunter App drives 65% of revenue on 35% order volume."
+                  },
+                  "data": [
+                        {
+                              "label": "stack hunter app",
+                              "value": 7380000000
+                        },
+                        {
+                              "label": "online",
+                              "value": 2720000000
+                        },
+                        {
+                              "label": "offline",
+                              "value": 1170000000
+                        }
+                  ]
+            },
+            {
+                  "title": "Top 12 Customers by Revenue",
+                  "type": "bar",
+                  "sql": "SELECT cm.customer_name AS label, SUM(so.total_amount) AS value\nFROM sales_order so JOIN customer_master cm ON so.customer_id = cm.customer_id\nWHERE so.status = 'closed'\nGROUP BY cm.customer_name ORDER BY value DESC LIMIT 12;",
+                  "explanation": {
+                        "what": "Top customers",
+                        "how": "Sum of revenue grouped by customer",
+                        "why": "Shows customer concentration",
+                        "insight": "Top 5 customers concentrate 34.5% of total revenue."
+                  },
+                  "data": [
+                        {
+                              "label": "Zenith Jewellers Pvt Ltd",
+                              "value": 1190000000
+                        },
+                        {
+                              "label": "Royal Gems & Jewelry",
+                              "value": 967000000
+                        },
+                        {
+                              "label": "Heritage Gold",
+                              "value": 710000000
+                        },
+                        {
+                              "label": "Modern Jewels",
+                              "value": 548000000
+                        },
+                        {
+                              "label": "Diamond Palace",
+                              "value": 470000000
+                        },
+                        {
+                              "label": "Kalyan Jewellers Ring Road",
+                              "value": 350000000
+                        },
+                        {
+                              "label": "Malabar Gold Ameerpet",
+                              "value": 320000000
+                        },
+                        {
+                              "label": "Senco Gold Raja Park",
+                              "value": 290000000
+                        },
+                        {
+                              "label": "GRT Jewellers Jayanagar",
+                              "value": 260000000
+                        },
+                        {
+                              "label": "Tanishq Adyar",
+                              "value": 240000000
+                        },
+                        {
+                              "label": "Bhima Jewels Mansarovar",
+                              "value": 210000000
+                        },
+                        {
+                              "label": "PC Chandra Jewellers Gariahat",
+                              "value": 190000000
+                        }
+                  ]
+            },
+            {
+                  "title": "Revenue by Product Category",
+                  "type": "pie",
+                  "sql": "SELECT pm.category AS label, SUM(sol.line_total) AS value\nFROM sales_order_line sol JOIN product_master pm ON sol.product_id = pm.product_id JOIN sales_order so ON sol.so_id = so.so_id\nWHERE so.status = 'closed'\nGROUP BY pm.category;",
+                  "explanation": {
+                        "what": "Revenue split by product",
+                        "how": "Sum of revenue grouped by product category",
+                        "why": "Shows product performance",
+                        "insight": "Rings and Earrings dominate but lack diversification."
+                  },
+                  "data": [
+                        {
+                              "label": "Rings",
+                              "value": 271000000
+                        },
+                        {
+                              "label": "Earrings",
+                              "value": 261000000
+                        },
+                        {
+                              "label": "Bracelet",
+                              "value": 152000000
+                        },
+                        {
+                              "label": "Bangle",
+                              "value": 131000000
+                        },
+                        {
+                              "label": "Necklace",
+                              "value": 116000000
+                        },
+                        {
+                              "label": "Pendant",
+                              "value": 112000000
+                        },
+                        {
+                              "label": "Nose Pin",
+                              "value": 90000000
+                        },
+                        {
+                              "label": "Mangalsutra",
+                              "value": 45000000
+                        },
+                        {
+                              "label": "Chain",
+                              "value": 182000000
+                        },
+                        {
+                              "label": "Ankle",
+                              "value": 90000000
+                        },
+                        {
+                              "label": "Other",
+                              "value": 45000000
+                        }
+                  ]
+            },
+            {
+                  "title": "Revenue by Territory (Top 15 Named Territories)",
+                  "type": "bar",
+                  "sql": "SELECT t.territory_name AS label, SUM(so.total_amount) AS value\nFROM sales_order so JOIN territory_master t ON so.territory_id = t.territory_id\nWHERE so.status = 'closed'\nGROUP BY t.territory_name ORDER BY value DESC LIMIT 15;",
+                  "explanation": {
+                        "what": "Top territories",
+                        "how": "Sum of revenue grouped by territory",
+                        "why": "Shows geographic footprint",
+                        "insight": "Online/direct channel masks true geographic footprint."
+                  },
+                  "data": [
+                        {
+                              "label": "Chennai South",
+                              "value": 402000000
+                        },
+                        {
+                              "label": "Bangalore South",
+                              "value": 374000000
+                        },
+                        {
+                              "label": "Ahmedabad North",
+                              "value": 373000000
+                        },
+                        {
+                              "label": "Mumbai West",
+                              "value": 360000000
+                        },
+                        {
+                              "label": "Delhi Central",
+                              "value": 350000000
+                        },
+                        {
+                              "label": "Hyderabad East",
+                              "value": 340000000
+                        },
+                        {
+                              "label": "Kolkata North",
+                              "value": 330000000
+                        },
+                        {
+                              "label": "Pune City",
+                              "value": 320000000
+                        },
+                        {
+                              "label": "Surat South",
+                              "value": 310000000
+                        },
+                        {
+                              "label": "Jaipur City",
+                              "value": 300000000
+                        },
+                        {
+                              "label": "Lucknow East",
+                              "value": 290000000
+                        },
+                        {
+                              "label": "Indore Central",
+                              "value": 280000000
+                        },
+                        {
+                              "label": "Bhopal South",
+                              "value": 270000000
+                        },
+                        {
+                              "label": "Nagpur West",
+                              "value": 260000000
+                        },
+                        {
+                              "label": "Patna North",
+                              "value": 250000000
+                        }
+                  ]
+            },
+            {
+                  "title": "Payment Status Distribution",
+                  "type": "pie",
+                  "sql": "SELECT payment_status AS label, COUNT(*) AS value\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY payment_status;",
+                  "explanation": {
+                        "what": "Payment status breakdown",
+                        "how": "Count of orders by payment status",
+                        "why": "Shows collection efficiency",
+                        "insight": "Payment exposure in unpaid/partial orders reaches \u20b949 million."
+                  },
+                  "data": [
+                        {
+                              "label": "paid",
+                              "value": 15635
+                        },
+                        {
+                              "label": "partial",
+                              "value": 811
+                        },
+                        {
+                              "label": "unpaid",
+                              "value": 495
+                        }
+                  ]
             }
-          },
-          {
-            title: "Top 5 High-Value Customers",
-            type: "bar",
-            sql: "SELECT cm.customer_name AS label, SUM(so.total_amount) AS value\nFROM sales_order so\nJOIN customer_master cm ON so.customer_id = cm.customer_id\nWHERE so.status = 'closed'\nGROUP BY cm.customer_name\nORDER BY value DESC\nLIMIT 5;",
-            data: [
-              { label: "Zenith Jewellers", value: 4200000 },
-              { label: "Aura Gems", value: 1800000 },
-              { label: "Luxe Diamonds", value: 1500000 },
-              { label: "Kalyan Retail", value: 1200000 },
-              { label: "Malabar Gold", value: 950000 }
+      ],
+      "table": {
+            "title": "Top 25 Orders by Revenue",
+            "sql": "SELECT so_id AS \"So Id\", TO_CHAR(order_date, 'YYYY-MM-DD') AS \"To Char\", cm.customer_name AS \"Customer Name\", cm.segment AS \"Customer Type\", order_type AS \"Order Type\", payment_status AS \"Coalesce\", ROUND((total_amount - total_cost)/total_amount*100, 2) AS \"Round\" FROM sales_order so JOIN customer_master cm ON so.customer_id = cm.customer_id WHERE so.status = 'closed' ORDER BY total_amount DESC LIMIT 25;",
+            "explanation": {
+                  "what": "Top orders",
+                  "how": "Select details for top 25 orders by revenue",
+                  "why": "Granular order details",
+                  "insight": "Top orders drive a vast majority of the revenue."
+            },
+            "columns": [
+                  "So Id",
+                  "To Char",
+                  "Customer Name",
+                  "Customer Type",
+                  "Order Type",
+                  "Coalesce",
+                  "Round"
             ],
-            explanation: { 
-              what: "The top 5 individual accounts ranked by absolute revenue generated.", 
-              how: "Joins `sales_order` with `customer_master` and sums revenue grouped by customer name.", 
-              why: "Identifies the 'whale' accounts that represent high dependency and require white-glove relationship management.", 
-              insight: "Zenith Jewellers is an extreme outlier, generating more than double the revenue of the next largest account." 
-            }
-          },
-          {
-            title: "Geographic Sales Distribution",
-            type: "doughnut",
-            sql: "SELECT cm.region AS label, SUM(so.total_amount) AS value\nFROM sales_order so\nJOIN customer_master cm ON so.customer_id = cm.customer_id\nWHERE so.status = 'closed'\nGROUP BY cm.region;",
-            data: [
-              { label: "North", value: 40 },
-              { label: "South", value: 30 },
-              { label: "West", value: 20 },
-              { label: "East", value: 10 }
-            ],
-            explanation: { 
-              what: "The proportion of total revenue generated across distinct geographic territories.", 
-              how: "Sums revenue grouped by the `region` attribute of the purchasing customer.", 
-              why: "Assists in evaluating the effectiveness of regional sales teams and localized marketing spend.", 
-              insight: "The North region is the dominant territory, while the East represents a largely untapped market with significant growth potential." 
-            }
-          },
-          {
-            title: "Order Volume Trajectory",
-            type: "line",
-            sql: "SELECT DATE_TRUNC('month', order_date) AS month_start, COUNT(DISTINCT so_id) AS orders\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY month_start\nORDER BY month_start ASC;",
-            data: [
-              { label: "Jan", value: 500 },
-              { label: "Feb", value: 520 },
-              { label: "Mar", value: 580 },
-              { label: "Apr", value: 650 },
-              { label: "May", value: 600 },
-              { label: "Jun", value: 600 }
-            ],
-            explanation: { 
-              what: "The month-over-month progression of absolute transaction volume.", 
-              how: "Counts distinct `so_id` values grouped into monthly buckets.", 
-              why: "When compared alongside revenue, this chart reveals whether growth is driven by volume or by price.", 
-              insight: "Order volume stabilized in May and June, indicating that the slight revenue increase in June was driven entirely by higher Average Order Value." 
-            }
-          },
-          {
-            title: "Revenue by Customer Segment",
-            type: "pie",
-            sql: "SELECT cm.segment AS label, SUM(so.total_amount) AS value\nFROM sales_order so\nJOIN customer_master cm ON so.customer_id = cm.customer_id\nWHERE so.status = 'closed'\nGROUP BY cm.segment;",
-            data: [
-              { label: "Wholesale", value: 65 },
-              { label: "Retail", value: 25 },
-              { label: "Direct", value: 10 }
-            ],
-            explanation: { 
-              what: "Revenue broken down by the business model of the purchasing customer.", 
-              how: "Groups revenue by the `segment` classification in the `customer_master` table.", 
-              why: "Understanding segment mix is critical for inventory planning and pricing strategy, as wholesale typically commands lower margins but higher volume.", 
-              insight: "The business remains heavily B2B-focused, with Wholesale accounts driving 65% of all top-line revenue." 
-            }
-          }
-        ],
-        table: {
-          title: "Detailed Customer Performance Matrix",
-          data: [
-            { "Customer Name": "Zenith Jewellers Pvt Ltd", "Segment": "Wholesale", "Orders Fulfilled": 850, "Total Revenue": "₹4.20 Cr", "Avg Order Value": "₹49,411", "Last Active": "2 Days Ago" },
-            { "Customer Name": "Aura Gems", "Segment": "Wholesale", "Orders Fulfilled": 420, "Total Revenue": "₹1.80 Cr", "Avg Order Value": "₹42,857", "Last Active": "5 Days Ago" },
-            { "Customer Name": "Luxe Diamonds", "Segment": "Retail", "Orders Fulfilled": 310, "Total Revenue": "₹1.50 Cr", "Avg Order Value": "₹48,387", "Last Active": "1 Day Ago" },
-            { "Customer Name": "Kalyan Retail", "Segment": "Retail", "Orders Fulfilled": 280, "Total Revenue": "₹1.20 Cr", "Avg Order Value": "₹42,857", "Last Active": "12 Days Ago" },
-            { "Customer Name": "Malabar Gold", "Segment": "Wholesale", "Orders Fulfilled": 190, "Total Revenue": "₹95.0 L", "Avg Order Value": "₹50,000", "Last Active": "1 Month Ago" }
-          ]
-        },
-        insights: [
-          { title: "Rings dominate Q2 revenue velocity", body: "The Rings category experienced a massive 22% surge in Q2, contributing over 35% of total sales. This was highly correlated with the 'Summer Engagement' marketing campaign, proving high ROI on that ad spend.", type: "positive" },
-          { title: "Zenith Jewellers represents critical concentration risk", body: "Zenith Jewellers alone accounts for nearly double the volume of the next largest customer. While highly profitable, this represents a severe single-point-of-failure risk if that relationship sours. Client diversification is strongly recommended.", type: "warning" },
-          { title: "AOV is climbing due to premium item placement", body: "Average Order Value increased by 8% to ₹3,634. Cross-referencing order lines reveals this is due to a successful upselling strategy attaching high-margin 18Kt gold items to standard orders.", type: "positive" },
-          { title: "East Region underperforming relative to marketing spend", body: "The East region accounts for only 10% of total sales, despite consuming 15% of the overall regional marketing budget. The sales strategy in this territory needs an immediate audit to improve efficiency.", type: "warning" },
-          { title: "Wholesale anchors the business model", body: "With 65% of revenue flowing through Wholesale channels, the company's cash flow is highly dependent on bulk purchase cycles and B2B payment terms.", type: "neutral" }
-        ]
+            "data": [
+                  {
+                        "So Id": "SO25101513579",
+                        "To Char": "2025-10-15",
+                        "Customer Name": "Kirtilals Jewellers Prahlad Nagar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 34.33
+                  },
+                  {
+                        "So Id": "SO25061711166",
+                        "To Char": "2025-06-17",
+                        "Customer Name": "Malabar Gold Ameerpet",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 37.7
+                  },
+                  {
+                        "So Id": "SO25111614708",
+                        "To Char": "2025-11-16",
+                        "Customer Name": "Malabar Gold Salt Lake",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 36.45
+                  },
+                  {
+                        "So Id": "SO25110414281",
+                        "To Char": "2025-11-04",
+                        "Customer Name": "Nakshatra Jewels Chandkheda",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 32.36
+                  },
+                  {
+                        "So Id": "SO25052810803",
+                        "To Char": "2025-05-28",
+                        "Customer Name": "Kalyan Jewellers Ring Road",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 36.44
+                  },
+                  {
+                        "So Id": "SO25122215970",
+                        "To Char": "2025-12-22",
+                        "Customer Name": "Kirtilals JP Nagar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "partial",
+                        "Round": 36.04
+                  },
+                  {
+                        "So Id": "SO25121815842",
+                        "To Char": "2025-12-18",
+                        "Customer Name": "Royal Gems & Jewelry",
+                        "Customer Type": "WHOLESALE",
+                        "Order Type": "online",
+                        "Coalesce": "paid",
+                        "Round": 31.65
+                  },
+                  {
+                        "So Id": "SO26020817675",
+                        "To Char": "2026-02-08",
+                        "Customer Name": "Shubh Jewellers Charbagh",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "partial",
+                        "Round": 34.78
+                  },
+                  {
+                        "So Id": "SO25011407589",
+                        "To Char": "2025-01-14",
+                        "Customer Name": "Shubh Jewellers Charbagh",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 35.41
+                  },
+                  {
+                        "So Id": "SO25120315293",
+                        "To Char": "2025-12-03",
+                        "Customer Name": "Zenith Jewellers Pvt Ltd",
+                        "Customer Type": "DISTRIBUTOR",
+                        "Order Type": "offline",
+                        "Coalesce": "paid",
+                        "Round": 35.15
+                  },
+                  {
+                        "So Id": "SO25110514328",
+                        "To Char": "2025-11-05",
+                        "Customer Name": "Bhima Jewels Mansarovar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 34.9
+                  },
+                  {
+                        "So Id": "SO25081812299",
+                        "To Char": "2025-08-18",
+                        "Customer Name": "Tanishq Adyar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 36.12
+                  },
+                  {
+                        "So Id": "SO25122816191",
+                        "To Char": "2025-12-28",
+                        "Customer Name": "Tribhovandas Bhimji Zaveri",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "unpaid",
+                        "Round": 34.08
+                  },
+                  {
+                        "So Id": "SO25100813320",
+                        "To Char": "2025-10-08",
+                        "Customer Name": "Kalyan Jewellers Lajpat",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 35.66
+                  },
+                  {
+                        "So Id": "SO26010516448",
+                        "To Char": "2026-01-05",
+                        "Customer Name": "Gitanjali Jewels Udhna",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 34.86
+                  },
+                  {
+                        "So Id": "SO25102113811",
+                        "To Char": "2025-10-21",
+                        "Customer Name": "GRT Jewellers Howrah",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 33.3
+                  },
+                  {
+                        "So Id": "SO26021417896",
+                        "To Char": "2026-02-14",
+                        "Customer Name": "Malabar Gold Vaishali Nagar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 31.76
+                  },
+                  {
+                        "So Id": "SO25101813700",
+                        "To Char": "2025-10-18",
+                        "Customer Name": "GRT Jewellers Jayanagar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 35.98
+                  },
+                  {
+                        "So Id": "SO26010516445",
+                        "To Char": "2026-01-05",
+                        "Customer Name": "PC Chandra Jewellers Gariahat",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 32.7
+                  },
+                  {
+                        "So Id": "SO26010116349",
+                        "To Char": "2026-01-01",
+                        "Customer Name": "PC Jeweller Iscon",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "unpaid",
+                        "Round": 34
+                  },
+                  {
+                        "So Id": "SO25122416059",
+                        "To Char": "2025-12-24",
+                        "Customer Name": "Nakshatra Jewels Saket",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 37.38
+                  },
+                  {
+                        "So Id": "SO25102513941",
+                        "To Char": "2025-10-25",
+                        "Customer Name": "Senco Gold Raja Park",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 37.85
+                  },
+                  {
+                        "So Id": "SO25083012526",
+                        "To Char": "2025-08-30",
+                        "Customer Name": "Tanishq Adyar",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 33.39
+                  },
+                  {
+                        "So Id": "SO26011316770",
+                        "To Char": "2026-01-13",
+                        "Customer Name": "Senco Gold Pimpri",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 36.4
+                  },
+                  {
+                        "So Id": "SO25103014148",
+                        "To Char": "2025-10-30",
+                        "Customer Name": "Mehrasons Jewellers Darya Ganj",
+                        "Customer Type": "RETAILER",
+                        "Order Type": "stack hunter app",
+                        "Coalesce": "paid",
+                        "Round": 37.73
+                  }
+            ]
       },
+      "insights": [
+            {
+                  "type": "positive",
+                  "title": "Stack Hunter App drives 65% revenue on 35% order volume",
+                  "body": "The Stack Hunter App channel generated \u20b97.38 Cr (65.5% of total) from 5,873 orders, yielding an implied AOV of \u20b91.26 L. In comparison, online delivered \u20b92.72 Cr from 7,760 orders (AOV \u20b93.5 L) and offline \u20b91.17 Cr from 3,308 orders (AOV \u20b93.5 L). Of the top 25 revenue orders, 23 originated from Stack Hunter App, confirming this is the primary vehicle for high-ticket B2B/retailer transactions. This channel's structural advantage in ticket size and order quality makes it critical to business cash flow."
+            },
+            {
+                  "type": "warning",
+                  "title": "Top 5 customers concentrate 34.5% of total revenue",
+                  "body": "Zenith Jewellers alone delivered \u20b91.19 Cr (10.6% of revenue), followed by Royal Gems (\u20b9967 M, 8.6%), Heritage Gold (\u20b9710 M, 6.3%), Modern Jewels (\u20b9548 M, 4.9%), and Diamond Palace (\u20b9470 M, 4.2%). These five accounts total \u20b93.89 Cr of the \u20b91,126.80 Cr overall revenue base. A single churn event from Zenith or Royal Gems would create an immediate double-digit revenue hit with no visible forward mitigation in the pipeline."
+            },
+            {
+                  "type": "warning",
+                  "title": "Payment exposure in unpaid/partial orders reaches \u20b949 million",
+                  "body": "Of 16,941 closed orders, 15,635 (92.3%) are fully paid; 811 (4.8%) are partial and 495 (2.9%) remain unpaid. The unpaid bucket alone represents ~\u20b92.4 L in balance due exposure at average invoice value (\u20b96.65 L per order). Large-ticket Stack Hunter App orders dominate both paid and unpaid categories, meaning a single defaulted \u20b95M+ order from a top retailer can move collection metrics materially. AR aging data on the unpaid cohort is critical."
+            },
+            {
+                  "type": "positive",
+                  "title": "Two-phase revenue growth with seasonal spikes post-Oct 2024",
+                  "body": "2024 H1 (Jan\u2013Jun) averaged \u20b9170 M/month. Oct 2024 marked a structural step-up to \u20b9583 M\u2013\u20b9617 M, sustained through 2025 with peaks in Oct\u2013Dec (\u20b9841 M\u2013\u20b9927 M). Jan 2026 remained strong at \u20b9850 M before declining to \u20b9652 M in Feb (the final reporting month). The festive/wedding season (Oct\u2013Dec) consistently out-performs baseline, suggesting product-mix and demand seasonality rather than pure pricing. This pattern is sustainable if hunter capacity and inventory planning align with seasonal peaks."
+            },
+            {
+                  "type": "neutral",
+                  "title": "Rings and Earrings dominate but lack diversification",
+                  "body": "Rings contributed \u20b92.71 Cr (24.1% of line revenue) and Earrings \u20b92.61 Cr (23.2%), together accounting for 47.3% of all revenue. The next four categories (Bracelet \u20b91.52 Cr, Bangle \u20b91.31 Cr, Necklace \u20b91.16 Cr, Pendant \u20b91.12 Cr) are more distributed but still driven by mid-ticket items. Niche categories (Ankle \u20b990 M, Other \u20b945 M, Chain \u20b9182 M) sum to <\u20b93.2 L or 2.8% of revenue. Margin variance is also significant: top orders show 31.65%\u201337.85% ranges, suggesting wholesale accounts (e.g., Royal Gems at 31.65%) compress margin relative to festive-peak retailer orders (37%+)."
+            },
+            {
+                  "type": "neutral",
+                  "title": "Online/direct channel masks true geographic footprint",
+                  "body": "\u20b93.89 B (34.5% of total revenue) flows through untagged online/direct orders with no territory_id assignment. Of 16,941 closed orders, only ~11,200 carry geographic tags. The top 15 named territories (Chennai South \u20b9402 M, Bangalore South \u20b9374 M, Ahmedabad North \u20b9373 M) span just ~\u20b94.8 B or 43% of territorially-assigned revenue. This masking prevents accurate territory-level performance attribution and hunter/manager accountability assessment. Major customers like Royal Gems and Zenith likely have multi-location orders flowing through both tagged and untagged channels."
+            },
+            {
+                  "type": "neutral",
+                  "title": "Retailer segment drives individual order size; wholesale bulk volume",
+                  "body": "Of the 25 largest revenue orders by transaction, 23 originated from RETAILER customer type (e.g., Kalyan Jewellers Ring Road \u20b95.8 M, Malabar Gold Ameerpet \u20b95.7 M), one from WHOLESALE (Royal Gems \u20b96.27 M), and one from DISTRIBUTOR (Zenith \u20b95.95 M). This indicates retailers place the highest single-order values, while the WHOLESALE bucket (2 customers) and DISTRIBUTOR segment (1 customer) comprise the top 3 revenue accounts by *cumulative* spend. This bifurcation suggests different go-to-market strategies: retail focused on per-order ticket, wholesale on volume and margin compression."
+            },
+            {
+                  "type": "neutral",
+                  "title": "Margin stability masks order-mix and seasonal volatility",
+                  "body": "The 35.02% blended average margin masks significant variance: top Stack Hunter App orders range 31.65% (wholesale Royal Gems) to 37.85% (retailer Senco Gold Raja Park). This 6.2pp spread reflects both customer tier (wholesale < retailer) and product-mix (festive-peak sets with more labor/finding intensity compress margin). February 2026 (\u20b9652 M revenue, final month in data) falls below Oct\u2013Dec peak despite similar demand baseline, suggesting either inventory depletion or intentional margin protection ahead of Q1 close. Margin tracking by order type and customer tier would surface optimization levers."
+            }
+      ]
+},
       metrics: { estimated_cost_usd: 0.0452, total_time_ms: 5, total_tokens: 12543, cache_hit_rate_pct: 100, agent_calls: 3, agents: [] }
     };
   }
