@@ -987,19 +987,6 @@ def _pipeline_complete(total_elapsed: float, report: dict) -> None:
     _tee(_c("╚" + "═" * width + "╝\n", _GREEN))
 
 
-class ClaudeReportPipeline:
-    """Multi-agent report generation using Claude API."""
-
-    def __init__(self):
-        self.client = ClaudeClient()
-        self._retry_count = 0
-        self._shared_context: str | None = None  # set per-run in generate()
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # PUBLIC API
-    # ═══════════════════════════════════════════════════════════════════════
-
-
 def _get_hardcoded_sales_performance_report() -> dict:
     return {
     "title": "Sales Performance Report \u2014 All Territories (2024-01-13 to 2026-03-05)",
@@ -1669,6 +1656,21 @@ def _get_hardcoded_sales_performance_report() -> dict:
         }
     ]
 }
+
+
+class ClaudeReportPipeline:
+    """Multi-agent report generation using Claude API."""
+
+    def __init__(self):
+        self.client = ClaudeClient()
+        self._retry_count = 0
+        self._shared_context: str | None = None  # set per-run in generate()
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # PUBLIC API
+    # ═══════════════════════════════════════════════════════════════════════
+
+
 
 
     def generate(self, question: str, force_refresh: bool = False) -> dict[str, Any]:

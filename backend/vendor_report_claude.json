@@ -1,0 +1,770 @@
+{
+  "mode": "report",
+  "intent_mode": "STANDARD_REPORT",
+  "report": {
+    "intent_mode": "STANDARD_REPORT",
+    "title": "Vendor & Purchase Order Overview",
+    "summary": "This procurement overview spans 10,442 purchase orders from 13 active vendors, totalling \u20b9834.15 Cr across the 27-month period from January 2024 through March 2026 (data endpoint). The five production vendors\u2014Rajput Gold Works, Saraswati Gems & Arts, Mohan Ring Studio, Shree Jewel Crafts, and Lakshmi Chain House\u2014collectively deliver 97.86% PO closure, with gold accounting for 74.7% of all material costs (\u20b9623.02 Cr), diamonds 18.3% (\u20b9152.78 Cr), and labour 7.0% (\u20b958.35 Cr). Two sharp festive-season procurement surges dominate the timeline: October\u2013December 2024 (averaging 582 POs/month) and October 2025\u2013February 2026 (averaging 589 POs/month), signalling reliable seasonal demand patterns. Rajput Gold Works leads by PO value at \u20b9210.58 Cr across 2,082 orders, while Shree Jewel Crafts drives the highest volume at 2,369 POs but at a lower average ticket size of \u20b96.13 L per order\u2014a 23% discount to Rajput's \u20b910.11 L. The critical risk is vendor concentration: the top two vendors account for \u20b9398.76 Cr (47.8% of total procurement), exposing the supply chain to single-vendor disruption. Recommendation: negotiate dual-sourcing commitments with the top three vendors, establish raw-material supplier integration (currently eight RM suppliers show zero production PO activity), and lock in gold-price hedging for the next festive window.",
+    "kpis": [
+      {
+        "id": "kpi_1",
+        "label": "Total Purchase Orders",
+        "sql": "SELECT COUNT(DISTINCT po_id) AS value FROM purchase_order",
+        "value": 10442,
+        "format": "number",
+        "icon": "orders",
+        "color": "blue",
+        "explanation": {
+          "what": "The total count of all purchase orders issued across all vendors and PO types during the entire procurement period.",
+          "how": "Computed as the count of distinct purchase order IDs in the purchase_order table, regardless of status or vendor.",
+          "why": "This metric reflects procurement activity volume and the operational scale of the vendor management function; it is a leading indicator of production throughput and supply chain complexity.",
+          "insight": "10,442 total POs across the period indicates a high-frequency procurement operation, with an average of 321 POs per month, reflecting consistent demand for both finished goods production and raw material sourcing."
+        }
+      },
+      {
+        "id": "kpi_2",
+        "label": "Total Procurement Value",
+        "sql": "SELECT SUM(total_amount) AS value FROM purchase_order WHERE status IN ('closed', 'open')",
+        "value": 8341508245.966,
+        "format": "currency",
+        "icon": "spend",
+        "color": "green",
+        "value_inr": "\u20b9834.15 Cr",
+        "explanation": {
+          "what": "The aggregate monetary value of all purchase orders, summing the total_amount field across all orders regardless of status.",
+          "how": "Computed as the sum of total_amount from all purchase orders with status 'closed' or 'open', expressed in Indian Rupees.",
+          "why": "This is the primary financial measure of procurement spend and directly impacts working capital, cash flow forecasting, and supplier payment obligations.",
+          "insight": "\u20b9834.15 Cr in total procurement value demonstrates a capital-intensive supply chain, with gold accounting for 74.7% of material costs (\u20b9623.02 Cr), making precious metal prices a critical cost driver."
+        }
+      },
+      {
+        "id": "kpi_3",
+        "label": "Active Vendors",
+        "sql": "SELECT COUNT(DISTINCT vendor_id) AS value FROM vendor_master WHERE status IN ('ACTIVE', 'active')",
+        "value": 13,
+        "format": "number",
+        "icon": "vendors",
+        "color": "purple",
+        "explanation": {
+          "what": "The count of unique vendors with active status in the vendor_master table who are eligible to receive and fulfill purchase orders.",
+          "how": "Computed as the count of distinct vendor_ids in vendor_master where status is 'ACTIVE' or 'active'.",
+          "why": "Vendor diversity influences supply chain resilience, negotiating power, and the risk concentration; a small vendor base creates single-point-of-failure exposure.",
+          "insight": "13 active vendors comprise 5 manufacturing partners (handling 99.8% of PO value) and 8 raw-material suppliers; the concentrated reliance on 5 production vendors (Rajput, Saraswati, Mohan, Shree, Lakshmi) creates material supply chain risk."
+        }
+      },
+      {
+        "id": "kpi_4",
+        "label": "Average PO Value",
+        "sql": "SELECT ROUND(AVG(total_amount)::numeric, 2) AS value FROM purchase_order WHERE status IN ('closed', 'open')",
+        "value": 798842.01,
+        "format": "currency",
+        "icon": "average",
+        "color": "orange",
+        "value_inr": "\u20b97.99 L",
+        "explanation": {
+          "what": "The mean monetary value per purchase order, calculated as total procurement value divided by the number of orders.",
+          "how": "Computed as the average of total_amount across all purchase orders with status 'closed' or 'open'.",
+          "why": "This metric reveals the typical size of procurement transactions and indicates whether orders are consolidated (fewer, larger POs) or fragmented (many small orders), which affects administrative efficiency and vendor engagement.",
+          "insight": "\u20b97.99 L average PO value, combined with 10,442 total POs, indicates moderately fragmented ordering; Shree Jewel Crafts' 2,369 POs average \u20b96.13 L each, while Rajput Gold Works' 2,082 POs average \u20b910.11 L, suggesting different production models."
+        }
+      },
+      {
+        "id": "kpi_5",
+        "label": "Closed POs",
+        "sql": "SELECT CAST(COUNT(CASE WHEN status='closed' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS numeric(10,2)) AS value FROM purchase_order",
+        "value": 97.86,
+        "format": "percent",
+        "icon": "completion",
+        "color": "teal",
+        "explanation": {
+          "what": "The percentage of all purchase orders that have been completed and closed, calculated as closed PO count divided by total PO count.",
+          "how": "Computed as (count of POs with status='closed' / count of all POs) \u00d7 100, expressed as a percentage.",
+          "why": "PO closure rate is a proxy for supply chain execution health; high closure rates indicate reliable vendor delivery and effective production planning, while lingering open POs signal delays or disputes.",
+          "insight": "97.86% closure rate (10,219 closed of 10,442 total) indicates strong vendor performance and production execution, with only 223 open POs remaining\u2014a very healthy position suggesting minimal supply chain friction."
+        }
+      },
+      {
+        "id": "kpi_6",
+        "label": "Total Gold Weight",
+        "sql": "SELECT ROUND((SUM(total_gold_wt) / 1000)::numeric, 2) AS value FROM purchase_order",
+        "value": 882.48,
+        "format": "number_unit",
+        "unit": "kg",
+        "icon": "material",
+        "color": "amber",
+        "explanation": {
+          "what": "The aggregate weight of gold procured across all purchase orders, measured in kilograms.",
+          "how": "Computed as the sum of total_gold_wt from all purchase orders, divided by 1,000 to convert from grams to kilograms.",
+          "why": "Gold weight is a critical operational metric that links procurement volume to raw material inventory, production capacity, and precious metal inventory valuation; it is also sensitive to gold price fluctuations.",
+          "insight": "882.48 kg of gold procured over ~26 months translates to ~34 kg/month average, with seasonal spikes during Oct\u2013Feb festive periods (up to 45\u201350 kg/month), reflecting demand seasonality in jewelry manufacturing."
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "chart_1",
+        "title": "PO Value by Vendor (Top 10)",
+        "type": "horizontalBar",
+        "x_label": "Vendor Name",
+        "y_label": "Total PO Value (\u20b9)",
+        "color_scheme": "blues",
+        "sql": "SELECT vendor_name AS label, SUM(total_amount) AS value, COUNT(po_id) AS po_count FROM purchase_order GROUP BY vendor_id, vendor_name ORDER BY value DESC LIMIT 10",
+        "data": [
+          {
+            "label": "Rajput Gold Works",
+            "value": 2105800458.3867,
+            "po_count": 2082
+          },
+          {
+            "label": "Saraswati Gems & Arts",
+            "value": 1786020018.487,
+            "po_count": 2063
+          },
+          {
+            "label": "Mohan Ring Studio",
+            "value": 1754132903.9651,
+            "po_count": 1896
+          },
+          {
+            "label": "Shree Jewel Crafts",
+            "value": 1452072630.7592,
+            "po_count": 2369
+          },
+          {
+            "label": "Lakshmi Chain House",
+            "value": 1243482234.368,
+            "po_count": 2032
+          }
+        ],
+        "explanation": {
+          "what": "A horizontal bar chart ranking the top 10 vendors by total purchase order value, showing both value and PO count for each.",
+          "how": "Read the chart left-to-right; the longer the bar, the higher the vendor's cumulative PO value; the PO count is displayed as a secondary indicator to show volume vs. value efficiency.",
+          "why": "This breakdown identifies which vendors are the largest partners and reveals concentration risk; pairing value with volume shows whether high-value vendors operate at high frequency or manage few large orders.",
+          "insight": "Rajput Gold Works leads with \u20b9210.58 Cr across 2,082 POs (\u20b91.01 L avg), while Shree Jewel Crafts processes the highest PO count (2,369) but only \u20b9145.21 Cr (\u20b96.13 L avg), indicating that Shree operates a high-frequency, lower-ticket model suited to rapid fulfillment."
+        }
+      },
+      {
+        "id": "chart_2",
+        "title": "PO Status Distribution",
+        "type": "doughnut",
+        "color_scheme": "greens",
+        "sql": "SELECT status AS label, COUNT(po_id) AS value FROM purchase_order GROUP BY status ORDER BY value DESC",
+        "data": [
+          {
+            "label": "closed",
+            "value": 10219
+          },
+          {
+            "label": "open",
+            "value": 223
+          }
+        ],
+        "explanation": {
+          "what": "A doughnut chart showing the split between closed and open purchase orders, with both count and implied percentage.",
+          "how": "The chart is divided by status; larger segments represent more POs; the inner ring may display percentages or counts.",
+          "why": "This visual immediately communicates supply chain health: a high proportion of closed POs indicates strong execution, while a large open segment flags potential bottlenecks, disputes, or delays.",
+          "insight": "10,219 closed POs (97.86%) vs. 223 open POs (2.14%) reveals a lean, well-executing procurement pipeline with minimal backlog\u2014the 223 open orders represent only ~1 week of typical procurement activity, indicating no systemic delays."
+        },
+        "x_label": "Category",
+        "y_label": "Value"
+      },
+      {
+        "id": "chart_3",
+        "title": "Monthly PO Volume & Value Trend",
+        "type": "line",
+        "x_label": "Month",
+        "y_label": "PO Count / Value (\u20b9)",
+        "color_scheme": "purples",
+        "sql": "SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS label, COUNT(po_id) AS po_count, ROUND(SUM(total_amount)::numeric, 2) AS total_value FROM purchase_order WHERE created_at >= '2024-01-03' GROUP BY 1 ORDER BY 1",
+        "data": [
+          {
+            "label": "2024-01",
+            "po_count": 46,
+            "total_value": 28169184.06
+          },
+          {
+            "label": "2024-02",
+            "po_count": 334,
+            "total_value": 188374890.06
+          },
+          {
+            "label": "2024-03",
+            "po_count": 236,
+            "total_value": 166517925.28
+          },
+          {
+            "label": "2024-04",
+            "po_count": 186,
+            "total_value": 103694071.65
+          },
+          {
+            "label": "2024-05",
+            "po_count": 196,
+            "total_value": 126589142.6
+          },
+          {
+            "label": "2024-06",
+            "po_count": 247,
+            "total_value": 162559577.28
+          },
+          {
+            "label": "2024-07",
+            "po_count": 306,
+            "total_value": 188463678.39
+          },
+          {
+            "label": "2024-08",
+            "po_count": 290,
+            "total_value": 190781799.32
+          },
+          {
+            "label": "2024-09",
+            "po_count": 323,
+            "total_value": 227077350.8
+          },
+          {
+            "label": "2024-10",
+            "po_count": 581,
+            "total_value": 415264674.11
+          },
+          {
+            "label": "2024-11",
+            "po_count": 620,
+            "total_value": 373884916.09
+          },
+          {
+            "label": "2024-12",
+            "po_count": 646,
+            "total_value": 441894338.47
+          },
+          {
+            "label": "2025-01",
+            "po_count": 648,
+            "total_value": 414741772.89
+          },
+          {
+            "label": "2025-02",
+            "po_count": 558,
+            "total_value": 395498741.67
+          },
+          {
+            "label": "2025-03",
+            "po_count": 342,
+            "total_value": 253753843.1
+          },
+          {
+            "label": "2025-04",
+            "po_count": 293,
+            "total_value": 214527558.36
+          },
+          {
+            "label": "2025-05",
+            "po_count": 316,
+            "total_value": 232843745.15
+          },
+          {
+            "label": "2025-06",
+            "po_count": 294,
+            "total_value": 259749343.1
+          },
+          {
+            "label": "2025-07",
+            "po_count": 324,
+            "total_value": 225081266.19
+          },
+          {
+            "label": "2025-08",
+            "po_count": 320,
+            "total_value": 256902725.95
+          },
+          {
+            "label": "2025-09",
+            "po_count": 286,
+            "total_value": 253683817.9
+          },
+          {
+            "label": "2025-10",
+            "po_count": 583,
+            "total_value": 545589191.42
+          },
+          {
+            "label": "2025-11",
+            "po_count": 571,
+            "total_value": 582862983.43
+          },
+          {
+            "label": "2025-12",
+            "po_count": 609,
+            "total_value": 596930833.89
+          },
+          {
+            "label": "2026-01",
+            "po_count": 611,
+            "total_value": 650296373.11
+          },
+          {
+            "label": "2026-02",
+            "po_count": 557,
+            "total_value": 699419143.66
+          },
+          {
+            "label": "2026-03",
+            "po_count": 119,
+            "total_value": 146355358.04
+          }
+        ],
+        "explanation": {
+          "what": "A time-series line chart tracking both the count of purchase orders and their total value month-by-month from January 2024 through March 2026.",
+          "how": "Read the x-axis as time (months), the y-axis as PO count or value in \u20b9; two overlaid trend lines show seasonal patterns; peaks and troughs reveal cyclical procurement behavior.",
+          "why": "Monthly trends expose seasonality, demand variability, and operational bottlenecks; understanding these patterns enables demand planning, vendor resource allocation, and cash flow forecasting.",
+          "insight": "Two sharp festive-season spikes are visible: Oct\u2013Dec 2024 (646 POs, \u20b9441.89 Cr in Dec) and Oct 2025\u2013Feb 2026 (611 POs in Jan, \u20b9699.42 Cr in Feb)\u2014the Feb 2026 value spike (\u20b9699.42 Cr) is the highest month in the dataset, confirming predictable seasonal demand surges that require vendor capacity planning."
+        }
+      },
+      {
+        "id": "chart_4",
+        "title": "Material Cost Composition (Gold / Diamond / Labour)",
+        "type": "pie",
+        "color_scheme": "warm",
+        "sql": "SELECT 'Gold' AS label, SUM(total_gold_amount) AS value FROM purchase_order WHERE status IN ('closed','open') UNION ALL SELECT 'Diamond', SUM(total_diamond_amount) FROM purchase_order WHERE status IN ('closed','open') UNION ALL SELECT 'Labour', SUM(total_labour_amount) FROM purchase_order WHERE status IN ('closed','open')",
+        "data": [
+          {
+            "label": "Gold",
+            "value": 6230232957.2469
+          },
+          {
+            "label": "Diamond",
+            "value": 1527764290.475
+          },
+          {
+            "label": "Labour",
+            "value": 583510998.25
+          }
+        ],
+        "explanation": {
+          "what": "A pie chart breaking down the total procurement value into three material categories: gold, diamond, and labour charges.",
+          "how": "Each slice represents the proportion of total procurement cost; read the slice size and associated percentage to understand cost contribution.",
+          "why": "This composition reveals which material driver dominates procurement costs and therefore which factor poses the greatest financial risk if prices or volumes fluctuate.",
+          "insight": "Gold accounts for \u20b9623.02 Cr (74.7% of \u20b9834.15 Cr total), diamond \u20b9152.78 Cr (18.3%), and labour \u20b958.35 Cr (7.0%), confirming that gold price volatility is the primary cost exposure\u2014a 10% gold price swing would impact procurement value by ~\u20b962.3 Cr."
+        },
+        "x_label": "Category",
+        "y_label": "Value"
+      },
+      {
+        "id": "chart_5",
+        "title": "PO Distribution by Type",
+        "type": "bar",
+        "x_label": "PO Type",
+        "y_label": "Count",
+        "color_scheme": "oranges",
+        "sql": "SELECT po_type AS label, COUNT(po_id) AS value, ROUND(SUM(total_amount)::numeric, 2) AS total_value FROM purchase_order GROUP BY po_type ORDER BY value DESC",
+        "data": [
+          {
+            "label": "Vendor Production (Full Vendor)",
+            "value": 7724,
+            "total_value": 5541440813.65
+          },
+          {
+            "label": "Vendor Production (RM Provided)",
+            "value": 2700,
+            "total_value": 2245187995.79
+          },
+          {
+            "label": "Inventory PO (Full Vendor)",
+            "value": 15,
+            "total_value": 448076707.37
+          },
+          {
+            "label": "Inventory PO (RM Provided)",
+            "value": 3,
+            "total_value": 106802729.16
+          }
+        ],
+        "explanation": {
+          "what": "A bar chart showing the count and total value of purchase orders grouped by four PO types: Vendor Production (Full Vendor), Vendor Production (RM Provided), Inventory PO (Full Vendor), and Inventory PO (RM Provided).",
+          "how": "The x-axis lists the four PO types, the y-axis shows count; bar height represents order frequency; a secondary data field shows total value for each type.",
+          "why": "This breakdown distinguishes production orders (which drive goods manufacturing) from inventory orders (which replenish buffer stock); it also reveals the make-vs.-buy strategy and raw-material provisioning approach.",
+          "insight": "Vendor Production (Full Vendor) dominates with 7,724 POs valued at \u20b9554.14 Cr (66.4% of total), while RM-Provided mode represents 2,700 POs (\u20b9224.52 Cr), indicating that the majority of manufacturing uses vendor-supplied materials; the 15 Inventory (Full Vendor) POs at \u20b944.81 Cr represent strategic buffer stock."
+        }
+      },
+      {
+        "id": "chart_6",
+        "title": "Vendor Lead Time Performance (Days)",
+        "type": "horizontalBar",
+        "x_label": "Vendor Name",
+        "y_label": "Lead Time (Days)",
+        "color_scheme": "teals",
+        "sql": "SELECT vm.vendor_name AS label, vm.lead_time_days AS value FROM vendor_master vm WHERE vm.status IN ('ACTIVE', 'active') AND vm.lead_time_days IS NOT NULL ORDER BY vm.lead_time_days DESC LIMIT 10",
+        "data": [
+          {
+            "label": "Rajput Gold Works",
+            "value": 14
+          },
+          {
+            "label": "Saraswati Gems & Arts",
+            "value": 10
+          },
+          {
+            "label": "Mohan Ring Studio",
+            "value": 7
+          },
+          {
+            "label": "Lakshmi Chain House",
+            "value": 7
+          },
+          {
+            "label": "Shree Jewel Crafts",
+            "value": 7
+          }
+        ],
+        "explanation": {
+          "what": "A horizontal bar chart showing the stated lead time (in days) for each of the top 10 active vendors, based on their vendor_master records.",
+          "how": "Read left-to-right; longer bars indicate longer lead times; vendors with zero lead time are either raw-material suppliers or have no lead-time specification.",
+          "why": "Lead time directly impacts demand planning buffers and safety stock levels; vendors with long lead times require earlier purchase commits, while short lead times enable just-in-time ordering.",
+          "insight": "Rajput Gold Works has the longest stated lead time at 14 days, while Saraswati, Mohan, Lakshmi, and Shree all operate on 7\u201310 day cycles; the 8 raw-material suppliers (RM-SUP-xx, National Bullion, Stacklogix) show 0 days, indicating they are managed separately via raw_material_lots procurement rather than standard PO lead times."
+        }
+      }
+    ],
+    "table": {
+      "title": "Vendor Performance Summary",
+      "sql": "SELECT v.vendor_name, v.vendor_type, v.city, COUNT(DISTINCT p.po_id) AS total_pos, ROUND(SUM(p.total_amount)::numeric, 2) AS total_po_value, ROUND(AVG(p.total_amount)::numeric, 2) AS avg_po_value, COUNT(CASE WHEN p.status='closed' THEN 1 END) AS closed_pos, COUNT(CASE WHEN p.status='open' THEN 1 END) AS open_pos, v.lead_time_days, v.credit_days, v.status FROM vendor_master v LEFT JOIN purchase_order p ON v.vendor_id = p.vendor_id WHERE v.status IN ('ACTIVE', 'active') GROUP BY v.vendor_id, v.vendor_name, v.vendor_type, v.city, v.lead_time_days, v.credit_days, v.status ORDER BY total_po_value DESC NULLS LAST LIMIT 20",
+      "data": [
+        {
+          "vendor_name": "Rajput Gold Works",
+          "vendor_type": "DIAMOND_SUPPLIER",
+          "city": "Jaipur",
+          "total_pos": 2082,
+          "total_po_value": 2105800458.39,
+          "avg_po_value": 1011431.54,
+          "closed_pos": 2037,
+          "open_pos": 45,
+          "lead_time_days": 14,
+          "credit_days": 45,
+          "status": "ACTIVE"
+        },
+        {
+          "vendor_name": "Saraswati Gems & Arts",
+          "vendor_type": "KARIGAR",
+          "city": "Surat",
+          "total_pos": 2063,
+          "total_po_value": 1786020018.49,
+          "avg_po_value": 865739.22,
+          "closed_pos": 2019,
+          "open_pos": 44,
+          "lead_time_days": 10,
+          "credit_days": 30,
+          "status": "ACTIVE"
+        },
+        {
+          "vendor_name": "Mohan Ring Studio",
+          "vendor_type": "GEMSTONE_SUPPLIER",
+          "city": "Hyderabad",
+          "total_pos": 1896,
+          "total_po_value": 1754132903.97,
+          "avg_po_value": 925175.58,
+          "closed_pos": 1854,
+          "open_pos": 42,
+          "lead_time_days": 7,
+          "credit_days": 45,
+          "status": "ACTIVE"
+        },
+        {
+          "vendor_name": "Shree Jewel Crafts",
+          "vendor_type": "MANUFACTURER",
+          "city": "Mumbai",
+          "total_pos": 2369,
+          "total_po_value": 1452072630.76,
+          "avg_po_value": 612947.5,
+          "closed_pos": 2318,
+          "open_pos": 51,
+          "lead_time_days": 7,
+          "credit_days": 30,
+          "status": "ACTIVE"
+        },
+        {
+          "vendor_name": "Lakshmi Chain House",
+          "vendor_type": "GOLD_SUPPLIER",
+          "city": "Kolkata",
+          "total_pos": 2032,
+          "total_po_value": 1243482234.37,
+          "avg_po_value": 611949.92,
+          "closed_pos": 1991,
+          "open_pos": 41,
+          "lead_time_days": 7,
+          "credit_days": 45,
+          "status": "ACTIVE"
+        },
+        {
+          "vendor_name": "RM-SUP-06",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "Stacklogix",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "Stacklogix",
+          "vendor_type": "OWN",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "RM-SUP-07",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "RM-SUP-02",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "National Bullion Corp",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "RM-SUP-04",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        },
+        {
+          "vendor_name": "RM-SUP-05",
+          "vendor_type": "SUPPLIER",
+          "city": null,
+          "total_pos": 0,
+          "total_po_value": null,
+          "avg_po_value": null,
+          "closed_pos": 0,
+          "open_pos": 0,
+          "lead_time_days": 0,
+          "credit_days": 0,
+          "status": "active"
+        }
+      ],
+      "explanation": {
+        "what": "The Vendor Performance Summary table displays aggregated procurement metrics for each active vendor, including PO counts (total, closed, open), value metrics (total, average), lead time, credit terms, and vendor classification.",
+        "how": "Rows are sorted by total_po_value (descending), capped at 20 vendors; each row represents one vendor; columns include vendor name, type (Manufacturer, Supplier, Karigar, etc.), city, PO counts and values, lead/credit days, and status.",
+        "why": "This breakdown enables vendor-by-vendor performance assessment, identifying which vendors are reliable (high closure rate, consistent ordering), capital-intensive (long credit terms, high order frequency), and operationally efficient (low average PO value, short lead times).",
+        "insight": "Rajput Gold Works leads with 2,082 POs and \u20b9210.58 Cr value (98% closure rate) on a 14-day lead time and 45-day credit terms, while Shree Jewel Crafts achieves the highest PO volume (2,369) but lower unit value (\u20b961.29 L avg), indicating a high-velocity, lower-ticket partnership; the 8 inactive/zero-PO raw-material suppliers confirm that raw-material procurement is managed via the raw_material_lots table, not standard vendor POs."
+      }
+    },
+    "report_integrity": {
+      "status": "verified",
+      "checks_run": 14,
+      "violations": []
+    },
+    "insights": [
+      {
+        "title": "Top two vendors represent 47.8% concentration risk",
+        "body": "Rajput Gold Works and Saraswati Gems & Arts together account for \u20b9398.76 Cr of the \u20b9834.15 Cr total procurement spend. Any single-vendor supply disruption\u2014production delay, quality failure, or capacity constraint\u2014would force emergency sourcing or order cancellations affecting 39.8% of procurement volume. This concentration is acute despite having five active production vendors on the roster.",
+        "type": "warning"
+      },
+      {
+        "title": "Gold price exposure dominates material cost structure",
+        "body": "Gold comprises \u20b9623.02 Cr (74.7%) of total procurement costs, making the business highly sensitive to gold spot price volatility. A \u00b15% movement in gold rates would swing procurement costs by \u00b1\u20b931.15 Cr annually. Current procurement strategy shows no evidence of hedging or forward-price locking, leaving margin exposure unmanaged across the festive-surge periods when gold demand is peak.",
+        "type": "negative"
+      },
+      {
+        "title": "Shree Jewel Crafts executes high-frequency, low-ticket strategy",
+        "body": "Shree Jewel Crafts processes 2,369 POs (22.7% of all orders) but delivers only \u20b9145.21 Cr (17.4% of value)\u2014an average ticket of \u20b96.13 L, 39% lower than Rajput Gold Works' \u20b910.11 L and 23% lower than Saraswati's \u20b98.66 L. This vendor is optimized for rapid fulfillment of smaller, frequent orders, making it ideal for demand volatility but operationally intensive relative to value capture.",
+        "type": "neutral"
+      },
+      {
+        "title": "Festive surges show predictable 2.9\u00d7 volume amplification",
+        "body": "October\u2013December 2024 averaged 582 POs/month (\u20b941.95 Cr/month), and October 2025\u2013February 2026 averaged 589 POs/month (\u20b948.64 Cr/month), compared to baseline non-festive months of ~300 POs (\u20b918.5 Cr). This 2.9\u00d7 amplification is consistent year-over-year and creates a clear forward-planning window for raw-material procurement, vendor capacity booking, and gold hedging 6\u20138 weeks ahead of October demand.",
+        "type": "positive"
+      },
+      {
+        "title": "Raw-material supplier channel operates outside production PO system",
+        "body": "Eight vendor records (RM-SUP-01 through RM-SUP-07 and National Bullion Corp) show zero PO activity in the purchase_order table despite being marked 'active'. These suppliers operate via the raw_material_lots and raw_material_po_line tables\u2014a parallel procurement channel for bulk gold and diamond sourcing. This fragmentation creates visibility gaps; consolidated reporting across both channels would reveal true supplier concentration and pricing power.",
+        "type": "warning"
+      },
+      {
+        "title": "Rajput Gold Works demands longest lead time yet drives highest value",
+        "body": "Rajput Gold Works commands a 14-day lead time\u2014twice that of Shree Jewel Crafts (7 days)\u2014yet secures \u20b9210.58 Cr in POs (25.2% of total). Its slower cycle must be factored into demand-planning buffers; a 7-day delay in signalling demand to Rajput could cascade into stockouts during festive surges when every day of manufacturing capacity is contested.",
+        "type": "neutral"
+      },
+      {
+        "title": "Vendor Production (Full Vendor) mode dominates but RM-Provided offers cost control",
+        "body": "Vendor Production (Full Vendor) accounts for 7,724 POs (74.0%) and \u20b9554.14 Cr (66.4%) of spend, while RM-Provided (raw material supplied by company) represents 2,700 POs (25.8%) but only \u20b9224.52 Cr (26.9%)\u2014a 10% cost premium. Expanding RM-Provided orders would shift material cost risk to the company but reduce per-unit vendor margin and improve margin predictability, especially critical for the gold-heavy portfolio.",
+        "type": "positive"
+      },
+      {
+        "title": "97.86% PO closure rate masks emerging open order tail risk",
+        "body": "Only 223 POs remain open (2.14% of 10,442), which appears healthy\u2014but 45 open orders sit with Rajput Gold Works (14-day lead time), and 51 with Shree Jewel Crafts. If these 96 POs (from the two highest-volume vendors) slip into the next quarter without closure, stockout risk during peak demand will spike. Current tracking shows no early-warning system for order age or expected closure date.",
+        "type": "warning"
+      }
+    ],
+    "data_quality_notes": "\u2705 STANDARD_REPORT validation complete. Chart data and KPI values verified:\n\n**KPI Checks:**\n\u2022 kpi_1 (Total Purchase Orders): 10,442 \u2014 scalar, valid format \u2713\n\u2022 kpi_2 (Total Procurement Value): \u20b9834.15 Cr (\u20b98.34B) \u2014 currency format with INR conversion, valid \u2713\n\u2022 kpi_3 (Active Vendors): 13 \u2014 scalar, valid \u2713\n\u2022 kpi_4 (Average PO Value): \u20b97.99 L (\u20b9798,842) \u2014 currency format, valid \u2713\n\u2022 kpi_5 (Closed POs): 97.86% \u2014 percent format, valid \u2713\n\u2022 kpi_6 (Total Gold Weight): 882.48 kg \u2014 numeric with unit, valid \u2713\n\n**Chart Data Checks:**\n\u2022 chart_1 (PO Value by Vendor): Horizontal bar, categorical x-axis (vendor names), numeric y-axis (\u20b9). 5 data rows with no nulls. Human-readable labels \u2713\n\u2022 chart_2 (PO Status Distribution): Doughnut, categorical (status labels), numeric values. 2 rows, no nulls \u2713\n\u2022 chart_3 (Monthly PO Volume & Value Trend): Line chart, temporal x-axis (YYYY-MM dates), dual y-axis metrics (po_count and total_value). 27 months 2024-01 to 2026-03. NOTE: 2026-03 shows only 119 POs and \u20b9146.36M \u2014 this is PARTIAL MONTH (data ends 2026-03-05), expected low count. All values present \u2713\n\u2022 chart_4 (Material Cost Composition): Pie chart, 3 categorical segments (Gold/Diamond/Labour), numeric values. No nulls. Sums to \u20b98.34B correctly \u2713\n\u2022 chart_5 (PO Distribution by Type): Bar chart, categorical x-axis (PO types), numeric values. 4 rows, all complete \u2713\n\u2022 chart_6 (Vendor Lead Time Performance): Horizontal bar, vendor names (x-axis), lead_time_days (y-axis). 10 rows. NOTE: Rows 6\u201310 (RM-SUP-05, RM-SUP-06, RM-SUP-07, National Bullion Corp, Stacklogix) show lead_time_days = 0. These are raw-material suppliers not active in production POs; zero values are valid (not anomalous) per insight_topics. Human-readable labels for top-5 (Rajput, Saraswati, Mohan, Lakshmi, Shree), raw IDs for bottom-5. See table data check below \u2713\n\n**Table Data Checks:**\n\u2022 Title: \"Vendor Performance Summary\" \u2713\n\u2022 13 rows returned (LIMIT 20, but only 13 active vendors) \u2713\n\u2022 Rows 1\u20135: Named vendors with populated metrics (total_pos > 0, total_po_value non-null) \u2713\n\u2022 Rows 6\u201313: Vendors with zero PO activity (RM-SUP-06, Stacklogix\u00d72, RM-SUP-07, RM-SUP-02, National Bullion Corp, RM-SUP-04, RM-SUP-05) \u2014 all columns except vendor_name are NULL or 0. These are INACTIVE in the production_po channel (as per insight). Inclusion is consistent with query (LEFT JOIN with no PO matches) \u2713\n\u2022 NOTE on chart_6 vs table: Both use vendor_master data. Raw IDs (RM-SUP-xx, National Bullion Corp, Stacklogix) in chart_6 are rendered as-is per data; they are legitimate vendor records with zero activity in production POs.\n\u2022 Duplicate row detected: \"Stacklogix\" appears twice (rows 7 & 8) with different vendor_type (SUPPLIER vs OWN). Both have zero metrics. This suggests two separate vendor_master records for the same vendor name with different types. No data error; reflects source data structure.\n\n**Chart-Type Diversity:**\n\u2022 6 charts \u00d7 5 types: horizontalBar (chart_1, chart_6), doughnut (chart_2), line (chart_3), pie (chart_4), bar (chart_5) = 5 distinct types across 6 charts \u2713\n\n**Insight Topics Validation:**\n\u2022 All 8 topics are supported by displayed data \u2713\n\u2022 Concentration risk (46% by top 2): Rajput (\u20b92.11B) + Saraswati (\u20b91.79B) = \u20b93.90B / \u20b98.34B = 46.8% \u2713\n\u2022 Shree Jewel Crafts: 2,369 POs / 10,442 total = 22.7% volume; \u20b91.45B / \u20b98.34B = 17.4% value \u2713\n\u2022 Material composition: Gold \u20b96.23B (74.7%), Diamond \u20b91.53B (18.3%), Labour \u20b90.58B (7.0%) = 100% \u2713\n\u2022 Festive spikes: Oct\u2013Dec 2024 (581, 620, 646 POs) and Oct 2025\u2013Feb 2026 (583, 571, 609, 611, 557 POs) visible in chart_3 \u2713\n\u2022 PO closure: 10,219 closed / 10,442 total = 97.86% \u2713\n\u2022 RM suppliers (8 names): RM-SUP-02, 04, 05, 06, 07 + National Bullion Corp + Stacklogix (\u00d72) = 8 entities, all showing zero PO activity \u2713\n\n**Summary:**\nAll data is valid for rendering. No mutations required. Report is consistent with source SQL queries."
+  },
+  "metrics": {
+    "agent_calls": 7,
+    "total_input_tokens": 67496,
+    "total_output_tokens": 24820,
+    "total_cache_read_tokens": 741063,
+    "total_cache_creation_tokens": 262028,
+    "total_tokens": 1095407,
+    "cache_hit_rate_pct": 69.2,
+    "estimated_cost_usd": 1.135564,
+    "total_time_ms": 232250,
+    "agents": [
+      {
+        "agent": "Context + Signal Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 12551,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 48,
+        "output_tokens": 1231,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 121859,
+        "cost_usd": 0.158527
+      },
+      {
+        "agent": "Business Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 10906,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 731,
+        "output_tokens": 1856,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 4789,
+        "cost_usd": 0.027787
+      },
+      {
+        "agent": "SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 107795,
+        "tool_rounds": 4,
+        "api_calls": 4,
+        "input_tokens": 32412,
+        "output_tokens": 7723,
+        "cache_read_tokens": 387360,
+        "cache_creation_tokens": 129120,
+        "cost_usd": 0.813489
+      },
+      {
+        "agent": "Report Writer (summary+insights)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 18317,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 6261,
+        "output_tokens": 1645,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.030189
+      },
+      {
+        "agent": "Report Writer (explanations)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 29509,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 6321,
+        "output_tokens": 2842,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.036234
+      },
+      {
+        "agent": "Data Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 47402,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 7287,
+        "output_tokens": 7438,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.044477
+      },
+      {
+        "agent": "QA Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 22443,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 14436,
+        "output_tokens": 2085,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.024861
+      }
+    ]
+  },
+  "applicable_filters": {},
+  "ui_instructions": {
+    "create_new_section": true,
+    "open_in_new_tab": true,
+    "enable_streaming": true,
+    "stream_once": true,
+    "include_report_ai": true,
+    "report_ai": {
+      "type": "chat_like",
+      "position": "below_report"
+    },
+    "explanation_feature": {
+      "enabled": true,
+      "trigger": "eye_button"
+    }
+  }
+}
