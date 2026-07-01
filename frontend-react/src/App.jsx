@@ -219,7 +219,6 @@ export default function App() {
     setComplexity(null);
     setReportMode(false);
   }
-  }
 
   async function handleSubmit(question) {
     const q = (question ?? input).trim();
