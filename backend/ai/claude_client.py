@@ -106,6 +106,7 @@ class ClaudeClient:
         use_cache: bool = True,
         cached_prefix: str | None = None,
         on_tool_result: Callable[[str, dict, Any], None] | None = None,
+        stop_after_tool: str | Callable[[str, dict], bool] | None = None,
     ) -> str:
         """Call Claude with a system prompt, user message, and optional tools.
 
@@ -123,7 +124,24 @@ class ClaudeClient:
         execute_sql_query tool returned) instead of relying on the model to echo it
         back as JSON. Additive — default None leaves all existing callers unchanged.
 
-        Returns the final text response from Claude.
+        `stop_after_tool`: if set to a tool name, the loop ENDS the moment a tool of
+        this name returns a parsed dict with `success: True` — skipping the otherwise-
+        wasted final round where the model just echoes back text the caller already has
+        (via on_tool_result). Returns "" in that case; the caller is expected to
+        build its result from the captured tool output. ONLY fires on success —
+        a failed/blocked tool result (success: False) does NOT stop the loop, so
+        the model's repair path is fully preserved.
+
+        `stop_after_tool` may instead be a PREDICATE `fn(tool_name, parsed) -> bool`
+        for finer control — the loop stops only when it returns True. Use this when
+        "succeeded" isn't enough: e.g. the SQL agent may run an information_schema
+        DISCOVERY query first (which succeeds but isn't the answer), so chat passes a
+        predicate that ignores metadata probes and stops only on a real data query.
+
+        Default None = unchanged behavior for every existing caller (the report
+        pipeline relies on this).
+
+        Returns the final text response from Claude (or "" on a stop_after_tool hit).
         """
         messages: list[dict] = [{"role": "user", "content": user_message}]
         agent_start = time.time()
@@ -304,6 +322,7 @@ class ClaudeClient:
 
             # Execute each tool and collect results
             tool_results = []
+            _stop_now = False  # set when stop_after_tool succeeds this round
             for i, tool_block in enumerate(tool_use_blocks):
                 tool_name  = tool_block.name
                 tool_input = tool_block.input
@@ -356,6 +375,20 @@ class ClaudeClient:
                                         on_tool_result(tool_name, parsed, result)
                                     except Exception as cb_exc:
                                         logger.warning("on_tool_result callback failed: %s", cb_exc)
+                                # Early-stop: the designated tool finished the work — no
+                                # need for another model round just to echo back text we
+                                # already captured. A predicate decides; a bare tool name
+                                # means "this tool returned success:True". Failures fall
+                                # through to the repair loop unchanged either way.
+                                if stop_after_tool is not None:
+                                    try:
+                                        if callable(stop_after_tool):
+                                            _stop_now = bool(stop_after_tool(tool_name, parsed))
+                                        elif (tool_name == stop_after_tool
+                                              and parsed.get("success") is True):
+                                            _stop_now = True
+                                    except Exception as se:
+                                        logger.warning("stop_after_tool predicate failed: %s", se)
                                 if "error" in parsed:
                                     is_error = True
                                     result_preview = str(parsed["error"])[:150]
@@ -393,6 +426,37 @@ class ClaudeClient:
                 )
 
             messages.append({"role": "user", "content": tool_results})
+
+            # Early-stop hit this round — the caller builds its result from the
+            # captured tool output (on_tool_result), so we skip the final echo
+            # round entirely. Record telemetry first so cost/timing stay accurate.
+            if _stop_now:
+                total_elapsed = time.time() - agent_start
+                _tee(
+                    f"  {_c('◉ EARLY-STOP', _GREEN, _BOLD)}  "
+                    f"{_c(f'after {stop_after_tool} success', _CYAN)}  "
+                    f"{_c(f'{round_num + 1} round(s)', _DIM)}  "
+                    f"{_c(f'{total_elapsed:.1f}s', _YELLOW)}  "
+                    f"{_c(f'in={_tok_in:,} out={_tok_out:,} cache_hit={_tok_cache_read:,}', _MAGENTA, _DIM)}"
+                )
+                logger.info(
+                    "%s early-stopped after %s success — %d round(s), %.1fs, in=%d out=%d cache=%d",
+                    agent_name, stop_after_tool, round_num + 1, total_elapsed,
+                    _tok_in, _tok_out, _tok_cache_read,
+                )
+                with self._usage_lock:
+                    self.usage_log.append({
+                        "agent": agent_name,
+                        "model": active_model,
+                        "elapsed_ms": round(total_elapsed * 1000),
+                        "tool_rounds": round_num + 1,
+                        "api_calls": _api_calls,
+                        "input_tokens": _tok_in,
+                        "output_tokens": _tok_out,
+                        "cache_read_tokens": _tok_cache_read,
+                        "cache_creation_tokens": _tok_cache_create,
+                    })
+                return ""
 
         # Exceeded max rounds
         total_elapsed = time.time() - agent_start

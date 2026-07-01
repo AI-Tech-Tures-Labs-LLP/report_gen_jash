@@ -289,18 +289,41 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
     # cheaper and more accurate than re-running SQL from the model's JSON echo.
     _last_exec: dict = {}
 
+    def _is_answer_query(parsed: dict) -> bool:
+        """True if this execute result is a real DATA query — NOT a metadata/discovery
+        probe. The SQL agent sometimes runs `SELECT ... FROM information_schema.columns`
+        (or pg_catalog) FIRST to discover columns; that succeeds but is NOT the answer.
+        We must neither capture it as the result nor early-stop on it."""
+        if parsed.get("success") is not True:
+            return False
+        sql = (parsed.get("executed_sql") or "").lower()
+        if "information_schema" in sql or "pg_catalog" in sql:
+            return False
+        return True
+
     def _capture(tool_name: str, parsed: dict, _raw) -> None:
-        if tool_name == "execute_sql_query" and parsed.get("success") is True:
+        if tool_name == "execute_sql_query" and _is_answer_query(parsed):
             _last_exec["sql"] = parsed.get("executed_sql", "")
             _last_exec["data"] = parsed.get("data") or []
+            # row_count is the TRUE total (the tool reports it even when it caps the
+            # returned data at 50); truncated says the returned sample was capped.
+            _last_exec["row_count"] = parsed.get("row_count", len(_last_exec["data"]))
+            _last_exec["truncated"] = bool(parsed.get("truncated"))
+
+    def _stop_on_answer(tool_name: str, parsed: dict) -> bool:
+        # Stop the loop only once a REAL data query has succeeded — never on a
+        # schema-discovery probe (which would strand the agent before the answer).
+        return tool_name == "execute_sql_query" and _is_answer_query(parsed)
 
     sql_response = client.call_agent(
         system_prompt=sql_system,
         user_message=(
             f"Answer this question by writing and executing PostgreSQL.\n\n"
             f"QUESTION: {question}\n\n"
-            f"Use the validate_sql_query and execute_sql_query tools. After you "
-            f"have the results, output ONLY this JSON object: {{\"sql\": \"<the sql you ran>\"}}"
+            f"Write your query and call execute_sql_query to run it. execute_sql_query "
+            f"already validates safety, schema, and correctness anti-patterns before it "
+            f"runs — if it returns success:false, read the error/FIX hint and re-call it "
+            f"with corrected SQL. You do NOT need to call validate_sql_query first."
         ),
         tools=SQL_AGENT_TOOLS,
         tool_handlers=TOOL_HANDLERS,
@@ -309,6 +332,12 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
         max_tokens=4096,  # chat only needs a short JSON response — cap to reduce generation overhead
         use_cache=True,
         on_tool_result=_capture,
+        # End the loop once the ANSWER query runs successfully — we already capture the
+        # rows + executed SQL via _capture, so the model doesn't need a final echo round.
+        # A predicate (not a bare tool name) is used so a schema-discovery probe against
+        # information_schema does NOT trip the stop before the real query runs. Only fires
+        # on a successful data query; a blocked/failed query still loops to repair.
+        stop_after_tool=_stop_on_answer,
     )
 
     sql = ""
@@ -336,7 +365,12 @@ def answer_chat_question(question: str, client: ClaudeClient | None = None,
         if result.get("success"):
             rows = result.get("data") or []
 
-    yield {"stage": "execute", "data": {"row_count": len(rows)}}
+    # Surface the TRUE total row count (tool reports it even when it caps the sample at
+    # 50) + whether the returned sample was truncated — drives the frontend "N+ rows"
+    # signal honestly. Falls back to len(rows) when no captured count is available.
+    _exec_total = _last_exec.get("row_count", len(rows))
+    _exec_truncated = bool(_last_exec.get("truncated"))
+    yield {"stage": "execute", "data": {"row_count": _exec_total, "truncated": _exec_truncated}}
 
     # ── Stage 2: Interpret the results into answer + insights ──
     yield {"stage": "interpret", "data": {"message": "Interpreting results..."}}

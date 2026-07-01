@@ -217,6 +217,18 @@ _FANOUT_REGISTRY = {
     "finished_goods_inventory":     (36.71, ("quantity_available", "quantity_received", "total_amount", "unit_cost")),
     "inventory_movements":          (2.0,  ("quantity",)),
 }
+# Heuristic / context-dependent patterns that produce too many false positives to HARD-block.
+# These surface as warnings only (both in validate_sql_query and execute_sql_query). Any pattern
+# NOT in this set is a hard correctness bug (e.g. fanout_po_link) and is BLOCKED on execute so a
+# wrong number can never ship — even when the agent skips the validate_sql_query tool. This set is
+# the single source of truth shared by both handlers; keep it in sync (do not redefine elsewhere).
+_WARN_ONLY_PATTERNS = {
+    "top_per_group_missing_partition_by",  # fires on correct multi-col GROUP BY without LIMIT
+    "dual_metric_limit_not_dual_rank",     # ORDER BY multi-col + LIMIT is often intentional
+    "per_unit_instead_of_per_order",       # question context decides which is correct
+    "case_when_status_with_where_filter",  # not always wrong — depends on intent
+}
+
 # Parent-level amount columns that are double-counted when summed across ANY fanned join.
 _PARENT_AMOUNT_COLS = ("line_total", "total_amount", "final_amount")
 # Pricing-table (1:1) per-unit cols — summing these across a fanned child also inflates.
@@ -477,17 +489,40 @@ def handle_execute_sql_query(sql: str, purpose: str = "") -> str:
         if _mech_fixes:
             logger.info("[SQL Tool] Mechanical auto-fix for '%s': %s", purpose, _mech_fixes)
 
-        # Step 1b: Non-blocking accuracy guard — surface known correctness
-        # anti-patterns (esp. revenue fan-out / double-counting) WITH the result so
-        # the agent + downstream validator are warned even if they skipped the
-        # validate_sql_query tool. We warn, not block (heuristic shouldn't hard-fail).
+        # Step 1b: Accuracy guard — surface known correctness anti-patterns WITH the
+        # result so the agent is warned even if it skipped the validate_sql_query tool.
+        # Patterns split into two tiers (same _WARN_ONLY_PATTERNS set validate uses):
+        #   • HARD  → always-wrong (e.g. fanout_po_link double-count) → BLOCK (success:False)
+        #             so the repair loop MUST fix it before the number can ship. This is what
+        #             makes the separate validate_sql_query tool redundant for chat — execute
+        #             now hard-blocks every pattern validate would have. (Closes the gap where
+        #             fanout_po_link only warned here while validate blocked it.)
+        #   • SOFT  → heuristic/context-dependent → attach as accuracy_warnings only.
         try:
             _pattern_issues = check_sql_patterns(corrected_sql)
         except Exception:
             _pattern_issues = []
+        _hard_pattern_issues = [
+            pi for pi in _pattern_issues if pi["pattern_name"] not in _WARN_ONLY_PATTERNS
+        ]
+        if _hard_pattern_issues:
+            _msgs = []
+            for pi in _hard_pattern_issues:
+                _m = f"{pi['pattern_name']}: {pi.get('description', '')}"
+                if pi.get("correction"):
+                    _m += f"\nHOW TO FIX: {pi['correction']}"
+                _msgs.append(_m)
+            logger.warning("[SQL Tool] BLOCKED hard anti-pattern(s) for '%s': %s",
+                           purpose, [pi["pattern_name"] for pi in _hard_pattern_issues])
+            return json.dumps({
+                "success": False,
+                "error": "BLOCKED — known correctness bug detected:\n" + "\n\n".join(_msgs),
+                "blocked_reason": "hard_anti_pattern",
+                "rejected_sql": corrected_sql,
+            })
         _accuracy_warnings = [
             f"{pi['pattern_name']}: {pi.get('description', '')}"
-            for pi in _pattern_issues
+            for pi in _pattern_issues  # warn-only patterns remain (hard ones already returned)
         ]
 
         # Step 1c: HARD GATE — block line-child fan-out (diamond/gold) and force a
@@ -573,16 +608,9 @@ def handle_validate_sql_query(sql: str) -> str:
     - SOFT warnings → valid: true  — heuristic/context-dependent, Claude is
                                      informed but NOT forced into a rewrite round
     """
-    # Patterns that are heuristic / context-dependent and produce too many
-    # false positives when treated as hard failures. Claude still sees the
-    # warning text, but the query is not blocked.
-    _WARN_ONLY_PATTERNS = {
-        "top_per_group_missing_partition_by",  # fires on correct multi-col GROUP BY without LIMIT
-        "dual_metric_limit_not_dual_rank",     # ORDER BY multi-col + LIMIT is often intentional
-        "per_unit_instead_of_per_order",       # question context decides which is correct
-        "case_when_status_with_where_filter",  # not always wrong — depends on intent
-    }
-
+    # Heuristic / context-dependent patterns shown as warnings, not hard failures.
+    # Shared module-level set (also used by handle_execute_sql_query) so the two
+    # handlers block on EXACTLY the same hard-tier patterns.
     issues:   list[str] = []
     warnings: list[str] = []
 

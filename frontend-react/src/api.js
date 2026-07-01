@@ -52,11 +52,12 @@ export function logMetrics(metrics, source = "request") {
  *   {stage:"routing"|"routed"|"report_generating"|"analyze"|"sql"|"execute"|"interpret"|"complete", data:{...}}
  * Resolves with the final "complete" event's data (or null).
  */
-export async function askStream(question, conversationId, onEvent) {
+export async function askStream(question, conversationId, onEvent, signal) {
   const res = await fetch("/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ question, conversation_id: conversationId }),
+    signal,
   });
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

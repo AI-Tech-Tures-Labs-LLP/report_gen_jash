@@ -3,6 +3,7 @@ import { getTheme } from "./theme.js";
 import { askStream, openReport } from "./api.js";
 import { loadConversations, saveConversations, newConversationId, saveMessages, loadMessages, deleteConversation, saveActiveConvId, loadActiveConvId } from "./storage.js";
 import { getAuthHeaders, logout, getUser } from "./auth.js";
+import { CHAT_STEPS, MIN_STEP_MS, stepIndexForStage, rowCountSuffix, reasoningFor } from "./progressSteps.js";
 import ChatMessage from "./components/ChatMessage.jsx";
 import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
@@ -25,7 +26,19 @@ export default function App() {
   const [messages, setMessages] = useState([]); // {id, role, text?, data?, error?, showOffer?, question?}
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState(""); // streaming status line
+  // Curated live progression (see progressSteps.js). `stepIndex` is how far through
+  // CHAT_STEPS we've advanced; `rowCount` populates the "N rows found" trust signal.
+  const [stepIndex, setStepIndex] = useState(-1);
+  const [rowCount, setRowCount] = useState(null);
+  const [truncated, setTruncated] = useState(false); // result set capped by backend
+  const [routeMode, setRouteMode] = useState(null);   // router mode (data/report/...)
+  const [complexity, setComplexity] = useState(null); // router complexity (simple/complex)
+  const [reportMode, setReportMode] = useState(false); // report intent → different copy
+  // Pacing refs: enforce a minimum visible duration per step so fast queries don't strobe.
+  const stepRef = useRef(-1);        // highest step reached (may be ahead of what's shown)
+  const shownStepRef = useRef(-1);   // step currently rendered
+  const lastAdvanceRef = useRef(0);  // timestamp of the last visible advance
+  const paceTimerRef = useRef(null); // pending delayed advance
   // Resume the last-open conversation on reload; only mint a fresh one if there's none.
   const [convId, setConvId] = useState(() => loadActiveConvId() || newConversationId());
   const [convs, setConvs] = useState(() => loadConversations());
@@ -34,6 +47,7 @@ export default function App() {
   const textareaRef = useRef(null);
   const syncTimer = useRef(null); // debounce MongoDB sync
   const isLoadingConv = useRef(false); // prevent sync during conversation switch
+  const abortRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem("sqlbot_theme", themeMode);
@@ -42,7 +56,7 @@ export default function App() {
 
   useEffect(() => {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
-  }, [messages, status]);
+  }, [messages, stepIndex]);
 
   // Persist messages whenever they change (skip empty — that's a new chat)
   useEffect(() => {
@@ -132,14 +146,53 @@ export default function App() {
     setMessages((prev) => [...prev, { id: Date.now() + Math.random(), ...m }]);
   }
 
+  // Advance the VISIBLE step toward the target, never faster than MIN_STEP_MS between
+  // advances, so a fast query animates step-by-step instead of jumping straight to the
+  // last step. Steps only ever move forward (backend stages can arrive slightly out of
+  // order on retries; we ignore any that would move us backward).
+  function paceToStep(target) {
+    if (target <= shownStepRef.current) return; // never go backward
+    if (paceTimerRef.current) return;            // an advance is already scheduled
+    const elapsed = Date.now() - lastAdvanceRef.current;
+    const wait = Math.max(0, MIN_STEP_MS - elapsed);
+    const doAdvance = () => {
+      paceTimerRef.current = null;
+      const next = shownStepRef.current + 1;
+      if (next > stepRef.current) return; // nothing new to show
+      shownStepRef.current = next;
+      lastAdvanceRef.current = Date.now();
+      setStepIndex(next);
+      if (next < stepRef.current) paceToStep(stepRef.current); // keep catching up
+    };
+    if (wait === 0) doAdvance();
+    else paceTimerRef.current = setTimeout(doAdvance, wait);
+  }
+
+  function resetProgress() {
+    if (paceTimerRef.current) { clearTimeout(paceTimerRef.current); paceTimerRef.current = null; }
+    stepRef.current = -1;
+    shownStepRef.current = -1;
+    lastAdvanceRef.current = 0;
+    setStepIndex(-1);
+    setRowCount(null);
+    setTruncated(false);
+    setRouteMode(null);
+    setComplexity(null);
+    setReportMode(false);
+  }
+
   async function handleSubmit(question) {
     const q = (question ?? input).trim();
     if (!q || loading) return;
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
-    setStatus("Understanding your request…");
-    pushMessage({ role: "user", text: q });
+    resetProgress();
+    stepRef.current = 0;          // start on "Understanding your question"
+    shownStepRef.current = 0;
+    lastAdvanceRef.current = Date.now();
+    setStepIndex(0);
+    pushMessage({ role: "user", text: q, ts: new Date().toISOString() });
 
     // register conversation in sidebar
     setConvs((prev) => {
@@ -149,34 +202,57 @@ export default function App() {
       return next;
     });
 
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const finalData = await askStream(q, convId, (event) => {
+        // Report intent uses a different (single-step) copy — the report pipeline
+        // doesn't emit the chat sql/execute/interpret stages.
         if (event.stage === "routed") {
-          setStatus(event.data?.mode === "report" ? "Generating full report…" : "Finding your answer…");
-        } else if (event.stage !== "complete") {
-          setStatus(event.data?.message || event.text || "Working…");
+          // Capture the real routing decision — drives the derived reasoning copy.
+          if (event.data?.mode) setRouteMode(event.data.mode);
+          if (event.data?.complexity) setComplexity(event.data.complexity);
+          if (event.data?.mode === "report") { setReportMode(true); return; }
         }
-      });
+        if (event.stage === "report_generating") {
+          setReportMode(true);
+          return;
+        }
+        // Capture the row count + truncation off the execute stage for the "N rows" signal.
+        if (event.stage === "execute") {
+          if (typeof event.data?.row_count === "number") setRowCount(event.data.row_count);
+          if (event.data?.truncated) setTruncated(true);
+        }
+        // Map the backend stage to a curated step and advance (paced) toward it.
+        const idx = stepIndexForStage(event.stage);
+        if (idx > stepRef.current) {
+          stepRef.current = idx;
+          paceToStep(idx);
+        }
+      }, controller.signal);
 
       if (finalData && finalData.mode === "report" && finalData.report) {
         // Report intent → the full report is ALREADY generated. Store it once and
         // show an "Open Report" card that just re-opens the stored tab (no regen).
         const reportId = openReport(q, finalData, convId);
-        pushMessage({ role: "ai", reportId });
+        pushMessage({ role: "ai", reportId, ts: new Date().toISOString() });
       } else if (finalData) {
         // Only offer "Generate Report" for real DATA answers. Non-data turns
         // (greeting/off-topic/refused) set report_eligible=false / non_data=true,
         // so no report card appears for them.
         const offerReport = finalData.report_eligible !== false && !finalData.non_data;
-        pushMessage({ role: "ai", data: finalData, showOffer: offerReport, question: q });
+        pushMessage({ role: "ai", data: finalData, showOffer: offerReport, question: q, ts: new Date().toISOString() });
       } else {
         pushMessage({ role: "ai", error: "No response received from server." });
       }
     } catch (err) {
-      pushMessage({ role: "ai", error: err.message || "Something went wrong." });
+      if (err.name !== 'AbortError') {
+        pushMessage({ role: "ai", error: err.message || "Something went wrong.", ts: new Date().toISOString() });
+      }
     } finally {
       setLoading(false);
-      setStatus("");
+      resetProgress();
+      abortRef.current = null;
     }
   }
 
@@ -387,18 +463,54 @@ export default function App() {
                   <ReportSuccess reportId={m.reportId} t={t} />
                 ) : (
                   <>
-                    <ChatMessage msg={m} t={t} />
+                    <ChatMessage msg={m} t={t} themeMode={themeMode} />
                     {m.showOffer && <ReportOffer question={m.question} t={t} convId={convId} />}
                   </>
                 )}
               </div>
             ))
           )}
-          {loading && status && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", color: t.textMuted, fontSize: "0.82rem", padding: "0.5rem 0.25rem" }}>
-              <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: "#d4af37", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
-              <span style={{ fontWeight: 500 }}>{status}</span>
-            </div>
+          {loading && stepIndex >= 0 && (
+            reportMode ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", color: t.textMuted, fontSize: "0.82rem", padding: "0.5rem 0.25rem" }}>
+                <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: "#d4af37", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+                <span style={{ fontWeight: 500 }}>Generating your full report…</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem", padding: "0.5rem 0.25rem" }}>
+                {CHAT_STEPS.map((step, i) => {
+                  const done = i < stepIndex;
+                  const active = i === stepIndex;
+                  if (i > stepIndex) return null; // don't reveal future steps
+                  const label =
+                    step.key === "run" && (done || active)
+                      ? step.label + rowCountSuffix(rowCount, truncated)
+                      : step.label;
+                  // Derived, process-only reasoning line — shown under the ACTIVE step
+                  // only, to keep completed steps to a clean checklist.
+                  const reason = active
+                    ? reasoningFor(step.key, { mode: routeMode, complexity, rowCount, truncated })
+                    : "";
+                  return (
+                    <div key={step.key} style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.82rem", color: active ? t.text : t.textMuted }}>
+                        {done ? (
+                          <span style={{ width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#1a9c5b", fontWeight: 700 }}>✓</span>
+                        ) : (
+                          <span style={{ width: 14, height: 14, border: `2px solid ${t.border}`, borderTopColor: "#d4af37", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+                        )}
+                        <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
+                      </div>
+                      {reason && (
+                        <span style={{ marginLeft: "1.25rem", fontSize: "0.76rem", color: t.textMuted, fontStyle: "italic", lineHeight: 1.4 }}>
+                          {reason}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
           )}
         </div>
 
@@ -431,23 +543,41 @@ export default function App() {
                 maxHeight: 160, overflowY: "auto", padding: "0.4rem 0",
               }}
             />
-            <button
-              onClick={() => handleSubmit()}
-              disabled={loading || !input.trim()}
-              title="Send"
-              style={{
-                border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
-                cursor: loading || !input.trim() ? "default" : "pointer",
-                opacity: loading || !input.trim() ? 0.45 : 1, color: "#fff",
-                background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
-                display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
-                boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
+            {loading ? (
+              <button
+                onClick={() => abortRef.current?.abort()}
+                title="Stop generating"
+                style={{
+                  border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
+                  cursor: "pointer", color: "#fff",
+                  background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                  display: "grid", placeItems: "center",
+                  boxShadow: "0 2px 10px rgba(239,68,68,0.3)",
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSubmit()}
+                disabled={!input.trim()}
+                title="Send"
+                style={{
+                  border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
+                  cursor: !input.trim() ? "default" : "pointer",
+                  opacity: !input.trim() ? 0.45 : 1, color: "#fff",
+                  background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                  display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
+                  boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            )}
           </div>
           <p style={{ color: t.textMuted, fontSize: "0.68rem", textAlign: "center", marginTop: "0.45rem", letterSpacing: "0.01em" }}>
             Press Enter to send · Shift+Enter for new line
