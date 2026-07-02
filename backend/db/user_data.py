@@ -82,6 +82,21 @@ def add_turn(
     )
 
 
+def rename_conversation(user_id: str, conv_id: str, title: str) -> bool:
+    """Update ONLY a conversation's title (cheap — no message reload/resave).
+
+    Deliberately does NOT touch `updated_at`: the conversation list is sorted by
+    `updated_at` (most-recent activity first), and a rename is NOT activity — only
+    chatting in a conversation should bump it to the top. Renaming leaves its place.
+    Returns True if a conversation was matched and updated, False otherwise."""
+    db = get_db()
+    result = db.conversations.update_one(
+        {"user_id": user_id, "conv_id": conv_id},
+        {"$set": {"title": title}},
+    )
+    return result.matched_count > 0
+
+
 def get_recent_turns(user_id: str, conv_id: str, limit: int = 5) -> List[Dict[str, Any]]:
     """Return the most recent `limit` turns for a conversation (oldest first).
 

@@ -2,7 +2,7 @@
 // backend /ask endpoint (intent router) and streams SSE events back.
 
 import { getAuthHeaders } from "./auth.js";
-import { getHardcodedReport, getHardcodedSqlQuery } from "./hardcodedReports.js";
+import { getHardcodedReport } from "./hardcodedReports.js";
 
 /**
  * Pretty-print the pipeline cost/speed metrics to the dev-tools console.
@@ -54,20 +54,11 @@ export function logMetrics(metrics, source = "request") {
  * Resolves with the final "complete" event's data (or null).
  */
 export async function askStream(question, conversationId, onEvent, signal) {
-  // Short-circuit for hardcoded SQL queries — resolves instantly, no backend call.
-  const hardcodedSql = getHardcodedSqlQuery(question);
-  if (hardcodedSql) {
-    return new Promise((resolve) =>
-      setTimeout(() => {
-        if (onEvent) {
-          onEvent({ stage: "routed",   data: { mode: "sql" } });
-          onEvent({ stage: "complete", data: hardcodedSql });
-        }
-        resolve(hardcodedSql);
-      }, 350)
-    );
-  }
-
+  // Every chat question goes to the real backend (live SQL, accuracy gates, real data).
+  // NOTE: a previous frontend short-circuit (getHardcodedSqlQuery) faked answers with
+  // hardcoded demo data for questions containing substrings like "aov"/"po"/"stock",
+  // bypassing the backend entirely. That was removed — it served fabricated numbers with
+  // no query behind them. Do NOT reintroduce it for chat.
   const res = await fetch("/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -135,23 +126,63 @@ export async function generateReport(question) {
   return data;
 }
 
-/** Persist a generated report to localStorage AND MongoDB, then open the view. */
+/** Persist a generated report to MongoDB (source of truth) and open the view tab.
+ *
+ * Reports are NO LONGER mirrored to localStorage — the report-view tab fetches from
+ * MongoDB via GET /reports/<id>. This makes MongoDB the single source of truth
+ * (cross-device, user-scoped, no ~5MB quota / cross-user-leak problems that the old
+ * localStorage keys had).
+ *
+ * The tab is opened SYNCHRONOUSLY (awaiting the save first would move the open into a
+ * promise callback and browsers block that as a popup). The Mongo save runs in the
+ * background; the viewer retries its fetch briefly to cover the save still being
+ * in flight. Theme is passed on the URL so the viewer needs no localStorage at all.
+ */
 export function openReport(question, reportData, convId) {
   const reportId = "rpt_" + Date.now();
-  try {
-    localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(reportData));
-    localStorage.setItem("sqlbot_report_" + reportId + "_question", question);
-    localStorage.setItem(
-      "sqlbot_report_" + reportId + "_theme",
-      document.documentElement.getAttribute("data-theme") || "light"
-    );
-  } catch {
-    /* storage full — still try to open */
-  }
-  // Sync report to MongoDB in the background
+  // Persist to MongoDB in the background (fire-and-forget; viewer retries if it races).
   syncReportToMongo(reportId, question, reportData, convId);
-  window.open(`/report-view?id=${reportId}`, "_blank");
+  const theme = document.documentElement.getAttribute("data-theme") || "light";
+  window.open(`/report-view?id=${reportId}&theme=${theme}`, "_blank");
   return reportId;
+}
+
+/** Fetch a saved report by id from MongoDB (the source of truth for the viewer).
+ *
+ * Retries briefly on 404: openReport opens the viewer tab immediately while the
+ * background save may still be in flight, so a first-load 404 is expected and
+ * transient. Throws only after the retries are exhausted (genuine "not found").
+ */
+export async function fetchReport(reportId, { retries = 6, delayMs = 400 } = {}) {
+  const { getAuthHeaders } = await import("./auth.js");
+  let lastStatus = 0;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`/reports/${encodeURIComponent(reportId)}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) return res.json();
+    lastStatus = res.status;
+    // 404 right after open = save still racing; wait and retry. Other errors: stop.
+    if (res.status !== 404) break;
+    if (attempt < retries) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  throw new Error(lastStatus === 404 ? "Report not found" : `HTTP ${lastStatus}`);
+}
+
+/** Patch a saved report's data in MongoDB (used when the viewer edits a report, so
+ *  the change survives reload — the viewer keeps no localStorage copy). Fire-and-forget. */
+export async function updateReportData(reportId, reportData) {
+  try {
+    const { getAuthHeaders } = await import("./auth.js");
+    const res = await fetch(`/reports/${encodeURIComponent(reportId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ report_data: reportData }),
+    });
+    if (!res.ok) console.warn("Failed to update report in MongoDB:", res.status);
+  } catch (err) {
+    console.warn("Report update failed:", err);
+  }
 }
 
 /** Save report to MongoDB via the backend API. */
