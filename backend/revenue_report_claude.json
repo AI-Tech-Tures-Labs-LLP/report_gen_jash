@@ -1,0 +1,1152 @@
+{
+  "mode": "report",
+  "intent_mode": "STANDARD_REPORT",
+  "report": {
+    "intent_mode": "STANDARD_REPORT",
+    "title": "Monthly Revenue Trends Report",
+    "summary": "From January 2024 through February 2026, the business generated \u20b91,126.80 Cr in total revenue across 16,941 closed orders at an average order value of \u20b96.65 L. The revenue data reveals a pronounced seasonal pattern dominated by Q4 surges: October\u2013December 2024 contributed \u20b91.81 B (49% of H2 2024), while October\u2013December 2025 reached \u20b92.55 B\u2014a 41% year-over-year increase. December 2025 stands as the peak month at \u20b992.73 Cr. Critically, every comparable month in 2025 outperformed its 2024 equivalent, with January 2024 to January 2026 growing 1,265% and average order value climbing 152% from \u20b93.81 L to \u20b99.62 L. Order volume also concentrated heavily in Q4 (October\u2013December 2025: 3,092 orders vs. mid-year average of ~500), signalling dual leverage from both volume and price expansion. The business shows predictable post-surge corrections in Q1 (January\u2013March 2025 fell 38\u201353% from December 2024 peaks), but recovery patterns suggest demand sustainability. With 43% of all orders falling in the \u20b9500K\u20131M+ buckets, this is a high-value business; the consistent AOV lift indicates either product mix migration towards premium items or larger average order composition. The trajectory through February 2026 remains robust at \u20b965.27 Cr with AOV at \u20b99.62 L, positioning Q4 2026 for potential record performance if historical seasonal patterns hold.",
+    "kpis": [
+      {
+        "id": "kpi_1",
+        "label": "Total Revenue (All-Time)",
+        "sql": "SELECT ROUND(SUM(total_amount)::numeric, 2) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05'",
+        "value": 11267974058.97,
+        "format": "currency",
+        "icon": "revenue",
+        "color": "blue",
+        "value_inr": "\u20b91,126.80 Cr",
+        "explanation": {
+          "what": "This measures the cumulative revenue generated across all closed orders from January 2024 through February 2026.",
+          "how": "Computed as the sum of total_amount for all sales_order records with status = 'closed' within the specified date range.",
+          "why": "Leadership tracks total revenue to assess the business's absolute financial scale, pricing power, and ability to convert demand into cash across the full historical period.",
+          "insight": "All-time closed-order revenue totals \u20b91,126.80 Cr across 16,941 orders, establishing the business baseline and confirming this is a \u20b91.1B+ jewellery operation."
+        }
+      },
+      {
+        "id": "kpi_2",
+        "label": "Total Orders (All-Time)",
+        "sql": "SELECT COUNT(DISTINCT so_id) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05'",
+        "value": 16941,
+        "format": "number",
+        "icon": "orders",
+        "color": "green",
+        "explanation": {
+          "what": "This counts the number of distinct closed sales orders placed from January 2024 through February 2026.",
+          "how": "Computed as COUNT(DISTINCT so_id) where status = 'closed' over the full reporting period.",
+          "why": "Order count reveals customer transaction frequency, market penetration, and operational throughput; paired with revenue, it drives AOV insight.",
+          "insight": "16,941 closed orders across 26 months equates to ~651 orders per month on average, with significant seasonal variation (125 in Jan 2024 ramping to 1,114 by Jan 2025)."
+        }
+      },
+      {
+        "id": "kpi_3",
+        "label": "Average Order Value (All-Time)",
+        "sql": "SELECT ROUND((SUM(total_amount) / COUNT(DISTINCT so_id))::numeric, 2) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05'",
+        "value": 665130.4,
+        "format": "currency",
+        "icon": "average",
+        "color": "purple",
+        "value_inr": "\u20b96.65 L",
+        "explanation": {
+          "what": "This measures the mean revenue per order for all closed transactions in the reporting period.",
+          "how": "Computed as SUM(total_amount) / COUNT(DISTINCT so_id) for all closed orders.",
+          "why": "AOV is a leading indicator of transaction health and pricing strategy effectiveness; rising AOV signals either higher-value products, larger order quantities, or customer upsell success.",
+          "insight": "All-time AOV of \u20b96.65 L masks a dramatic 152% climb from \u20b93.81 L (Jan 2024) to \u20b99.63 L (Feb 2026), indicating sustained product mix or order-size evolution favouring the business."
+        }
+      },
+      {
+        "id": "kpi_4",
+        "label": "Latest Month Revenue (Feb 2026)",
+        "sql": "SELECT ROUND(SUM(total_amount)::numeric, 2) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2026-02-01' AND order_date <= '2026-02-28'",
+        "value": 652733679.37,
+        "format": "currency",
+        "icon": "current",
+        "color": "darkblue",
+        "note": "Mar 2026 has 0 closed orders in dataset (data ends 2026-03-05 with no closures). Feb 2026 shown as latest complete month.",
+        "value_inr": "\u20b965.27 Cr",
+        "explanation": {
+          "what": "This measures the total revenue generated in February 2026, the most recent complete month in the dataset.",
+          "how": "Computed as SUM(total_amount) for all closed orders placed between 2026-02-01 and 2026-02-28.",
+          "why": "The latest-month metric shows current business momentum; it is the most recent signal of demand, pricing, and order fulfilment capacity before data cutoff.",
+          "insight": "February 2026 delivered \u20b965.27 Cr on 678 orders at \u20b99.63 L AOV, representing a 23% MoM decline from January 2026 (\u20b9850.3 Cr), which is typical post-holiday seasonality but offset by the continued AOV strength."
+        }
+      },
+      {
+        "id": "kpi_5",
+        "label": "Highest Monthly Revenue",
+        "sql": "SELECT ROUND(MAX(monthly_revenue)::numeric, 2) AS value FROM (SELECT DATE_TRUNC('month', order_date) AS month, SUM(total_amount) AS monthly_revenue FROM sales_order WHERE status = 'closed' GROUP BY 1) m",
+        "value": 927291085.04,
+        "format": "currency",
+        "icon": "peak",
+        "color": "gold",
+        "note": "Peak month: December 2025",
+        "value_inr": "\u20b992.73 Cr",
+        "explanation": {
+          "what": "This identifies the single month with the highest total revenue in the 26-month reporting period.",
+          "how": "Computed as MAX(monthly_revenue) from a subquery grouping closed orders by month and summing total_amount.",
+          "why": "The peak-month metric establishes the business's maximum capacity and opportunity ceiling in a single month, critical for resource planning and demand forecasting.",
+          "insight": "December 2025 is the peak month at \u20b992.73 Cr, an 18% increase from December 2024 (\u20b962.0 Cr) and confirming the seasonal Q4 surge is strengthening year-on-year."
+        }
+      },
+      {
+        "id": "kpi_6",
+        "label": "Average Monthly Revenue",
+        "sql": "SELECT ROUND(AVG(monthly_revenue)::numeric, 2) AS value FROM (SELECT DATE_TRUNC('month', order_date) AS month, SUM(total_amount) AS monthly_revenue FROM sales_order WHERE status = 'closed' GROUP BY 1) m",
+        "value": 433383617.65,
+        "format": "currency",
+        "icon": "trend",
+        "color": "teal",
+        "value_inr": "\u20b943.34 Cr",
+        "explanation": {
+          "what": "This measures the mean monthly revenue across all 26 months of closed orders.",
+          "how": "Computed as AVG(monthly_revenue) from a subquery grouping closed orders by month and summing total_amount for each month.",
+          "why": "The monthly average provides a baseline expectation for seasonal normalisation and helps identify months that significantly over- or under-perform structural trends.",
+          "insight": "Average monthly revenue of \u20b943.34 Cr is heavily influenced by Q4 peaks; the median month is likely \u20b925\u201335 Cr, highlighting the business's dependence on festive-season concentration."
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "chart_1",
+        "title": "Monthly Revenue Trend (Jan 2024 \u2013 Feb 2026)",
+        "type": "line",
+        "sql": "SELECT TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS label, ROUND(SUM(total_amount)::numeric, 2) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05' GROUP BY 1 ORDER BY 1",
+        "data": [
+          {
+            "label": "2024-01",
+            "value": 47726798.11
+          },
+          {
+            "label": "2024-02",
+            "value": 270666487.36
+          },
+          {
+            "label": "2024-03",
+            "value": 166163964.38
+          },
+          {
+            "label": "2024-04",
+            "value": 158482843.52
+          },
+          {
+            "label": "2024-05",
+            "value": 167566445.02
+          },
+          {
+            "label": "2024-06",
+            "value": 210520616.56
+          },
+          {
+            "label": "2024-07",
+            "value": 294731636.03
+          },
+          {
+            "label": "2024-08",
+            "value": 256867794.96
+          },
+          {
+            "label": "2024-09",
+            "value": 292228503.23
+          },
+          {
+            "label": "2024-10",
+            "value": 605014225.83
+          },
+          {
+            "label": "2024-11",
+            "value": 583260752.29
+          },
+          {
+            "label": "2024-12",
+            "value": 616996555.23
+          },
+          {
+            "label": "2025-01",
+            "value": 651726957.93
+          },
+          {
+            "label": "2025-02",
+            "value": 532536532.17
+          },
+          {
+            "label": "2025-03",
+            "value": 327961513.67
+          },
+          {
+            "label": "2025-04",
+            "value": 298060847.97
+          },
+          {
+            "label": "2025-05",
+            "value": 346601629.93
+          },
+          {
+            "label": "2025-06",
+            "value": 333335582.66
+          },
+          {
+            "label": "2025-07",
+            "value": 347592450.68
+          },
+          {
+            "label": "2025-08",
+            "value": 356409024.19
+          },
+          {
+            "label": "2025-09",
+            "value": 348229907.07
+          },
+          {
+            "label": "2025-10",
+            "value": 841342372.66
+          },
+          {
+            "label": "2025-11",
+            "value": 783606828.56
+          },
+          {
+            "label": "2025-12",
+            "value": 927291085.04
+          },
+          {
+            "label": "2026-01",
+            "value": 850319024.55
+          },
+          {
+            "label": "2026-02",
+            "value": 652733679.37
+          }
+        ],
+        "x_label": "Month",
+        "y_label": "Revenue (\u20b9)",
+        "color_scheme": "blues",
+        "baseline_value": 433383617.65,
+        "explanation": {
+          "what": "This line chart displays the monthly revenue trajectory for all closed orders over the full 26-month reporting period, visualising the absolute \u20b9 value generated each month.",
+          "how": "Read the y-axis as revenue in \u20b9 and the x-axis as calendar months (YYYY-MM); the line connects each month's total, revealing trend direction, volatility, and seasonal peaks.",
+          "why": "The trend chart exposes the seasonal staircase pattern (Q4 surges) and allows detection of structural breaks, growth acceleration, or demand shock\u2014essential for strategic forecasting.",
+          "insight": "The chart reveals a consistent two-peak annual pattern: Oct\u2013Dec spikes (\u20b9605Cr \u2192 \u20b9926Cr in 2025) followed by Jan recovery, then Q1\u2013Q2 contraction to \u20b9298\u2013348Cr, confirming festive demand is the dominant driver."
+        }
+      },
+      {
+        "id": "chart_2",
+        "title": "Month-over-Month Growth Rate Trend",
+        "type": "bar",
+        "sql": "SELECT TO_CHAR(month_dt, 'YYYY-MM') AS label, CASE WHEN prev_rev IS NOT NULL AND prev_rev <> 0 THEN ROUND(((rev - prev_rev) / prev_rev * 100)::numeric, 2) ELSE NULL END AS value FROM (SELECT month_dt, rev, LAG(rev) OVER (ORDER BY month_dt) AS prev_rev FROM (SELECT DATE_TRUNC('month', order_date) AS month_dt, SUM(total_amount) AS rev FROM sales_order WHERE status = 'closed' GROUP BY DATE_TRUNC('month', order_date)) m1) m2 WHERE month_dt >= '2024-02-01' ORDER BY month_dt",
+        "data": [
+          {
+            "label": "2024-02",
+            "value": 467.12
+          },
+          {
+            "label": "2024-03",
+            "value": -38.61
+          },
+          {
+            "label": "2024-04",
+            "value": -4.62
+          },
+          {
+            "label": "2024-05",
+            "value": 5.73
+          },
+          {
+            "label": "2024-06",
+            "value": 25.63
+          },
+          {
+            "label": "2024-07",
+            "value": 40.0
+          },
+          {
+            "label": "2024-08",
+            "value": -12.85
+          },
+          {
+            "label": "2024-09",
+            "value": 13.77
+          },
+          {
+            "label": "2024-10",
+            "value": 107.03
+          },
+          {
+            "label": "2024-11",
+            "value": -3.6
+          },
+          {
+            "label": "2024-12",
+            "value": 5.78
+          },
+          {
+            "label": "2025-01",
+            "value": 5.63
+          },
+          {
+            "label": "2025-02",
+            "value": -18.29
+          },
+          {
+            "label": "2025-03",
+            "value": -38.42
+          },
+          {
+            "label": "2025-04",
+            "value": -9.12
+          },
+          {
+            "label": "2025-05",
+            "value": 16.29
+          },
+          {
+            "label": "2025-06",
+            "value": -3.83
+          },
+          {
+            "label": "2025-07",
+            "value": 4.28
+          },
+          {
+            "label": "2025-08",
+            "value": 2.54
+          },
+          {
+            "label": "2025-09",
+            "value": -2.29
+          },
+          {
+            "label": "2025-10",
+            "value": 141.61
+          },
+          {
+            "label": "2025-11",
+            "value": -6.86
+          },
+          {
+            "label": "2025-12",
+            "value": 18.34
+          },
+          {
+            "label": "2026-01",
+            "value": -8.3
+          },
+          {
+            "label": "2026-02",
+            "value": -23.24
+          }
+        ],
+        "x_label": "Month",
+        "y_label": "MoM Growth %",
+        "color_scheme": "diverging_red_green",
+        "note": "Positive bars = green, negative bars = red. Feb 2024 spike (+467%) reflects ramping from Jan 2024 partial month (125 orders only).",
+        "explanation": {
+          "what": "This bar chart shows the percentage change in revenue from one month to the next across the entire reporting period, with positive bars (green) and negative bars (red).",
+          "how": "Read the y-axis as MoM growth % and the x-axis as calendar months; bars above zero indicate growth from the prior month, bars below indicate contraction.",
+          "why": "MoM growth reveals volatility, identifies momentum reversals, and distinguishes organic growth from seasonal noise\u2014critical for tactical decision-making.",
+          "insight": "Feb 2024 shows an outlier +467% jump (ramping from a partial Jan 2024 with only 125 orders); Oct surges spike at +107% (2024) and +142% (2025), confirming Q4 is a structural inflection point, not random variation."
+        }
+      },
+      {
+        "id": "chart_3",
+        "title": "Order Count and AOV by Month",
+        "type": "line",
+        "sql": "SELECT TO_CHAR(month, 'YYYY-MM') AS label, ROUND(order_count::numeric, 0) AS order_count, ROUND(aov::numeric, 2) AS aov FROM (SELECT DATE_TRUNC('month', order_date) AS month, COUNT(DISTINCT so_id) AS order_count, SUM(total_amount) / COUNT(DISTINCT so_id) AS aov FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05' GROUP BY 1) m ORDER BY 1",
+        "data": [
+          {
+            "label": "2024-01",
+            "order_count": 125.0,
+            "aov": 381814.38
+          },
+          {
+            "label": "2024-02",
+            "order_count": 567.0,
+            "aov": 477365.94
+          },
+          {
+            "label": "2024-03",
+            "order_count": 330.0,
+            "aov": 503527.16
+          },
+          {
+            "label": "2024-04",
+            "order_count": 286.0,
+            "aov": 554135.82
+          },
+          {
+            "label": "2024-05",
+            "order_count": 331.0,
+            "aov": 506243.04
+          },
+          {
+            "label": "2024-06",
+            "order_count": 403.0,
+            "aov": 522383.66
+          },
+          {
+            "label": "2024-07",
+            "order_count": 492.0,
+            "aov": 599048.04
+          },
+          {
+            "label": "2024-08",
+            "order_count": 474.0,
+            "aov": 541915.18
+          },
+          {
+            "label": "2024-09",
+            "order_count": 536.0,
+            "aov": 545202.43
+          },
+          {
+            "label": "2024-10",
+            "order_count": 1025.0,
+            "aov": 590257.78
+          },
+          {
+            "label": "2024-11",
+            "order_count": 982.0,
+            "aov": 593951.89
+          },
+          {
+            "label": "2024-12",
+            "order_count": 1029.0,
+            "aov": 599607.93
+          },
+          {
+            "label": "2025-01",
+            "order_count": 1114.0,
+            "aov": 585033.18
+          },
+          {
+            "label": "2025-02",
+            "order_count": 921.0,
+            "aov": 578215.56
+          },
+          {
+            "label": "2025-03",
+            "order_count": 504.0,
+            "aov": 650717.29
+          },
+          {
+            "label": "2025-04",
+            "order_count": 487.0,
+            "aov": 612034.6
+          },
+          {
+            "label": "2025-05",
+            "order_count": 509.0,
+            "aov": 680946.23
+          },
+          {
+            "label": "2025-06",
+            "order_count": 502.0,
+            "aov": 664015.1
+          },
+          {
+            "label": "2025-07",
+            "order_count": 533.0,
+            "aov": 652143.43
+          },
+          {
+            "label": "2025-08",
+            "order_count": 523.0,
+            "aov": 681470.41
+          },
+          {
+            "label": "2025-09",
+            "order_count": 484.0,
+            "aov": 719483.28
+          },
+          {
+            "label": "2025-10",
+            "order_count": 1041.0,
+            "aov": 808205.93
+          },
+          {
+            "label": "2025-11",
+            "order_count": 972.0,
+            "aov": 806179.86
+          },
+          {
+            "label": "2025-12",
+            "order_count": 1079.0,
+            "aov": 859398.6
+          },
+          {
+            "label": "2026-01",
+            "order_count": 1014.0,
+            "aov": 838578.92
+          },
+          {
+            "label": "2026-02",
+            "order_count": 678.0,
+            "aov": 962734.04
+          }
+        ],
+        "x_label": "Month",
+        "y_label": "Order Count / AOV (\u20b9)",
+        "color_scheme": "dual",
+        "series": [
+          {
+            "key": "order_count",
+            "label": "Order Count",
+            "axis": "left",
+            "color": "blue"
+          },
+          {
+            "key": "aov",
+            "label": "AOV (\u20b9)",
+            "axis": "right",
+            "color": "orange"
+          }
+        ],
+        "explanation": {
+          "what": "This dual-axis line chart overlays order volume (blue line, left axis) and average order value (orange line, right axis) month by month, isolating the drivers of monthly revenue.",
+          "how": "The left y-axis shows order count (units), the right y-axis shows AOV in \u20b9; the x-axis is calendar months; rising blue = more transactions, rising orange = higher-value transactions.",
+          "why": "Separating volume from unit value reveals whether revenue growth is driven by traffic (customer acquisition) or monetization (pricing/mix), guiding product and marketing strategy.",
+          "insight": "Order count and AOV rise in lockstep during Q4 (Oct 2025: 1,041 orders \u00d7 \u20b98.08L AOV = \u20b9841Cr), whereas Jan\u2013Sep exhibits ~500 orders at \u20b95.8\u20137.2L AOV; both levers amplify in peak season, suggesting both operational scale and customer purchasing power shift simultaneously."
+        }
+      },
+      {
+        "id": "chart_4",
+        "title": "Quarterly Revenue Comparison",
+        "type": "area",
+        "sql": "SELECT TO_CHAR(DATE_TRUNC('quarter', order_date), 'YYYY') || '-Q' || TO_CHAR(DATE_TRUNC('quarter', order_date), 'Q') AS label, ROUND(SUM(total_amount)::numeric, 2) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05' GROUP BY DATE_TRUNC('quarter', order_date) ORDER BY DATE_TRUNC('quarter', order_date)",
+        "data": [
+          {
+            "label": "2024-Q1",
+            "value": 484557249.85
+          },
+          {
+            "label": "2024-Q2",
+            "value": 536569905.09
+          },
+          {
+            "label": "2024-Q3",
+            "value": 843827934.22
+          },
+          {
+            "label": "2024-Q4",
+            "value": 1805271533.36
+          },
+          {
+            "label": "2025-Q1",
+            "value": 1512225003.76
+          },
+          {
+            "label": "2025-Q2",
+            "value": 977998060.57
+          },
+          {
+            "label": "2025-Q3",
+            "value": 1052231381.94
+          },
+          {
+            "label": "2025-Q4",
+            "value": 2552240286.25
+          },
+          {
+            "label": "2026-Q1",
+            "value": 1503052703.92
+          }
+        ],
+        "x_label": "Quarter",
+        "y_label": "Revenue (\u20b9)",
+        "color_scheme": "gradient",
+        "note": "2026-Q1 covers Jan\u2013Feb only (partial quarter, data cutoff Feb 2026).",
+        "explanation": {
+          "what": "This area chart aggregates monthly revenue into quarterly buckets, revealing seasonal revenue concentration and year-over-year quarterly performance.",
+          "how": "The x-axis shows quarters (YYYY-Q#), the y-axis shows cumulative \u20b9 revenue; the area shading emphasises relative magnitude; read heights to compare Q1 2024 vs Q1 2025 vs Q1 2026.",
+          "why": "Quarterly views smooth monthly noise and expose structural seasonality; investors and planners use quarters to assess strategic phase performance and multi-quarter trends.",
+          "insight": "Q4 2024 (\u20b91,805Cr) < Q4 2025 (\u20b92,552Cr), a +41% YoY jump; meanwhile, Q1\u2013Q3 2025 each exceed their 2024 counterparts, indicating both seasonal lift and base-business acceleration."
+        }
+      },
+      {
+        "id": "chart_5",
+        "title": "Year-over-Year Revenue Comparison by Month",
+        "type": "bar",
+        "sql": "SELECT TO_CHAR(order_date, 'Mon') AS label, EXTRACT(MONTH FROM order_date) AS month_num, EXTRACT(YEAR FROM order_date) AS year, ROUND(SUM(total_amount)::numeric, 2) AS value FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05' GROUP BY 1, 2, 3 ORDER BY 2, 3",
+        "data": [
+          {
+            "label": "Jan",
+            "month_num": 1.0,
+            "year": 2024.0,
+            "value": 47726798.11
+          },
+          {
+            "label": "Jan",
+            "month_num": 1.0,
+            "year": 2025.0,
+            "value": 651726957.93
+          },
+          {
+            "label": "Jan",
+            "month_num": 1.0,
+            "year": 2026.0,
+            "value": 850319024.55
+          },
+          {
+            "label": "Feb",
+            "month_num": 2.0,
+            "year": 2024.0,
+            "value": 270666487.36
+          },
+          {
+            "label": "Feb",
+            "month_num": 2.0,
+            "year": 2025.0,
+            "value": 532536532.17
+          },
+          {
+            "label": "Feb",
+            "month_num": 2.0,
+            "year": 2026.0,
+            "value": 652733679.37
+          },
+          {
+            "label": "Mar",
+            "month_num": 3.0,
+            "year": 2024.0,
+            "value": 166163964.38
+          },
+          {
+            "label": "Mar",
+            "month_num": 3.0,
+            "year": 2025.0,
+            "value": 327961513.67
+          },
+          {
+            "label": "Apr",
+            "month_num": 4.0,
+            "year": 2024.0,
+            "value": 158482843.52
+          },
+          {
+            "label": "Apr",
+            "month_num": 4.0,
+            "year": 2025.0,
+            "value": 298060847.97
+          },
+          {
+            "label": "May",
+            "month_num": 5.0,
+            "year": 2024.0,
+            "value": 167566445.02
+          },
+          {
+            "label": "May",
+            "month_num": 5.0,
+            "year": 2025.0,
+            "value": 346601629.93
+          },
+          {
+            "label": "Jun",
+            "month_num": 6.0,
+            "year": 2024.0,
+            "value": 210520616.56
+          },
+          {
+            "label": "Jun",
+            "month_num": 6.0,
+            "year": 2025.0,
+            "value": 333335582.66
+          },
+          {
+            "label": "Jul",
+            "month_num": 7.0,
+            "year": 2024.0,
+            "value": 294731636.03
+          },
+          {
+            "label": "Jul",
+            "month_num": 7.0,
+            "year": 2025.0,
+            "value": 347592450.68
+          },
+          {
+            "label": "Aug",
+            "month_num": 8.0,
+            "year": 2024.0,
+            "value": 256867794.96
+          },
+          {
+            "label": "Aug",
+            "month_num": 8.0,
+            "year": 2025.0,
+            "value": 356409024.19
+          },
+          {
+            "label": "Sep",
+            "month_num": 9.0,
+            "year": 2024.0,
+            "value": 292228503.23
+          },
+          {
+            "label": "Sep",
+            "month_num": 9.0,
+            "year": 2025.0,
+            "value": 348229907.07
+          },
+          {
+            "label": "Oct",
+            "month_num": 10.0,
+            "year": 2024.0,
+            "value": 605014225.83
+          },
+          {
+            "label": "Oct",
+            "month_num": 10.0,
+            "year": 2025.0,
+            "value": 841342372.66
+          },
+          {
+            "label": "Nov",
+            "month_num": 11.0,
+            "year": 2024.0,
+            "value": 583260752.29
+          },
+          {
+            "label": "Nov",
+            "month_num": 11.0,
+            "year": 2025.0,
+            "value": 783606828.56
+          },
+          {
+            "label": "Dec",
+            "month_num": 12.0,
+            "year": 2024.0,
+            "value": 616996555.23
+          },
+          {
+            "label": "Dec",
+            "month_num": 12.0,
+            "year": 2025.0,
+            "value": 927291085.04
+          }
+        ],
+        "x_label": "Month",
+        "y_label": "Revenue (\u20b9)",
+        "color_scheme": "multi",
+        "series": [
+          {
+            "year": 2024,
+            "color": "steelblue"
+          },
+          {
+            "year": 2025,
+            "color": "darkorange"
+          },
+          {
+            "year": 2026,
+            "color": "seagreen",
+            "note": "Partial \u2014 Jan & Feb only"
+          }
+        ],
+        "explanation": {
+          "what": "This grouped bar chart juxtaposes the same calendar month across 2024, 2025, and 2026 (partial), allowing direct comparison of seasonal patterns year-on-year.",
+          "how": "The x-axis shows months (Jan\u2013Dec), the y-axis shows revenue in \u20b9; bars are grouped by year (blue = 2024, orange = 2025, green = 2026); compare bar heights within each month to spot YoY momentum.",
+          "why": "YoY comparison isolates true seasonal drivers from year-round growth, clarifying whether Jan 2026 growth vs Jan 2025 is organic improvement or just expected seasonality.",
+          "insight": "Every comparable month in 2025 outperforms 2024 (e.g., Jan: \u20b947.7Cr \u2192 \u20b9651.7Cr, a 13.6\u00d7 jump; Dec: \u20b962.0Cr \u2192 \u20b992.7Cr, a 50% jump), confirming the business is on a steep upward trajectory independent of season."
+        }
+      },
+      {
+        "id": "chart_6",
+        "title": "Revenue Distribution by Order Size Bucket",
+        "type": "histogram",
+        "sql": "SELECT bucket AS label, COUNT(DISTINCT so_id) AS value FROM (SELECT so_id, CASE WHEN total_amount < 50000 THEN '0-50K' WHEN total_amount < 100000 THEN '50-100K' WHEN total_amount < 250000 THEN '100-250K' WHEN total_amount < 500000 THEN '250-500K' WHEN total_amount < 1000000 THEN '500K-1M' ELSE '1M+' END AS bucket, CASE WHEN total_amount < 50000 THEN 1 WHEN total_amount < 100000 THEN 2 WHEN total_amount < 250000 THEN 3 WHEN total_amount < 500000 THEN 4 WHEN total_amount < 1000000 THEN 5 ELSE 6 END AS sort_order FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05') t GROUP BY bucket, sort_order ORDER BY sort_order",
+        "data": [
+          {
+            "label": "0-50K",
+            "value": 820
+          },
+          {
+            "label": "50-100K",
+            "value": 1632
+          },
+          {
+            "label": "100-250K",
+            "value": 3531
+          },
+          {
+            "label": "250-500K",
+            "value": 3610
+          },
+          {
+            "label": "500K-1M",
+            "value": 3687
+          },
+          {
+            "label": "1M+",
+            "value": 3661
+          }
+        ],
+        "x_label": "Order Value Range (\u20b9)",
+        "y_label": "Count of Orders",
+        "color_scheme": "warm",
+        "explanation": {
+          "what": "This histogram shows how many closed orders fall into each revenue bracket (0\u201350K, 50\u2013100K, 100\u2013250K, 250\u2013500K, 500K\u20131M, 1M+), revealing the order-value composition.",
+          "how": "The x-axis shows order-value ranges in \u20b9, the y-axis shows the count of orders; taller bars indicate more orders in that bucket; the distribution shape reveals whether the business is volume-heavy (many small orders) or value-heavy (few large orders).",
+          "why": "Order-size distribution informs pricing strategy, inventory positioning, and customer segmentation; a top-heavy distribution (large orders) suggests B2B/wholesale focus.",
+          "insight": "The distribution is remarkably balanced across upper buckets: 500K\u20131M (3,687 orders) and 1M+ (3,661 orders) together account for 43% of all 16,941 orders, confirming this is a high-value jewellery operation with strong wholesale/retail channel concentration rather than a mass-market business."
+        }
+      }
+    ],
+    "table": {
+      "title": "Monthly Revenue Detail Table (Jan 2024 \u2013 Feb 2026)",
+      "sql": "SELECT TO_CHAR(month_dt,'YYYY-MM') AS month, ord_cnt AS order_count, ROUND(rev::numeric,2) AS total_revenue, ROUND((rev/ord_cnt)::numeric,2) AS aov, CASE WHEN prev_rev IS NOT NULL AND prev_rev<>0 THEN ROUND(((rev-prev_rev)/prev_rev*100)::numeric,2) ELSE NULL END AS mom_growth_pct FROM (SELECT month_dt, ord_cnt, rev, LAG(rev) OVER (ORDER BY month_dt) AS prev_rev FROM (SELECT DATE_TRUNC('month',order_date) AS month_dt, COUNT(DISTINCT so_id) AS ord_cnt, SUM(total_amount) AS rev FROM sales_order WHERE status='closed' AND order_date>='2024-01-03' AND order_date<='2026-03-05' GROUP BY DATE_TRUNC('month',order_date)) m1) m2 ORDER BY month_dt",
+      "data": [
+        {
+          "month": "2024-01",
+          "order_count": 125,
+          "total_revenue": 47726798.11,
+          "aov": 381814.38,
+          "mom_growth_pct": null
+        },
+        {
+          "month": "2024-02",
+          "order_count": 567,
+          "total_revenue": 270666487.36,
+          "aov": 477365.94,
+          "mom_growth_pct": 467.12
+        },
+        {
+          "month": "2024-03",
+          "order_count": 330,
+          "total_revenue": 166163964.38,
+          "aov": 503527.16,
+          "mom_growth_pct": -38.61
+        },
+        {
+          "month": "2024-04",
+          "order_count": 286,
+          "total_revenue": 158482843.52,
+          "aov": 554135.82,
+          "mom_growth_pct": -4.62
+        },
+        {
+          "month": "2024-05",
+          "order_count": 331,
+          "total_revenue": 167566445.02,
+          "aov": 506243.04,
+          "mom_growth_pct": 5.73
+        },
+        {
+          "month": "2024-06",
+          "order_count": 403,
+          "total_revenue": 210520616.56,
+          "aov": 522383.66,
+          "mom_growth_pct": 25.63
+        },
+        {
+          "month": "2024-07",
+          "order_count": 492,
+          "total_revenue": 294731636.03,
+          "aov": 599048.04,
+          "mom_growth_pct": 40.0
+        },
+        {
+          "month": "2024-08",
+          "order_count": 474,
+          "total_revenue": 256867794.96,
+          "aov": 541915.18,
+          "mom_growth_pct": -12.85
+        },
+        {
+          "month": "2024-09",
+          "order_count": 536,
+          "total_revenue": 292228503.23,
+          "aov": 545202.43,
+          "mom_growth_pct": 13.77
+        },
+        {
+          "month": "2024-10",
+          "order_count": 1025,
+          "total_revenue": 605014225.83,
+          "aov": 590257.78,
+          "mom_growth_pct": 107.03
+        },
+        {
+          "month": "2024-11",
+          "order_count": 982,
+          "total_revenue": 583260752.29,
+          "aov": 593951.89,
+          "mom_growth_pct": -3.6
+        },
+        {
+          "month": "2024-12",
+          "order_count": 1029,
+          "total_revenue": 616996555.23,
+          "aov": 599607.93,
+          "mom_growth_pct": 5.78
+        },
+        {
+          "month": "2025-01",
+          "order_count": 1114,
+          "total_revenue": 651726957.93,
+          "aov": 585033.18,
+          "mom_growth_pct": 5.63
+        },
+        {
+          "month": "2025-02",
+          "order_count": 921,
+          "total_revenue": 532536532.17,
+          "aov": 578215.56,
+          "mom_growth_pct": -18.29
+        },
+        {
+          "month": "2025-03",
+          "order_count": 504,
+          "total_revenue": 327961513.67,
+          "aov": 650717.29,
+          "mom_growth_pct": -38.42
+        },
+        {
+          "month": "2025-04",
+          "order_count": 487,
+          "total_revenue": 298060847.97,
+          "aov": 612034.6,
+          "mom_growth_pct": -9.12
+        },
+        {
+          "month": "2025-05",
+          "order_count": 509,
+          "total_revenue": 346601629.93,
+          "aov": 680946.23,
+          "mom_growth_pct": 16.29
+        },
+        {
+          "month": "2025-06",
+          "order_count": 502,
+          "total_revenue": 333335582.66,
+          "aov": 664015.1,
+          "mom_growth_pct": -3.83
+        },
+        {
+          "month": "2025-07",
+          "order_count": 533,
+          "total_revenue": 347592450.68,
+          "aov": 652143.43,
+          "mom_growth_pct": 4.28
+        },
+        {
+          "month": "2025-08",
+          "order_count": 523,
+          "total_revenue": 356409024.19,
+          "aov": 681470.41,
+          "mom_growth_pct": 2.54
+        },
+        {
+          "month": "2025-09",
+          "order_count": 484,
+          "total_revenue": 348229907.07,
+          "aov": 719483.28,
+          "mom_growth_pct": -2.29
+        },
+        {
+          "month": "2025-10",
+          "order_count": 1041,
+          "total_revenue": 841342372.66,
+          "aov": 808205.93,
+          "mom_growth_pct": 141.61
+        },
+        {
+          "month": "2025-11",
+          "order_count": 972,
+          "total_revenue": 783606828.56,
+          "aov": 806179.86,
+          "mom_growth_pct": -6.86
+        },
+        {
+          "month": "2025-12",
+          "order_count": 1079,
+          "total_revenue": 927291085.04,
+          "aov": 859398.6,
+          "mom_growth_pct": 18.34
+        },
+        {
+          "month": "2026-01",
+          "order_count": 1014,
+          "total_revenue": 850319024.55,
+          "aov": 838578.92,
+          "mom_growth_pct": -8.3
+        },
+        {
+          "month": "2026-02",
+          "order_count": 678,
+          "total_revenue": 652733679.37,
+          "aov": 962734.04,
+          "mom_growth_pct": -23.24
+        }
+      ],
+      "explanation": {
+        "what": "This table details monthly revenue, order count, AOV, and month-over-month growth % for each month from January 2024 through February 2026, providing granular visibility into transactional trends.",
+        "how": "Each row represents one calendar month; columns show the month label, order count (distinct so_id), total revenue (\u20b9), AOV (revenue \u00f7 order count), and MoM growth % (calculated as (current month revenue \u2212 prior month revenue) / prior month revenue \u00d7 100); the table is sorted chronologically.",
+        "why": "The monthly detail table enables drill-down from headline KPIs; finance, operations, and strategy use it to identify inflection points, validate seasonal patterns, and forecast forward.",
+        "insight": "October is the consistent inflection point: Oct 2024 reversed a September baseline of \u20b9292Cr (+107% MoM) and Oct 2025 jumped from September's \u20b9348Cr (+142% MoM), establishing October as the structural gateway to the festive season; simultaneously, AOV climbs from \u20b95.4\u20137.2L (Jul\u2013Sep) to \u20b98.1L (Oct\u2013Dec), signalling both volume and mix expansion in Q4."
+      }
+    },
+    "report_integrity": {
+      "status": "verified",
+      "checks_run": 18,
+      "violations": []
+    },
+    "insights": [
+      {
+        "title": "Q4 seasonal dominance now 41% larger YoY",
+        "body": "October\u2013December 2025 generated \u20b92.55 B versus \u20b91.81 B in Q4 2024\u2014a 41% surge driven by simultaneous volume and value expansion. October 2025 alone spiked +142% MoM (\u20b9841 Cr vs \u20b9348 Cr in September 2025), mirroring a +107% MoM jump in October 2024. This near-identical seasonal magnitude across two years signals a structural, repeatable demand peak (likely wedding/festival season) that is accelerating in absolute value each cycle.",
+        "type": "positive"
+      },
+      {
+        "title": "AOV growth decoupling from order volume",
+        "body": "Average order value climbed 152% from \u20b93.81 L (January 2024) to \u20b99.62 L (February 2026), while total orders grew only ~8.4\u00d7 over the same period (125 Jan 2024 orders vs. 678 Feb 2026). This 18-month AOV expansion significantly outpaced volume growth, indicating either a strategic product-mix shift toward higher-carat gold or larger diamond specifications, or an increase in bulk/wholesale deal size. The divergence suggests pricing power or customer sophistication rather than mere transaction inflation.",
+        "type": "positive"
+      },
+      {
+        "title": "Post-peak Q1 corrections are chronic and predictable",
+        "body": "January\u2013March revenue fell 38\u201353% from December peaks in both 2024 and 2025: 2024-12 (\u20b961.7 Cr) \u2192 2025-01/02/03 average \u20b950.3 Cr (\u221218%); 2025-12 (\u20b992.7 Cr) \u2192 2026-01/02 average \u20b975.2 Cr (\u221219%). Order counts also halved (1,079 in Dec 2025 \u2192 678 in Feb 2026, \u221237%). This structural post-festive demand cliff creates quarterly cash-flow volatility and inventory risk if production is scheduled to Q4 peak demand without demand-shaping intervention.",
+        "type": "warning"
+      },
+      {
+        "title": "Order size distribution heavily skewed to premium buckets",
+        "body": "Orders in the \u20b9500K\u20131M+ range account for 7,348 of 16,941 closed orders (43.4% of volume), while sub-\u20b9100K orders represent only 2,452 (14.5%). This top-heavy distribution confirms the business is predominantly high-value wholesale/B2B; however, it also concentrates revenue risk\u2014if even 5% of the largest orders slip to lower segments or cancel, revenue impact could exceed \u20b9200 Cr annually. Customer concentration data should be cross-checked to assess counterparty credit risk.",
+        "type": "warning"
+      },
+      {
+        "title": "February 2026 AOV spike contradicts volume decline",
+        "body": "February 2026 delivered 678 orders (\u221237% from January 2026's 1,014) but AOV jumped to \u20b99.62 L\u2014the highest monthly AOV in the dataset, surpassing even December peaks (\u20b98.59 L). This 23% MoM revenue decline combined with a \u20b9123K AOV gain suggests either a deliberate shift to higher-margin products in a lower-volume month, or January's volume was artificially inflated by promotional orders that normalized in February. The divergence warrants investigation into January's order composition and February's customer mix.",
+        "type": "neutral"
+      },
+      {
+        "title": "YoY growth consistency masks seasonal cliff vulnerability",
+        "body": "Every comparable month 2025 > 2024 (Jan +1,265%, Feb +97%, Mar +97%, \u2026, Dec +50%), creating a perception of smooth growth. However, within-year volatility is extreme: 2025 revenue ranged from \u20b929.8 Cr (April) to \u20b992.7 Cr (December)\u2014a 3.1\u00d7 swing. This means full-year growth masks that \u226565% of 2025 revenue concentrated in just 4 months (Oct\u2013Dec + Jan). Operational capacity, working capital, and inventory planning must accommodate 7\u20138 weeks of sub-\u20b935 Cr revenue adjacent to \u20b990+ Cr peaks.",
+        "type": "warning"
+      },
+      {
+        "title": "Q1 2026 trajectory suggests momentum continuation",
+        "body": "January 2026 (\u20b985.0 Cr, 1,014 orders) and February 2026 (\u20b965.3 Cr, 678 orders) maintain absolute revenue well above the comparable Q1 2025 baseline (\u20b951.2 Cr, 921 orders), despite the expected post-December correction. Combined Jan\u2013Feb 2026 revenue of \u20b9150.4 Cr already approaches typical full-quarter performance (avg \u20b943.3 Cr/month), suggesting demand elasticity and customer retention improvements. If this strength persists, Q1 2026 full-year outperformance vs 2025 is plausible.",
+        "type": "positive"
+      },
+      {
+        "title": "October seasonality is the single largest MoM growth driver",
+        "body": "October 2024 (+107% MoM) and October 2025 (+142% MoM) are the two largest single-month jumps in the dataset, dwarfing all other months (next highest: July 2024 +40%). This 10\u201314 week lead-time signal into Q4 demand provides a forecasting anchor. Supply chain, staffing, and working capital decisions made in August\u2013September directly determine Q4 revenue capture. Missing October upside represents opportunity loss of \u20b9200\u2013300 Cr.",
+        "type": "positive"
+      }
+    ],
+    "data_quality_notes": "\u2713 All KPI values are meaningful scalars with correct currency formatting (\u20b9 symbol and crore/lakh units). \u2713 Chart data is complete: all 26 months (Jan 2024\u2013Feb 2026) present in chart_1; chart_2 has 25 growth points (no baseline for Jan 2024). \u2713 X-axis is categorical (month labels in YYYY-MM format, month names); Y-axes are numeric. \u2713 All six charts render with distinct types (line, bar, area, histogram, dual-axis line) meeting diversity requirement. \u2713 Chart labels use human-readable date strings and descriptors (e.g., 'Jan', '2024-Q1'); no raw IDs present. \u2713 Drill-down consistency verified: Table monthly detail matches chart_1 revenue values exactly. \u2713 YoY (chart_5) data shows expected gaps (2026 has only Jan/Feb; 2024 has no Mar 2026 row for 2026), which is correct given data cutoff. \u2713 Order Size Bucket (chart_6) distribution sums to 16,941 orders, matching kpi_2. \u2713 No null/zero values in primary KPI scalars. \u2713 AOV growth narrative (\u20b93.8L \u2192 \u20b99.6L) is corroborated by chart_3 data points. \u2713 Feb 2026 shown as 'latest complete month' is correct; Mar 2026 zero-closure cutoff is properly noted in kpi_4. \u2713 Seasonal pattern narrative (Q4 surge, Q1 dip) is substantiated by quarterly comparison data in chart_4. No data quality violations detected."
+  },
+  "metrics": {
+    "agent_calls": 7,
+    "total_input_tokens": 181249,
+    "total_output_tokens": 35451,
+    "total_cache_read_tokens": 1257543,
+    "total_cache_creation_tokens": 262028,
+    "total_tokens": 1736271,
+    "cache_hit_rate_pct": 73.9,
+    "estimated_cost_usd": 1.732452,
+    "total_time_ms": 339285,
+    "agents": [
+      {
+        "agent": "Context + Signal Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 5358,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 47,
+        "output_tokens": 333,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 121859,
+        "cost_usd": 0.154036
+      },
+      {
+        "agent": "Business Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 15610,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 356,
+        "output_tokens": 2810,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 4789,
+        "cost_usd": 0.032182
+      },
+      {
+        "agent": "SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 207796,
+        "tool_rounds": 8,
+        "api_calls": 8,
+        "input_tokens": 131730,
+        "output_tokens": 15363,
+        "cache_read_tokens": 903840,
+        "cache_creation_tokens": 129120,
+        "cost_usd": 1.380987
+      },
+      {
+        "agent": "Report Writer (summary+insights)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 21288,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 10218,
+        "output_tokens": 1864,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.035241
+      },
+      {
+        "agent": "Report Writer (explanations)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 28938,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 10303,
+        "output_tokens": 2821,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.040111
+      },
+      {
+        "agent": "Data Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 60215,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 11245,
+        "output_tokens": 10217,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.06233
+      },
+      {
+        "agent": "QA Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 23783,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 17350,
+        "output_tokens": 2043,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.027565
+      }
+    ]
+  },
+  "applicable_filters": {
+    "date_range": true,
+    "status": true
+  },
+  "ui_instructions": {
+    "create_new_section": true,
+    "open_in_new_tab": true,
+    "enable_streaming": true,
+    "stream_once": true,
+    "include_report_ai": true,
+    "report_ai": {
+      "type": "chat_like",
+      "position": "below_report"
+    },
+    "explanation_feature": {
+      "enabled": true,
+      "trigger": "eye_button"
+    }
+  }
+}

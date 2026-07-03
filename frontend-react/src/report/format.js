@@ -56,12 +56,12 @@ export function formatNum(val, currency) {
 // Color palettes (ported). Returns `count` colors, cycling if needed.
 const PALETTES = {
   blues: ["#3b82f6", "#2563eb", "#1d4ed8", "#60a5fa", "#93c5fd", "#1e40af"],
-  golds: ["#d4af37", "#b8860b", "#daa520", "#f0c75e", "#9c7a1a", "#e8c252"],
+  golds: ["#DB8310", "#b86a08", "#F8D57C", "#f0c75e", "#9c7a1a", "#e8c252"],
   purples: ["#8b5cf6", "#7c3aed", "#a78bfa", "#6d28d9", "#c4b5fd", "#5b21b6"],
   oranges: ["#f97316", "#ea580c", "#fb923c", "#c2410c", "#fdba74", "#9a3412"],
   mixed: ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#3b82f6",
           "#ef4444", "#14b8a6", "#f97316", "#a855f7", "#06b6d4", "#84cc16",
-          "#e11d48", "#0ea5e9", "#d4af37"],
+          "#e11d48", "#0ea5e9", "#DB8310"],
   gradient: ["#6366f1", "#7c74f0", "#9583ef", "#ad8fee", "#c49ced", "#dba9ec"],
 };
 

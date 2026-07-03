@@ -5,7 +5,7 @@ export default function ExplainModal({ title, explanation, sql, t, onClose }) {
   const sections = [
     ["What it shows", e.what, "#3b82f6"],
     ["How it's built", e.how, "#8b5cf6"],
-    ["Why it matters", e.why, "#d4af37"],
+    ["Why it matters", e.why, "#DB8310"],
     ["Key insight", e.insight, "#f59e0b"],
   ].filter(([, v]) => v);
 

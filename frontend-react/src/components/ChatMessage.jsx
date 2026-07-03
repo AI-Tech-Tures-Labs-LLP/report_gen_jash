@@ -177,11 +177,19 @@ export default function ChatMessage({ msg, t, themeMode }) {
   if (msg.role === "user") {
     return (
       <div style={{ display: "flex", justifyContent: "flex-end", margin: "0.6rem 0" }}>
-        <div style={{
-          background: t.userBubble, color: t.userText,
-          padding: "0.7rem 1rem", borderRadius: "14px 14px 4px 14px",
-          maxWidth: "75%", fontSize: "0.92rem", lineHeight: 1.5, whiteSpace: "pre-wrap",
-        }}>
+        <div
+          style={{
+            background: t.userBubble,
+            color: t.userText,
+            WebkitTextFillColor: t.userText,
+            padding: "0.7rem 1rem",
+            borderRadius: "14px 14px 4px 14px",
+            maxWidth: "75%",
+            fontSize: "0.92rem",
+            lineHeight: 1.5,
+            whiteSpace: "pre-wrap",
+          }}
+        >
           {msg.text}
         </div>
       </div>

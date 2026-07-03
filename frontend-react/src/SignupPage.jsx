@@ -71,7 +71,7 @@ export default function SignupPage({ onSignup }) {
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Full Name</label>
             <div style={styles.inputWrapper}>
-              <svg style={styles.inputIcon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b8860b" strokeWidth="1.8">
+              <svg style={styles.inputIcon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b86a08" strokeWidth="1.8">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
@@ -91,7 +91,7 @@ export default function SignupPage({ onSignup }) {
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Email</label>
             <div style={styles.inputWrapper}>
-              <svg style={styles.inputIcon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b8860b" strokeWidth="1.8">
+              <svg style={styles.inputIcon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b86a08" strokeWidth="1.8">
                 <rect x="2" y="4" width="20" height="16" rx="2" />
                 <path d="M22 7l-10 7L2 7" />
               </svg>
@@ -110,7 +110,7 @@ export default function SignupPage({ onSignup }) {
           <div style={styles.fieldGroup}>
             <label style={styles.label}>Password</label>
             <div style={styles.inputWrapper}>
-              <svg style={styles.inputIcon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b8860b" strokeWidth="1.8">
+              <svg style={styles.inputIcon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#b86a08" strokeWidth="1.8">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
@@ -202,7 +202,7 @@ export default function SignupPage({ onSignup }) {
           50% { transform: translate(25px, 25px) scale(1.04); }
         }
         .login-input:focus {
-          border-color: #d4af37 !important;
+          border-color: #DB8310 !important;
           box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12) !important;
         }
         .login-input::placeholder { color: #c0c7d0; }
@@ -220,12 +220,12 @@ const styles = {
   wrapper: {
     minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
     background: "linear-gradient(135deg, #fefefe 0%, #faf8f3 30%, #f5f0e8 60%, #fefefe 100%)",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    fontFamily: "'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     position: "relative", overflow: "hidden", padding: "2rem",
   },
   bgOrb1: {
     position: "absolute", width: 400, height: 400, borderRadius: "50%",
-    background: "radial-gradient(circle, rgba(212,175,55,0.08) 0%, transparent 70%)",
+    background: "radial-gradient(circle, rgba(219,131,16,0.08) 0%, transparent 70%)",
     top: "-10%", right: "-5%", animation: "float1 20s ease-in-out infinite", pointerEvents: "none",
   },
   bgOrb2: {
@@ -235,14 +235,14 @@ const styles = {
   },
   bgOrb3: {
     position: "absolute", width: 200, height: 200, borderRadius: "50%",
-    background: "radial-gradient(circle, rgba(212,175,55,0.05) 0%, transparent 70%)",
+    background: "radial-gradient(circle, rgba(219,131,16,0.05) 0%, transparent 70%)",
     top: "40%", left: "60%", animation: "float3 18s ease-in-out infinite", pointerEvents: "none",
   },
   container: {
     width: "100%", maxWidth: 420, background: "rgba(255, 255, 255, 0.85)",
     backdropFilter: "blur(40px)", WebkitBackdropFilter: "blur(40px)",
     borderRadius: 24, border: "1px solid rgba(212, 175, 55, 0.15)",
-    boxShadow: "0 4px 24px rgba(0,0,0,0.04), 0 12px 48px rgba(212,175,55,0.06)",
+    boxShadow: "0 4px 24px rgba(0,0,0,0.04), 0 12px 48px rgba(219,131,16,0.06)",
     padding: "2.5rem 2.25rem 2rem", position: "relative", zIndex: 1,
     transition: "opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)",
   },
@@ -250,13 +250,13 @@ const styles = {
   logoOuter: { display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "1rem" },
   logoInner: {
     width: 56, height: 56,
-    background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+    background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
     borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center",
-    color: "#fff", boxShadow: "0 4px 20px rgba(212,175,55,0.35)",
+    color: "#fff", boxShadow: "0 4px 20px rgba(219,131,16,0.35)",
   },
   title: {
     fontSize: "1.5rem", fontWeight: 800, margin: "0 0 0.35rem",
-    background: "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)",
+    background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
     WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: "-0.02em",
   },
   subtitle: { fontSize: "0.88rem", color: "#8b96a3", fontWeight: 400, lineHeight: 1.5, margin: 0 },
@@ -289,9 +289,9 @@ const styles = {
   },
   submitBtn: {
     width: "100%", padding: "0.8rem", fontSize: "0.92rem", fontWeight: 600, color: "#ffffff",
-    background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+    background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
     border: "none", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center",
-    boxShadow: "0 4px 16px rgba(212,175,55,0.3)",
+    boxShadow: "0 4px 16px rgba(219,131,16,0.3)",
     transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
     fontFamily: "inherit", letterSpacing: "0.01em", marginTop: "0.25rem",
   },
@@ -305,6 +305,6 @@ const styles = {
     color: "#8b96a3", fontWeight: 400,
   },
   footerLink: {
-    color: "#b8860b", fontWeight: 600, fontSize: "0.82rem", textDecoration: "none",
+    color: "#b86a08", fontWeight: 600, fontSize: "0.82rem", textDecoration: "none",
   },
 };

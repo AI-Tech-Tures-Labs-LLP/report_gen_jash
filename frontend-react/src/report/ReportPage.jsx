@@ -7,15 +7,14 @@ import ModifyPanel from "./ModifyPanel.jsx";
 import FilterBar from "./FilterBar.jsx";
 import PlaceholderCard from "./PlaceholderCard.jsx";
 import { exportPDF, exportExcel } from "./exporters.js";
-import { logMetrics } from "../api.js";
+import { logMetrics, fetchReport, updateReportData } from "../api.js";
 
 export default function ReportPage() {
   const params = new URLSearchParams(window.location.search);
   const reportId = params.get("id");
 
-  const [themeMode] = useState(
-    () => (reportId && localStorage.getItem("sqlbot_report_" + reportId + "_theme")) || "light"
-  );
+  // Theme comes from the URL (openReport passes it) — no localStorage needed.
+  const [themeMode] = useState(() => params.get("theme") || "light");
   const t = getTheme(themeMode);
 
   const [payload, setPayload] = useState(null);
@@ -36,18 +35,21 @@ export default function ReportPage() {
       setLoadError("No report specified. Generate a report from the chat to view it here.");
       return;
     }
-    try {
-      const raw = localStorage.getItem("sqlbot_report_" + reportId);
-      if (!raw) {
-        setLoadError("Report not found. It may have expired — generate it again from the chat.");
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      setPayload(parsed);
-      if (parsed && parsed.metrics) logMetrics(parsed.metrics, "report");
-    } catch {
-      setLoadError("Failed to load this report. Please generate it again from the chat.");
-    }
+    // Fetch from MongoDB (source of truth). fetchReport retries briefly on 404 to
+    // cover the case where this tab opened before the background save finished.
+    let cancelled = false;
+    setLoadError("");
+    fetchReport(reportId)
+      .then((parsed) => {
+        if (cancelled) return;
+        setPayload(parsed);
+        if (parsed && parsed.metrics) logMetrics(parsed.metrics, "report");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadError("Report not found. It may have been deleted — generate it again from the chat.");
+      });
+    return () => { cancelled = true; };
   }, [reportId, themeMode, t.bg]);
 
   // ── Cross-tab sync via BroadcastChannel 'report_sync' ──────────────────
@@ -65,11 +67,13 @@ export default function ReportPage() {
     } catch { /* BroadcastChannel may be absent */ }
   }, [reportId]);
 
-  // Persist + broadcast a report mutation.
+  // Persist + broadcast a report mutation. Saves the updated payload back to MongoDB
+  // (the source of truth) so edits survive reload, and broadcasts to any other open
+  // tabs for the same report. No localStorage copy is kept.
   const persist = useCallback((newReport) => {
     setPayload((p) => {
       const next = { ...(p || {}), report: newReport };
-      try { localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(next)); } catch { /* */ }
+      updateReportData(reportId, next);
       return next;
     });
     try {
@@ -289,7 +293,7 @@ export default function ReportPage() {
               {kpiVisible.map((k, i) => {
                 const rawIdx = rawKpiIndex(i);
                 const kpiGradients = [
-                  "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                  "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
                   "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
                   "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
                   "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",

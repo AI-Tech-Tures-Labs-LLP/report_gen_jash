@@ -19,6 +19,7 @@ from db.user_data import (
     get_user_conversations,
     get_conversation,
     delete_conversation,
+    rename_conversation,
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -28,6 +29,10 @@ class SaveConversationRequest(BaseModel):
     conv_id: str
     title: str
     messages: List[Dict[str, Any]]
+
+
+class RenameConversationRequest(BaseModel):
+    title: str
 
 
 @router.get("")
@@ -63,6 +68,20 @@ def save_conv(req: SaveConversationRequest, current_user: dict = Depends(get_cur
         title=req.title,
         messages=req.messages,
     )
+    return {"ok": True}
+
+
+@router.patch("/{conv_id}")
+def rename_conv(conv_id: str, req: RenameConversationRequest,
+                current_user: dict = Depends(get_current_user)):
+    """Rename a conversation (updates only the title — no message reload).
+    The default title is the first query text; this lets the user override it."""
+    title = (req.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    ok = rename_conversation(current_user["user_id"], conv_id, title)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     return {"ok": True}
 
 

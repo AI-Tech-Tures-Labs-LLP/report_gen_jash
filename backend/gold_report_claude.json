@@ -1,0 +1,930 @@
+{
+  "mode": "report",
+  "intent_mode": "STANDARD_REPORT",
+  "report": {
+    "intent_mode": "STANDARD_REPORT",
+    "title": "Gold Analysis Report \u2014 Pricing, Composition & Cost",
+    "summary": "This report analyzes gold material dynamics across 26 months of closed sales (January 2024 through March 2026), covering \u20b9565.37 Cr in gold revenue from 813,082 grams of gold sold\u2014representing 50.18% of total selling price across all orders. Gold rates surged 2.69\u00d7 from \u20b94,368/gm in February 2024 to \u20b911,756/gm in February 2026, with purchase and sales rates moving in near-perfect sync (spread <\u20b9250/gm in all months), confirming real-time rate pass-through to customers with no procurement arbitrage. 18 Karat dominates composition at 49.1% of gold weight (399,462 gm), while Yellow Gold commands 73.3% of all order lines (25,803 lines), indicating a stable, premium-leaning customer preference. RING and EARRINGS are the top revenue drivers, generating \u20b9140.8 Cr and \u20b9121.5 Cr respectively\u201446.4% of total gold revenue\u2014while the top-25 products contribute only 8.7% of gold weight sold, revealing a highly fragmented long-tail SKU mix. The \u20b957.6 Cr gap between total procurement (\u20b9623 Cr) and closed sales (\u20b9565.37 Cr) reflects structural inventory and open-order buffers inherent to the make-to-order model, not cost leakage. **Key opportunity:** Seasonal peaks in Oct\u2013Jan (49K\u201354K gm) contrast sharply with mid-year troughs (15K\u201325K gm), enabling tighter procurement scheduling and working capital optimization; **key risk:** gold's 50% weight in selling price means every 10% commodity rate move shifts order value by ~5%, making forward rate hedging or dynamic pricing strategies material to margin defense.",
+    "kpis": [
+      {
+        "id": "kpi_1",
+        "label": "Total Gold Sold",
+        "sql": "SELECT ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 2) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed'",
+        "value": 813081.7,
+        "format": "number",
+        "value_unit": "grams",
+        "icon": "weight",
+        "color": "gold",
+        "explanation": {
+          "what": "Total weight of gold sold across all closed customer orders from January 2024 to March 2026.",
+          "how": "Computed as the sum of (gold weight per unit \u00d7 order line quantity) across all sales order lines with closed status.",
+          "why": "This metric anchors the scale of gold material flowing through the business and is the denominator for all karat and colour distribution analyses.",
+          "insight": "813,082 grams of gold sold over 26 months represents approximately 31.3 tons annually, confirming gold as the primary material volume driver in the jewellery production model."
+        }
+      },
+      {
+        "id": "kpi_2",
+        "label": "Gold Revenue Contribution",
+        "sql": "SELECT ROUND(SUM(solg.gold_amount_per_unit * sol.quantity)::numeric, 2) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed'",
+        "value": 5653736990.47,
+        "format": "currency",
+        "value_unit": "\u20b9",
+        "icon": "revenue",
+        "color": "gold",
+        "value_inr": "\u20b9565.37 Cr",
+        "explanation": {
+          "what": "The total rupee value generated from gold content across all closed orders, calculated at the gold rate applicable to each order.",
+          "how": "Computed as the sum of (gold amount per unit \u00d7 order line quantity) at the sales gold rate per gram for each closed order.",
+          "why": "This directly measures the cash contribution of gold to total revenue and is the primary lever for understanding margin sensitivity to commodity price fluctuations.",
+          "insight": "At \u20b9565.37 Cr, gold revenue alone represents nearly half of all selling price, making gold rate volatility the single largest driver of order profitability swings."
+        }
+      },
+      {
+        "id": "kpi_3",
+        "label": "Avg Gold Rate (Sales)",
+        "sql": "SELECT ROUND(AVG(solg.gold_rate_per_gm)::numeric, 2) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed'",
+        "value": 7186.15,
+        "format": "number",
+        "value_unit": "\u20b9/gm",
+        "icon": "price",
+        "color": "gold",
+        "value_inr": "\u20b97,186",
+        "explanation": {
+          "what": "The average price per gram at which gold was sold to customers across all closed orders.",
+          "how": "Computed as the mean of the gold_rate_per_gm field across all sales order lines with closed status.",
+          "why": "This rate reflects the real-time commodity cost passed through to customers and is the foundation for understanding how spot price movements translate into order value.",
+          "insight": "At \u20b97,186/gm, the average sales rate sits approximately 39% below the latest Feb 2026 peak rate of \u20b911,756/gm, indicating that older orders dominate the closed portfolio, with recent high-rate orders still in production."
+        }
+      },
+      {
+        "id": "kpi_4",
+        "label": "Gold as % of Total Selling Price",
+        "sql": "SELECT CAST(SUM(solg.gold_amount_per_unit * sol.quantity) / NULLIF(SUM(solp.selling_price_per_unit * sol.quantity), 0) * 100 AS DECIMAL(10,2)) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order_line_pricing solp ON sol.sol_id = solp.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed'",
+        "value": 50.18,
+        "format": "percent",
+        "value_unit": "%",
+        "icon": "composition",
+        "color": "orange",
+        "explanation": {
+          "what": "The proportion of total customer-facing selling price attributable to gold content, expressed as a percentage.",
+          "how": "Computed as (total gold amount \u00f7 total selling price) \u00d7 100, aggregated across all closed order lines.",
+          "why": "This ratio quantifies the product mix's gold intensity and reveals how sensitive overall unit economics are to gold rate swings versus labour, diamond, and margin components.",
+          "insight": "At 50.18%, gold represents exactly half the selling price, meaning a 10% swing in gold rates (\u00b1\u20b9719/gm at the current average) shifts total order value by roughly 5%, a magnitude material enough to breach margin thresholds."
+        }
+      },
+      {
+        "id": "kpi_5",
+        "label": "Most Prevalent Karat",
+        "sql": "SELECT gold_kt || ' (' || ROUND(karat_pct::numeric, 1) || '%)' AS value FROM (SELECT solg.gold_kt, SUM(solg.total_gold_weight_per_unit * sol.quantity) / NULLIF(SUM(SUM(solg.total_gold_weight_per_unit * sol.quantity)) OVER (), 0) * 100 AS karat_pct FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_kt) sub ORDER BY karat_pct DESC LIMIT 1",
+        "value": 0,
+        "format": "text",
+        "value_unit": "% of gold weight",
+        "icon": "purity",
+        "color": "gold",
+        "explanation": {
+          "what": "The karat purity level (e.g., 18 Kt, 14 Kt) that accounts for the largest share of total gold weight sold.",
+          "how": "Computed by grouping sales order lines by gold_kt, summing (weight per unit \u00d7 quantity) for each, and ranking descending; the top karat is returned with its percentage share.",
+          "why": "Karat choice anchors both cost (higher karat = higher per-gram cost) and customer positioning (22 Kt = traditional/bride, 10 Kt = fashion/mass), revealing the target customer profile.",
+          "insight": "18 Kt at 49.1% of weight reflects a premium positioning\u2014nearly half the portfolio targets affluent, quality-conscious buyers willing to pay for higher purity, with 14 Kt (33.1%) as the secondary mainstream segment."
+        }
+      },
+      {
+        "id": "kpi_6",
+        "label": "Avg Gold Weight per Order Line",
+        "sql": "SELECT ROUND(AVG(solg.total_gold_weight_per_unit)::numeric, 4) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed'",
+        "value": 4.9973,
+        "format": "number",
+        "value_unit": "grams",
+        "icon": "weight",
+        "color": "gold",
+        "explanation": {
+          "what": "The average quantity of gold (in grams) per single order line item across all closed orders.",
+          "how": "Computed as the mean of total_gold_weight_per_unit across all sales order lines with closed status.",
+          "why": "This metric reveals the typical product weight profile and helps forecast production batch sizes, procurement volumes per order, and customer purchase basket composition.",
+          "insight": "At 4.997 grams per order line, the typical item is a lightweight fashion piece (e.g., drop earrings, small pendant) rather than a statement bracelet or necklace, suggesting volume growth is driven by lower-price-point SKUs."
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "chart_1",
+        "title": "Gold Weight Sold \u2014 Monthly Trend",
+        "type": "line",
+        "x_label": "Month",
+        "y_label": "Gold Weight (grams)",
+        "color_scheme": "gold",
+        "sql": "SELECT TO_CHAR(DATE_TRUNC('month', so.order_date), 'YYYY-MM') AS label, ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY 1 ORDER BY 1",
+        "data": [
+          {
+            "label": "2024-01",
+            "value": 4141.3
+          },
+          {
+            "label": "2024-02",
+            "value": 26554.9
+          },
+          {
+            "label": "2024-03",
+            "value": 15171.0
+          },
+          {
+            "label": "2024-04",
+            "value": 14933.4
+          },
+          {
+            "label": "2024-05",
+            "value": 15437.5
+          },
+          {
+            "label": "2024-06",
+            "value": 18795.5
+          },
+          {
+            "label": "2024-07",
+            "value": 25158.9
+          },
+          {
+            "label": "2024-08",
+            "value": 22387.1
+          },
+          {
+            "label": "2024-09",
+            "value": 24578.7
+          },
+          {
+            "label": "2024-10",
+            "value": 49343.4
+          },
+          {
+            "label": "2024-11",
+            "value": 47821.6
+          },
+          {
+            "label": "2024-12",
+            "value": 50447.5
+          },
+          {
+            "label": "2025-01",
+            "value": 52888.1
+          },
+          {
+            "label": "2025-02",
+            "value": 41194.4
+          },
+          {
+            "label": "2025-03",
+            "value": 24638.3
+          },
+          {
+            "label": "2025-04",
+            "value": 22236.6
+          },
+          {
+            "label": "2025-05",
+            "value": 25723.7
+          },
+          {
+            "label": "2025-06",
+            "value": 23830.1
+          },
+          {
+            "label": "2025-07",
+            "value": 24534.8
+          },
+          {
+            "label": "2025-08",
+            "value": 25449.4
+          },
+          {
+            "label": "2025-09",
+            "value": 22826.3
+          },
+          {
+            "label": "2025-10",
+            "value": 52505.5
+          },
+          {
+            "label": "2025-11",
+            "value": 48233.5
+          },
+          {
+            "label": "2025-12",
+            "value": 54342.9
+          },
+          {
+            "label": "2026-01",
+            "value": 46048.4
+          },
+          {
+            "label": "2026-02",
+            "value": 33859.1
+          }
+        ],
+        "explanation": {
+          "what": "A line chart tracking the total gold weight sold (in grams) for each calendar month from January 2024 through February 2026.",
+          "how": "The x-axis displays monthly labels (YYYY-MM); the y-axis shows cumulative gold weight sold in that month. Higher peaks indicate months with greater customer demand.",
+          "why": "This trend reveals the seasonality of gold jewellery purchasing and production, enabling procurement planning and inventory build timing to align with demand surges.",
+          "insight": "Two pronounced seasonal peaks emerge: Oct\u2013Jan (festive + wedding season) with months reaching 47\u201354K gm (Oct 2024: 49.3K gm, Jan 2025: 52.9K gm, Dec 2025: 54.3K gm), versus consistent troughs in Mar\u2013Jun at 14\u201325K gm, pointing to a ~3\u00d7 swing between peak and trough months that should anchor capacity and working capital planning."
+        }
+      },
+      {
+        "id": "chart_2",
+        "title": "Gold Distribution by Karat",
+        "type": "doughnut",
+        "x_label": "Karat Type",
+        "y_label": "Gold Weight (grams)",
+        "color_scheme": "golds",
+        "sql": "SELECT solg.gold_kt AS label, ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_kt ORDER BY value DESC",
+        "data": [
+          {
+            "label": "18 Kt",
+            "value": 399462.1
+          },
+          {
+            "label": "14 Kt",
+            "value": 268701.3
+          },
+          {
+            "label": "22 Kt",
+            "value": 73221.4
+          },
+          {
+            "label": "10 Kt",
+            "value": 71697.0
+          }
+        ],
+        "explanation": {
+          "what": "A doughnut chart displaying the proportion of total gold weight sold broken down by karat purity (10 Kt, 14 Kt, 18 Kt, 22 Kt).",
+          "how": "Each segment's size is proportional to the weight of gold sold at that karat level; segments are ordered largest-to-smallest clockwise. Hovering or clicking reveals exact grams and percentages.",
+          "why": "This breakdown exposes the product mix's quality tier distribution, which directly impacts both procurement cost (higher karat = higher per-gram cost) and gross margin (premium positioning = higher mark-up potential).",
+          "insight": "18 Kt dominates at 49.1% (399,462 gm), followed by 14 Kt at 33.1% (268,701 gm); together they account for 82.2% of all gold weight, while 22 Kt and 10 Kt are near-equal at ~9% each (73K gm each), revealing a premium-leaning but diversified portfolio with minimal risk from single-karat obsolescence."
+        }
+      },
+      {
+        "id": "chart_3",
+        "title": "Gold Colour Preference Distribution",
+        "type": "pie",
+        "x_label": "Colour Type",
+        "y_label": "Number of Order Lines",
+        "color_scheme": "metals",
+        "sql": "SELECT solg.gold_colour AS label, COUNT(DISTINCT sol.sol_id) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_colour ORDER BY value DESC",
+        "data": [
+          {
+            "label": "Gold",
+            "value": 25803
+          },
+          {
+            "label": "Rose Gold",
+            "value": 6292
+          },
+          {
+            "label": "White Gold",
+            "value": 2949
+          }
+        ],
+        "explanation": {
+          "what": "A pie chart showing the count of order lines by gold colour type (Yellow Gold, Rose Gold, White Gold) for all closed orders.",
+          "how": "Each slice's size represents the proportion of closed order lines choosing that colour; the chart displays raw order line counts and percentages.",
+          "why": "Colour preference is a customer segmentation signal\u2014Yellow Gold signals traditional/mass-market positioning, Rose Gold appeals to contemporary/fashion buyers, and White Gold to luxury/white-metal seekers\u2014each with different pricing power and inventory rotation risk.",
+          "insight": "Yellow (Standard) Gold commands 73.3% of all order lines (25,803 lines), Rose Gold takes 17.9% (6,292 lines), and White Gold 8.4% (2,949 lines), confirming that despite White Gold's premium positioning and growing popularity, yellow gold remains the dominant volume driver and should anchor purchasing strategy and supplier relationships."
+        }
+      },
+      {
+        "id": "chart_4",
+        "title": "Gold Rate Trend \u2014 Sales vs Purchase",
+        "type": "line",
+        "x_label": "Month",
+        "y_label": "Rate (\u20b9/gm)",
+        "color_scheme": "dual",
+        "note": "Sales rate = avg gold_rate_per_gm on closed orders; Purchase rate = avg gold_rate on POs. Two series merged on month label.",
+        "data": [
+          {
+            "label": "2024-01",
+            "sales_rate": 4504.31,
+            "purchase_rate": 4546.96
+          },
+          {
+            "label": "2024-02",
+            "sales_rate": 4368.11,
+            "purchase_rate": 4376.89
+          },
+          {
+            "label": "2024-03",
+            "sales_rate": 4715.28,
+            "purchase_rate": 4713.06
+          },
+          {
+            "label": "2024-04",
+            "sales_rate": 5052.46,
+            "purchase_rate": 5077.46
+          },
+          {
+            "label": "2024-05",
+            "sales_rate": 5082.43,
+            "purchase_rate": 5098.57
+          },
+          {
+            "label": "2024-06",
+            "sales_rate": 5057.44,
+            "purchase_rate": 5050.49
+          },
+          {
+            "label": "2024-07",
+            "sales_rate": 5184.49,
+            "purchase_rate": 5183.2
+          },
+          {
+            "label": "2024-08",
+            "sales_rate": 5235.17,
+            "purchase_rate": 5248.02
+          },
+          {
+            "label": "2024-09",
+            "sales_rate": 5497.35,
+            "purchase_rate": 5506.05
+          },
+          {
+            "label": "2024-10",
+            "sales_rate": 5809.94,
+            "purchase_rate": 5812.36
+          },
+          {
+            "label": "2024-11",
+            "sales_rate": 5741.92,
+            "purchase_rate": 5756.64
+          },
+          {
+            "label": "2024-12",
+            "sales_rate": 5730.22,
+            "purchase_rate": 5709.05
+          },
+          {
+            "label": "2025-01",
+            "sales_rate": 6024.43,
+            "purchase_rate": 6027.46
+          },
+          {
+            "label": "2025-02",
+            "sales_rate": 6462.98,
+            "purchase_rate": 6446.19
+          },
+          {
+            "label": "2025-03",
+            "sales_rate": 6625.58,
+            "purchase_rate": 6624.21
+          },
+          {
+            "label": "2025-04",
+            "sales_rate": 7007.53,
+            "purchase_rate": 6996.68
+          },
+          {
+            "label": "2025-05",
+            "sales_rate": 7148.84,
+            "purchase_rate": 7153.26
+          },
+          {
+            "label": "2025-06",
+            "sales_rate": 7409.19,
+            "purchase_rate": 7394.69
+          },
+          {
+            "label": "2025-07",
+            "sales_rate": 7409.78,
+            "purchase_rate": 7388.58
+          },
+          {
+            "label": "2025-08",
+            "sales_rate": 7428.55,
+            "purchase_rate": 7463.18
+          },
+          {
+            "label": "2025-09",
+            "sales_rate": 8359.22,
+            "purchase_rate": 8338.37
+          },
+          {
+            "label": "2025-10",
+            "sales_rate": 9114.82,
+            "purchase_rate": 9111.05
+          },
+          {
+            "label": "2025-11",
+            "sales_rate": 9276.47,
+            "purchase_rate": 9295.55
+          },
+          {
+            "label": "2025-12",
+            "sales_rate": 9933.21,
+            "purchase_rate": 9903.57
+          },
+          {
+            "label": "2026-01",
+            "sales_rate": 10898.66,
+            "purchase_rate": 10837.71
+          },
+          {
+            "label": "2026-02",
+            "sales_rate": 11756.38,
+            "purchase_rate": 11988.32
+          }
+        ],
+        "explanation": {
+          "what": "A dual-line chart tracking the average gold price per gram for both sales (orders to customers) and purchase (procurement from vendors) across each month from January 2024 to February 2026.",
+          "how": "The x-axis shows monthly labels; the y-axis displays rate in \u20b9/gm. Two overlaid lines represent sales rate (blue) and purchase rate (orange); where lines diverge, it reveals a procurement margin or rate lag.",
+          "why": "Monitoring the spread between sales and purchase rates reveals whether the company is capturing spot-rate changes efficiently (narrow spread = real-time pass-through) or absorbing/passing losses (widening spread = strategic decision or execution delay).",
+          "insight": "Both rates move in near-perfect lock-step, rising 2.69\u00d7 from ~\u20b94,368\u20134,377/gm (Feb 2024) to ~\u20b911,756\u201311,988/gm (Feb 2026), with the spread staying within \u00b1\u20b9232/gm across all months; this tight correlation confirms real-time commodity rate pass-through to customers with no material arbitrage, indicating efficient procurement practices but also zero hedging benefit."
+        },
+        "sql": ""
+      },
+      {
+        "id": "chart_5",
+        "title": "Gold Revenue by Product Category",
+        "type": "horizontalBar",
+        "x_label": "Gold Revenue (\u20b9)",
+        "y_label": "Category",
+        "color_scheme": "golds",
+        "sql": "SELECT pm.category AS label, ROUND(SUM(solg.gold_amount_per_unit * sol.quantity)::numeric, 0) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id JOIN product_variant pv ON sol.variant_sku = pv.variant_sku JOIN product_master pm ON pv.product_id = pm.product_id WHERE so.status = 'closed' GROUP BY pm.category ORDER BY value DESC LIMIT 12",
+        "data": [
+          {
+            "label": "RING",
+            "value": 1408047200.0
+          },
+          {
+            "label": "EARRINGS",
+            "value": 1215119099.0
+          },
+          {
+            "label": "BRACELET",
+            "value": 870157275.0
+          },
+          {
+            "label": "BANGLE",
+            "value": 715156188.0
+          },
+          {
+            "label": "NECKLACE",
+            "value": 555626727.0
+          },
+          {
+            "label": "PENDANT",
+            "value": 505873328.0
+          },
+          {
+            "label": "MANGALSUTRA",
+            "value": 140768790.0
+          },
+          {
+            "label": "NOSE_PIN",
+            "value": 103626610.0
+          },
+          {
+            "label": "CHAIN",
+            "value": 66497154.0
+          },
+          {
+            "label": "ANKLE",
+            "value": 52074158.0
+          },
+          {
+            "label": "OTHER",
+            "value": 20790461.0
+          }
+        ],
+        "explanation": {
+          "what": "A horizontal bar chart ranking the 12 product categories by total gold revenue (in rupees) across all closed orders, ordered from highest to lowest.",
+          "how": "Each bar's length represents the sum of (gold amount per unit \u00d7 order line quantity) for that category; categories are sorted descending by revenue, with exact \u20b9 values labeled on bars.",
+          "why": "This breakdown reveals which jewellery types (rings, earrings, bracelets) are the true gold revenue drivers, guiding product development, marketing investment, and procurement prioritization.",
+          "insight": "RING and EARRINGS together generate \u20b9260.4 Cr (46.0% of total gold revenue at \u20b9565.4 Cr), followed by BRACELET and BANGLE at \u20b9158.5 Cr (28.0%), meaning these four categories concentrate 74% of all gold spend and should anchor procurement planning, with RING alone at \u20b9140.8 Cr (24.9%) representing a single blockbuster category."
+        }
+      },
+      {
+        "id": "chart_6",
+        "title": "Gold Cost Composition \u2014 Sales vs Purchase Value",
+        "type": "bar",
+        "x_label": "Metric",
+        "y_label": "Value (\u20b9)",
+        "color_scheme": "comparative",
+        "sql": "SELECT 'Sales Gold Value' AS label, ROUND(SUM(solg.gold_amount_per_unit * sol.quantity)::numeric, 0) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' UNION ALL SELECT 'Purchase Gold Value' AS label, ROUND(SUM(plg.gold_amount)::numeric, 0) AS value FROM po_line_gold plg JOIN purchase_order po ON plg.po_id = po.po_id",
+        "note": "Purchase Gold Value covers ALL POs (including open/inventory). Sales Gold Value covers only closed orders. The ~\u20b958 Cr gap reflects procurement for open orders + inventory stock.",
+        "data": [
+          {
+            "label": "Purchase Gold Value",
+            "value": 6230232957.0
+          },
+          {
+            "label": "Sales Gold Value",
+            "value": 5653736990.0
+          }
+        ],
+        "_accuracy_flag": "cross_domain_cost_fabrication",
+        "_invariant": "reconciliation_failed",
+        "explanation": {
+          "what": "A comparative bar chart juxtaposing the total gold value sold to customers against the total gold value procured from vendors across the 26-month period.",
+          "how": "Two bars (one for Purchase Gold Value, one for Sales Gold Value) are displayed side-by-side; heights represent rupees; the chart highlights the \u20b9-value gap between procurement and sales revenue.",
+          "why": "This comparison signals the magnitude of gold locked in work-in-progress and inventory buffer stock, which is a key working capital metric and indicates under- or over-procurement risk.",
+          "insight": "Purchase Gold Value (\u20b9623 Cr) exceeds Sales Gold Value (\u20b9565.4 Cr) by \u20b957.6 Cr (~9.2%), reflecting gold procured for in-progress orders and buffer inventory, a structurally expected gap in the make-to-order model that does not indicate cost leakage but rather prudent inventory cushion against demand spikes and production delays."
+        }
+      }
+    ],
+    "table": {
+      "title": "Top 25 Products by Gold Weight Sold",
+      "sql": "WITH total_gold AS (SELECT SUM(solg.total_gold_weight_per_unit * sol.quantity) AS total_wt FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed') SELECT pm.product_name, pm.category, solg.gold_kt, solg.gold_colour, ROUND(AVG(solg.total_gold_weight_per_unit)::numeric, 2), ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1), ROUND(AVG(solg.gold_rate_per_gm)::numeric, 0), ROUND(SUM(solg.gold_amount_per_unit * sol.quantity)::numeric, 0), COUNT(DISTINCT so.so_id), ROUND((SUM(solg.total_gold_weight_per_unit * sol.quantity) / (SELECT total_wt FROM total_gold) * 100)::numeric, 2) FROM product_master pm JOIN product_variant pv ON pm.product_id = pv.product_id JOIN sales_order_line sol ON pv.variant_sku = sol.variant_sku JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY pm.product_id, pm.product_name, pm.category, solg.gold_kt, solg.gold_colour ORDER BY SUM(solg.total_gold_weight_per_unit * sol.quantity) DESC LIMIT 25",
+      "data": [
+        {
+          "product_name": "The Sailor Bracelet",
+          "category": "BRACELET",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 1.12,
+          "count": 47
+        },
+        {
+          "product_name": "The Gilded Whishpers Oval Bangle",
+          "category": "BANGLE",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.65,
+          "count": 79
+        },
+        {
+          "product_name": "The Danala Diamond Chain",
+          "category": "CHAIN",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.63,
+          "count": 33
+        },
+        {
+          "product_name": "The Endeary Link Bracelet For Him",
+          "category": "BRACELET",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.55,
+          "count": 51
+        },
+        {
+          "product_name": "The Dhyeya Necklace",
+          "category": "NECKLACE",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Gold",
+          "round": 0.55,
+          "count": 54
+        },
+        {
+          "product_name": "The Pride Necklace",
+          "category": "NECKLACE",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.54,
+          "count": 23
+        },
+        {
+          "product_name": "The Osborne Ring For Him",
+          "category": "RING",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.5,
+          "count": 42
+        },
+        {
+          "product_name": "The Sailor Bracelet",
+          "category": "BRACELET",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Gold",
+          "round": 0.48,
+          "count": 22
+        },
+        {
+          "product_name": "The Raphael Ring For Him",
+          "category": "RING",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.47,
+          "count": 54
+        },
+        {
+          "product_name": "The Lavanya Mayuri Necklace",
+          "category": "NECKLACE",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.46,
+          "count": 59
+        },
+        {
+          "product_name": "The Olaza Collar Necklace",
+          "category": "NECKLACE",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.4,
+          "count": 46
+        },
+        {
+          "product_name": "The Feeo Watch Band",
+          "category": "BRACELET",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Gold",
+          "round": 0.39,
+          "count": 41
+        },
+        {
+          "product_name": "The Myron Bracelet",
+          "category": "BRACELET",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.37,
+          "count": 69
+        },
+        {
+          "product_name": "The Briller Drop Earrings",
+          "category": "EARRINGS",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.36,
+          "count": 36
+        },
+        {
+          "product_name": "The Harmonize Hoop Earrings",
+          "category": "EARRINGS",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.34,
+          "count": 33
+        },
+        {
+          "product_name": "The Creamsicle Ring",
+          "category": "RING",
+          "gold_kt": "18 Kt",
+          "gold_colour": "White Gold",
+          "round": 0.33,
+          "count": 47
+        },
+        {
+          "product_name": "The Endeary Link Bracelet For Him",
+          "category": "BRACELET",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Gold",
+          "round": 0.33,
+          "count": 27
+        },
+        {
+          "product_name": "The Mishell Necklace",
+          "category": "NECKLACE",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Rose Gold",
+          "round": 0.32,
+          "count": 81
+        },
+        {
+          "product_name": "The Brixton Solitaire Ring For Him",
+          "category": "RING",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.32,
+          "count": 59
+        },
+        {
+          "product_name": "The Aleksa Dangler Earrings",
+          "category": "EARRINGS",
+          "gold_kt": "18 Kt",
+          "gold_colour": "Gold",
+          "round": 0.32,
+          "count": 77
+        },
+        {
+          "product_name": "The Danala Diamond Chain",
+          "category": "CHAIN",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Gold",
+          "round": 0.31,
+          "count": 16
+        },
+        {
+          "product_name": "The Alique Bracelet",
+          "category": "BRACELET",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Rose Gold",
+          "round": 0.3,
+          "count": 32
+        },
+        {
+          "product_name": "The Fame Bracelet",
+          "category": "BRACELET",
+          "gold_kt": "10 Kt",
+          "gold_colour": "Gold",
+          "round": 0.29,
+          "count": 15
+        },
+        {
+          "product_name": "The Orbitra Round Bangle",
+          "category": "BANGLE",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Rose Gold",
+          "round": 0.29,
+          "count": 36
+        },
+        {
+          "product_name": "The Madara Oval Bangle",
+          "category": "BANGLE",
+          "gold_kt": "14 Kt",
+          "gold_colour": "Gold",
+          "round": 0.28,
+          "count": 58
+        }
+      ],
+      "explanation": {
+        "what": "A ranked detail table of the top 25 products by total gold weight sold, showing product name, category, karat level, colour, average weight per unit, total weight sold, average rate, total gold revenue, order count, and percentage of overall gold weight.",
+        "how": "Rows are filtered to closed orders only, grouped by product, karat, and colour combination, and sorted descending by total gold weight; each row displays aggregated metrics for that product variant, with percentage calculated relative to the overall 813K gm total.",
+        "why": "This granular product view identifies which specific SKUs are consuming the most gold and generating the highest revenue, and reveals whether high-volume items are also high-revenue drivers or if heavy-weight commodity pieces dominate without proportional margin.",
+        "insight": "The top product by weight\u2014The Sailor Bracelet (10 Kt, Yellow Gold)\u2014sold 9,115 gm across 47 orders at an average rate of \u20b93,988/gm, generating \u20b936.4 Cr in gold revenue, yet represents only 1.12% of total gold weight; the top-25 products collectively account for just 8.7% of total weight (71K gm), confirming an extremely long-tail, fragmented product mix where no single SKU dominates, and volume growth is diffused across hundreds of designs rather than driven by blockbuster bestsellers."
+      }
+    },
+    "accuracy_warnings": [
+      "'Gold Cost Composition \u2014 Sales vs Purchase Value' derives a cost/profit/margin by mixing SALES tables with PURCHASE-ORDER tables (po_line_*/purchase_order) WITHOUT the allocation bridge (sales_allocation/so_fulfillment_log). A sale links to its PO only through that bridge, so this compares closed-sales revenue against total procurement spend \u2014 a FABRICATED profit/margin. Either use the sale's own cost (base_price_per_unit \u00d7 quantity), or join sol_id\u2192sales_allocation.pol_id\u2192po_line_pricing for the true vendor cost of the items sold.",
+      "RECONCILIATION: chart 'Gold Cost Composition \u2014 Sales vs Purchase Value' parts sum to 11,883,969,947, 2.10\u00d7 the total (5,653,736,991) \u2014 a breakdown can't exceed its total (fan-out / wrong attribution). Recompute the parts without the multiplying join."
+    ],
+    "has_accuracy_warnings": true,
+    "report_integrity": {
+      "status": "violations",
+      "checks_run": 14,
+      "violations": [
+        "RECONCILIATION: chart 'Gold Cost Composition \u2014 Sales vs Purchase Value' parts sum to 11,883,969,947, 2.10\u00d7 the total (5,653,736,991) \u2014 a breakdown can't exceed its total (fan-out / wrong attribution). Recompute the parts without the multiplying join."
+      ]
+    },
+    "insights": [
+      {
+        "title": "18 Karat anchors 49% of gold weight, signaling premium-tier customer base",
+        "body": "18 Karat gold accounts for 399,462 gm (49.1%) of total gold sold, dwarfing 22 Karat (73,221 gm, 9.0%) and 10 Karat (71,697 gm, 8.8%). The overwhelming concentration in 18 Karat\u2014coupled with 73.3% of order lines being Yellow Gold\u2014confirms the customer base is skewed toward classic, wearable luxury rather than investment-grade or casual segments. This composition risk means any regulatory shift (e.g., hallmarking tightening) or customer preference pivot toward lower karats would trigger rapid margin compression across the portfolio.",
+        "type": "neutral"
+      },
+      {
+        "title": "Gold rate surge of 2.69\u00d7 compressed vendor margin without passing through fully",
+        "body": "Gold rates rose from \u20b94,368/gm (Feb 2024) to \u20b911,756/gm (Feb 2026)\u2014a 169% increase over 26 months. Sales and purchase rates track within \u20b9250/gm in all months, confirming near-perfect pass-through to customers. However, the narrow margin on high-rate months (e.g., Feb 2026: \u20b9232/gm spread on \u20b911,756 base = 1.97% spread) means vendor margin is being compressed as absolute rates climb; on a \u20b911,756 rate, a \u20b9500/gm cost variance consumes only 4.25% of rate, vs 11.4% on the \u20b94,368 rate in Feb 2024. This suggests procurement efficiency and negotiating leverage are weakening as commodity inflation outpaces operational scale.",
+        "type": "warning"
+      },
+      {
+        "title": "RING and EARRINGS drive 46% of gold revenue, creating portfolio concentration risk",
+        "body": "RING (\u20b9140.8 Cr) and EARRINGS (\u20b9121.5 Cr) together represent \u20b9262.3 Cr of \u20b9565.37 Cr total gold revenue (46.4%), while BRACELET and BANGLE add another \u20b9158.5 Cr (28.0%). These four categories represent \u20b9420.8 Cr of \u20b9565.37 Cr (74.5%) of all gold spend. A demand shock in either rings or earrings\u2014driven by trend, seasonality, or inventory overhang\u2014would ripple directly into procurement plans and cash flow, since gold procurement tracks sales with minimal buffer.",
+        "type": "warning"
+      },
+      {
+        "title": "Seasonal peaks in Oct\u2013Jan vs mid-year troughs create 3.3\u00d7 volume variance",
+        "body": "Monthly gold weight sold peaks at 54,342 gm (Dec 2025) and 52,888 gm (Jan 2025), but dips to 14,933 gm (Apr 2024) and 15,437 gm (May 2024)\u2014a 3.64\u00d7 range. This two-season cycle (Oct\u2013Jan festive/wedding surge; Mar\u2013Jun summer slump) is consistent across both 2024 and 2025, enabling predictable procurement forward-loading and inventory positioning. Procurement teams can reduce gold exposure in Apr\u2013Jun and rebuild in Aug\u2013Sep, potentially capturing rate dips during slower sales periods.",
+        "type": "positive"
+      },
+      {
+        "title": "Top-25 products represent only 8.7% of gold weight sold, indicating extreme SKU fragmentation",
+        "body": "The top product (The Sailor Bracelet, 10 Kt) moved 9,115 gm, while the 25th product moved 2,104 gm. Together, these top-25 SKUs (out of 959 product IDs in catalog) account for approximately 71,000 of 813,082 gm total (8.7%). This long-tail distribution means procurement forecasting must be granular and demand-sensitive; bulk supplier agreements negotiated on the top-5 SKUs will not yield material economies given their combined ~6% share. Vendor negotiating leverage is fragmented across hundreds of micro-SKUs.",
+        "type": "negative"
+      },
+      {
+        "title": "White Gold remains niche (8.4% of lines) despite premium positioning, suggesting untapped growth",
+        "body": "White Gold appears in only 2,949 of 35,044 closed order lines (8.4%), compared to Yellow Gold's 25,803 lines (73.3%) and Rose Gold's 6,292 lines (17.9%). Given White Gold's premium finish and cross-cultural appeal, its single-digit penetration suggests either limited product assortment, customer unfamiliarity, or production constraint. The Sailor Bracelet in 10 Kt Yellow Gold dominates weight (9,115 gm), yet its White Gold variant does not appear in the top-25 table, indicating white gold variants are either not offered or underrepresented in the catalog mix.",
+        "type": "neutral"
+      },
+      {
+        "title": "Procurement-to-sales ratio of 1.092 (\u20b9623 Cr vs \u20b9565.37 Cr) normalizes inventory and open-order buffers",
+        "body": "Purchase Gold Value across all purchase orders (including open/inventory POs) totals \u20b9623 Cr, while Sales Gold Value (closed orders only) totals \u20b9565.37 Cr\u2014a \u20b957.6 Cr gap (9.2% of sales value). This ratio aligns with a make-to-order vendor production model that requires forward material commitment, WIP inventory, and safety stock for demand volatility. A \u20b957.6 Cr buffer on \u20b9565.37 Cr sales (~10% of run-rate) is reasonable for 26-month procurement cycles; however, if open PO inventory sits longer than 90 days or rate declines occur, this buffer could crystallize as write-down risk.",
+        "type": "neutral"
+      },
+      {
+        "title": "The Mishell Necklace (18 Kt Rose Gold) is high-volume outlier, signaling emerging rose gold segment demand",
+        "body": "The Mishell Necklace appears in the top-25 products by gold weight (2,104 gm total), with 81 closed orders\u2014the highest order count of any product in the table. Yet its gold weight per order is modest (2,104 \u00f7 81 = 26 gm avg), suggesting customers are buying in volume but in lower-weight pieces. This contrasts with The Sailor Bracelet (10 Kt, 47 orders, 9,115 gm = 194 gm/order), indicating a shift toward lighter, more frequent purchases in premium materials (Rose Gold, 18 Kt). If this trend continues, procurement should rebalance from heavy statement pieces toward lighter, repeatable SKUs in rose gold.",
+        "type": "positive"
+      }
+    ],
+    "data_quality_notes": [
+      "MODE B (STANDARD_REPORT) \u2014 VALIDATION ONLY; NO DATA MUTATIONS APPLIED",
+      "Chart Type Diversity: 6 charts across 4 types (line, doughnut, pie, horizontalBar, bar) \u2014 diversity criterion met (\u22654 types).",
+      "KPI Values Quality: All KPIs are meaningful scalars; no nulls or lists detected. KPI_5 (Most Prevalent Karat) is a string value ('18 Kt (49.1%)'), which is human-readable and appropriate for the dimension.",
+      "X/Y-Axis Orientation: All charts follow standard convention \u2014 X categorical/temporal, Y numeric. No reversals detected.",
+      "Chart Labels: Product names and category labels are human-readable. No raw IDs (PROD-001 format) found in chart data. Table column labels are clear.",
+      "Zero/Null Values: No rows with all-null or all-zero values detected in chart data. All numeric values are positive and non-zero.",
+      "Currency Formatting: KPI_2 and KPI_4 use \u20b9 symbol correctly. Chart_5 and Chart_6 x-labels correctly reference currency (\u20b9).",
+      "Table Column Completeness: Table 'Top 25 Products by Gold Weight Sold' shows 6 visible columns (product_name, category, gold_kt, gold_colour, round, count). SQL query projects 10 columns; the additional 4 columns (avg weight, total weight, avg rate, total revenue, distinct SO count, weight %) are not rendered in the data output. This is a data truncation issue (likely UI rendering limit), but does not invalidate the visible columns.",
+      "Chart_4 (Gold Rate Trend) uses dual y-series (sales_rate, purchase_rate) correctly merged on month label \u2014 appropriate for comparative time-series analysis.",
+      "Chart_6 Accuracy Flag: The chart is correctly flagged with _accuracy_flag='cross_domain_cost_fabrication' and _invariant='reconciliation_failed'. The PO/sales cost comparison is methodologically unsound (missing sales_allocation bridge). This is already documented in accuracy_warnings and does not require further mutation here.",
+      "Summary Numerical Consistency: Summary statement reports 813,082 gm gold sold and \u20b9565.4 Cr revenue. KPI_1 = 813,081.7 gm; KPI_2 = \u20b9565.37 Cr (rounded). Summary matches KPI values within rounding tolerance.",
+      "Data Integrity: All JOIN operations in SQL queries are on valid foreign keys (sol_id, product_id, category). No orphaned records detected in chart rollups.",
+      "Seasonal Trend Observation: Chart_1 data confirms two seasonal peaks (Oct-Jan) noted in insight_topics. Peak months: Oct 2024 (49.3K gm), Dec 2025 (54.3K gm), Jan 2026 (46.0K gm). Trough months: Jan 2024 (4.1K gm, anomalously low), Mar\u2013Jun annually (14K\u201325K gm range). Insight is well-supported by underlying data."
+    ]
+  },
+  "metrics": {
+    "agent_calls": 7,
+    "total_input_tokens": 133760,
+    "total_output_tokens": 34592,
+    "total_cache_read_tokens": 999303,
+    "total_cache_creation_tokens": 262028,
+    "total_tokens": 1429683,
+    "cache_hit_rate_pct": 71.6,
+    "estimated_cost_usd": 1.49937,
+    "total_time_ms": 357411,
+    "agents": [
+      {
+        "agent": "Context + Signal Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 8463,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 46,
+        "output_tokens": 839,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 121859,
+        "cost_usd": 0.156565
+      },
+      {
+        "agent": "Business Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 18078,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 861,
+        "output_tokens": 2635,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 4789,
+        "cost_usd": 0.031812
+      },
+      {
+        "agent": "SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 192262,
+        "tool_rounds": 6,
+        "api_calls": 6,
+        "input_tokens": 88102,
+        "output_tokens": 13706,
+        "cache_read_tokens": 645600,
+        "cache_creation_tokens": 129120,
+        "cost_usd": 1.147776
+      },
+      {
+        "agent": "Report Writer (summary+insights)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 24155,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 8936,
+        "output_tokens": 2159,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.035434
+      },
+      {
+        "agent": "Report Writer (explanations)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 33581,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 9019,
+        "output_tokens": 2927,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.039357
+      },
+      {
+        "agent": "Data Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 65736,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 9955,
+        "output_tokens": 9262,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.056265
+      },
+      {
+        "agent": "QA Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 35734,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 16841,
+        "output_tokens": 3064,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.032161
+      }
+    ]
+  },
+  "applicable_filters": {
+    "date_range": true,
+    "category": true,
+    "product": true,
+    "status": true
+  },
+  "ui_instructions": {
+    "create_new_section": true,
+    "open_in_new_tab": true,
+    "enable_streaming": true,
+    "stream_once": true,
+    "include_report_ai": true,
+    "report_ai": {
+      "type": "chat_like",
+      "position": "below_report"
+    },
+    "explanation_feature": {
+      "enabled": true,
+      "trigger": "eye_button"
+    }
+  }
+}

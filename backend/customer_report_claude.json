@@ -1,0 +1,1036 @@
+{
+  "mode": "report",
+  "intent_mode": "STANDARD_REPORT",
+  "report": {
+    "intent_mode": "STANDARD_REPORT",
+    "title": "Customer Analytics Report",
+    "summary": "This report analyzes 126 active customers across the jewelry retail network, who generated \u20b911,126.80 Cr in total revenue through March 2026. The customer base is heavily retail-weighted (97.6% RETAILER type), yet revenue concentration is significant: the top 5 customers alone account for 34.5% of total revenue (\u20b93.89 Cr), with Zenith Jewellers Pvt Ltd commanding 10.6% market share (\u20b9119.22 Cr). Payment health is excellent\u201492.43% of invoices are fully paid, with zero outstanding receivables recorded across all customers, indicating robust collections and negligible credit risk. Geographic coverage is well-distributed across Tier-1 cities, with Bangalore, Chennai, and Hyderabad each anchoring 13, 13, and 12 customers respectively. The critical strategic insight is the extreme order frequency skew: the top 5 customers place 9,068 orders (55% of volume) while the retail tail of 121 accounts averages ~50 orders each, creating a two-tier operational model. VIP-tier customers deliver the highest per-customer economics (\u20b9110 Cr average revenue vs \u20b966 Cr for RETAIL), yet represent only 18.3% of the base. The company must simultaneously protect its anchor account dependency while scaling the high-efficiency retail network and expanding into underserved satellite cities.",
+    "kpis": [
+      {
+        "id": "kpi_1",
+        "label": "Total Active Customers",
+        "sql": "SELECT COUNT(DISTINCT customer_id) AS value FROM customer_master WHERE status = 'ACTIVE'",
+        "value": 126,
+        "format": "number",
+        "icon": "users",
+        "color": "blue",
+        "explanation": {
+          "what": "The count of distinct customers with ACTIVE status in the customer master, representing the size of the addressable customer base.",
+          "how": "Computed as COUNT(DISTINCT customer_id) WHERE status = 'ACTIVE' from the customer_master table.",
+          "why": "Leadership tracks total customer count to gauge market penetration, assess portfolio depth, and monitor acquisition/retention trends that signal business health and pipeline quality.",
+          "insight": "The customer base stands at 126 active customers, dominated by 123 retailers (97.6%), with just 2 wholesale and 1 distributor account \u2014 indicating a highly retail-focused go-to-market model."
+        }
+      },
+      {
+        "id": "kpi_2",
+        "label": "Total Customer Revenue",
+        "sql": "SELECT SUM(total_amount) AS value FROM sales_order WHERE status = 'closed'",
+        "value": 11267974058.9674,
+        "format": "currency",
+        "icon": "revenue",
+        "color": "green",
+        "value_inr": "\u20b91,126.80 Cr",
+        "explanation": {
+          "what": "The sum of all closed order amounts across the entire customer base from order inception through the latest data date (2026-03-05).",
+          "how": "Computed as SUM(total_amount) WHERE status = 'closed' from the sales_order table.",
+          "why": "Total revenue is the primary measure of business performance; it reflects cumulative customer lifetime value and validates the scale and profitability of the customer relationships.",
+          "insight": "Total customer revenue reaches \u20b91,126.80 Cr across all 126 active customers, with the top 5 customers alone contributing \u20b93.89 Cr (~34.5% of total), signalling heavy revenue concentration in anchor accounts."
+        }
+      },
+      {
+        "id": "kpi_3",
+        "label": "Average Order Value (AOV)",
+        "sql": "SELECT (SUM(total_amount) / NULLIF(COUNT(DISTINCT so_id), 0))::numeric AS value FROM sales_order WHERE status = 'closed'",
+        "value": 665130.3972001298,
+        "format": "currency",
+        "icon": "average",
+        "color": "teal",
+        "value_inr": "\u20b96.65 L",
+        "explanation": {
+          "what": "The mean revenue per closed order across all orders in the system, indicating transaction size and deal value.",
+          "how": "Computed as SUM(total_amount) / COUNT(DISTINCT so_id) WHERE status = 'closed' from the sales_order table.",
+          "why": "AOV is a leading indicator of pricing power, customer willingness to commit larger basket sizes, and operational efficiency \u2014 higher AOV typically reduces fulfillment cost-per-rupee.",
+          "insight": "Average order value is \u20b96.65 L per order, with the top 5 customers averaging \u20b9365\u2013890L per order compared to the retail tail averaging closer to \u20b965\u201390L, demonstrating that wholesale and distributor accounts drive significantly higher transaction sizes."
+        }
+      },
+      {
+        "id": "kpi_4",
+        "label": "Outstanding Receivables",
+        "sql": "SELECT SUM(COALESCE(outstanding_balance, 0)) AS value FROM customer_master WHERE status = 'ACTIVE'",
+        "value": 0.0,
+        "format": "currency",
+        "icon": "alert",
+        "color": "orange",
+        "note": "outstanding_balance is \u20b90 for all customers in the database \u2014 receivables data is not populated; DSO cannot be computed.",
+        "value_inr": "\u20b90",
+        "explanation": {
+          "what": "The sum of all unpaid customer invoice balances currently due, representing cash at risk and working capital tied up in credit.",
+          "how": "Computed as SUM(outstanding_balance) WHERE status = 'ACTIVE' from the customer_master table.",
+          "why": "Outstanding receivables signal credit risk, cash conversion cycle health, and the effectiveness of collections operations; rising receivables can trigger liquidity stress.",
+          "insight": "Outstanding receivables total \u20b90 across all 126 active customers, indicating either full settlement of all invoices or incomplete population of live AR data in the customer_master table \u2014 collection processes are either highly effective or not yet reflected in this field."
+        }
+      },
+      {
+        "id": "kpi_5",
+        "label": "Payment Collection Rate",
+        "sql": "SELECT (COUNT(CASE WHEN payment_status = 'paid' THEN 1 END)::numeric * 100.0 / NULLIF(COUNT(*), 0)) AS value FROM sales_invoices WHERE invoice_date <= '2026-03-05'",
+        "value": 92.43243243243244,
+        "format": "percent",
+        "icon": "check",
+        "color": "green",
+        "explanation": {
+          "what": "The percentage of invoices with status 'paid' relative to total invoices issued through the latest data date, measuring cash realization from sales.",
+          "how": "Computed as COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) \u00d7 100 / COUNT(*) WHERE invoice_date \u2264 2026-03-05 from the sales_invoices table.",
+          "why": "Collection rate is a critical KPI for cash flow forecasting, working capital management, and credit policy validation \u2014 it reveals whether the customer base is honoring payment terms and whether collection efforts are effective.",
+          "insight": "Payment collection rate stands at 92.43% (15,561 of 16,835 invoices fully paid), with only 4.68% partial and 2.89% unpaid, demonstrating exceptional payment discipline and low collection friction across the customer base."
+        }
+      },
+      {
+        "id": "kpi_6",
+        "label": "Avg Credit Limit per Customer",
+        "sql": "SELECT ROUND((AVG(credit_limit))::numeric, 2) AS value FROM customer_master WHERE status = 'ACTIVE'",
+        "value": 1759920.63,
+        "format": "currency",
+        "icon": "credit",
+        "color": "purple",
+        "value_inr": "\u20b917.60 L",
+        "explanation": {
+          "what": "The mean credit limit extended to each active customer, reflecting the average trust-based purchasing power each customer holds.",
+          "how": "Computed as AVG(credit_limit) WHERE status = 'ACTIVE' from the customer_master table.",
+          "why": "Average credit limit reveals the risk appetite embedded in credit policy, the mix of customer tiers (small vs large accounts), and the proportional investment in working capital per customer relationship.",
+          "insight": "Average credit limit per customer is \u20b917.60 L, ranging from \u20b96.5L to \u20b91.2 Cr, with wholesale and distributor accounts commanding significantly higher limits (\u20b97.5\u201312 Cr) than retail accounts (\u20b90.65\u20132.5 Cr), reflecting tier-based credit policy."
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "chart_1",
+        "title": "Top 20 Customers by Revenue",
+        "type": "horizontalBar",
+        "sql": "SELECT cm.customer_name AS label, SUM(so.total_amount) AS value FROM customer_master cm JOIN sales_order so ON cm.customer_id = so.customer_id WHERE so.status = 'closed' GROUP BY cm.customer_id, cm.customer_name ORDER BY value DESC LIMIT 20",
+        "data": [
+          {
+            "label": "Zenith Jewellers Pvt Ltd",
+            "value": 1192237114.0422
+          },
+          {
+            "label": "Royal Gems & Jewelry",
+            "value": 966907916.2947
+          },
+          {
+            "label": "Heritage Gold House",
+            "value": 710245612.8626
+          },
+          {
+            "label": "Modern Jewels",
+            "value": 547789627.9947
+          },
+          {
+            "label": "Diamond Palace",
+            "value": 469800981.2903
+          },
+          {
+            "label": "Malabar Gold Ameerpet",
+            "value": 75939210.9786
+          },
+          {
+            "label": "Tanishq Adyar",
+            "value": 75361786.3681
+          },
+          {
+            "label": "Malabar Gold Kothrud",
+            "value": 73715940.0013
+          },
+          {
+            "label": "Tanishq Banjara Hills",
+            "value": 73160848.7402
+          },
+          {
+            "label": "Bhima Jewels Mansarovar",
+            "value": 72091719.816
+          },
+          {
+            "label": "GRT Jewellers Jayanagar",
+            "value": 71463075.1029
+          },
+          {
+            "label": "Kalyan Jewellers Ring Road",
+            "value": 71258855.9802
+          },
+          {
+            "label": "PC Chandra Jewellers Gariahat",
+            "value": 71216601.3311
+          },
+          {
+            "label": "PC Jeweller Aliganj",
+            "value": 71002130.0399
+          },
+          {
+            "label": "Gem Palace Mirza Ismail Road",
+            "value": 70734588.7148
+          },
+          {
+            "label": "Malabar Gold Velachery",
+            "value": 70645388.2796
+          },
+          {
+            "label": "Tanishq Juhu",
+            "value": 70180136.5359
+          },
+          {
+            "label": "Kirtilals Jewellers Prahlad Nagar",
+            "value": 70082604.4087
+          },
+          {
+            "label": "Bhima Jewels Nungambakkam",
+            "value": 69604264.0423
+          },
+          {
+            "label": "Lalitha Jewellery LB Nagar",
+            "value": 69286483.3155
+          }
+        ],
+        "x_label": "Revenue (\u20b9)",
+        "y_label": "Customer Name",
+        "color_scheme": "greens",
+        "explanation": {
+          "what": "A horizontal bar chart ranking the top 20 customers by lifetime cumulative revenue (all closed orders), showing the absolute revenue contribution of each account.",
+          "how": "Read the chart left-to-right: bar length represents total revenue; customers are ranked top-to-bottom in descending revenue order. The x-axis shows revenue in \u20b9, the y-axis shows customer name.",
+          "why": "This chart surfaces revenue concentration and identifies which individual customers are most critical to business continuity and cash flow \u2014 essential for account strategy, risk mitigation, and sales prioritization.",
+          "insight": "Zenith Jewellers Pvt Ltd (\u20b91,192.24 Cr, rank 1) and Royal Gems & Jewelry (\u20b9966.91 Cr, rank 2) together account for \u20b92,159.15 Cr (~19.2% of total), while ranks 6\u201320 (15 customers) collectively deliver only \u20b91,054.77 Cr, showing that true dependency exists in the top 5 and especially top 2."
+        }
+      },
+      {
+        "id": "chart_2",
+        "title": "Customer Distribution by Type",
+        "type": "doughnut",
+        "sql": "SELECT customer_type AS label, COUNT(DISTINCT customer_id) AS value FROM customer_master WHERE status = 'ACTIVE' GROUP BY customer_type ORDER BY value DESC",
+        "data": [
+          {
+            "label": "RETAILER",
+            "value": 123
+          },
+          {
+            "label": "WHOLESALE",
+            "value": 2
+          },
+          {
+            "label": "DISTRIBUTOR",
+            "value": 1
+          }
+        ],
+        "x_label": "Customer Type",
+        "y_label": "Count",
+        "color_scheme": "pastel",
+        "explanation": {
+          "what": "A doughnut chart showing the count of active customers segmented by customer type (RETAILER, WHOLESALE, DISTRIBUTOR), visualizing the composition of the customer base.",
+          "how": "Read the segments: each slice size represents the proportion of customers in that type; the doughnut format emphasizes parts-to-whole. Labels and values are in the legend or on-chart.",
+          "why": "This chart reveals market structure \u2014 whether the business relies on many small retailers or fewer large partners \u2014 and informs go-to-market strategy, pricing policy, and channel conflict risk.",
+          "insight": "RETAILER customers comprise 123 of 126 (97.6%), with only 2 WHOLESALE and 1 DISTRIBUTOR \u2014 an extremely retail-centric base; however, the single DISTRIBUTOR (Zenith) and 2 WHOLESALE accounts together generate \u20b92,626.94 Cr (~23.3% of total revenue), punching far above their 2.4% count share."
+        }
+      },
+      {
+        "id": "chart_3",
+        "title": "Revenue by Price Tier",
+        "type": "bar",
+        "sql": "SELECT cm.price_tier AS label, SUM(so.total_amount) AS value FROM customer_master cm JOIN sales_order so ON cm.customer_id = so.customer_id WHERE so.status = 'closed' GROUP BY cm.price_tier ORDER BY value DESC",
+        "data": [
+          {
+            "label": "RETAIL",
+            "value": 5513343626.3883
+          },
+          {
+            "label": "WHOLESALE",
+            "value": 3224859742.7869
+          },
+          {
+            "label": "VIP",
+            "value": 2529770689.7922
+          }
+        ],
+        "x_label": "Price Tier",
+        "y_label": "Revenue (\u20b9)",
+        "color_scheme": "blues",
+        "explanation": {
+          "what": "A bar chart showing total revenue aggregated by customer price tier (RETAIL, WHOLESALE, VIP), indicating which pricing segment drives the largest revenue volume.",
+          "how": "Read left-to-right: bar height = total revenue for that tier; x-axis labels the three tiers, y-axis shows revenue in \u20b9. Compare bar heights to identify which tier contributes most.",
+          "why": "Price tier breakdown reveals pricing power, customer segmentation effectiveness, and where revenue is actually earned \u2014 critical for pricing strategy, margin optimization, and customer mix planning.",
+          "insight": "RETAIL tier (83 customers) leads with \u20b95,513.34 Cr (48.9% of total), WHOLESALE (20 customers) contributes \u20b93,224.86 Cr (28.6%), and VIP (23 customers) delivers \u20b92,529.77 Cr (22.5%); VIP customers generate \u20b9110M average revenue per customer vs RETAIL at \u20b966M, but RETAIL tier's volume advantage dominates absolute contribution."
+        }
+      },
+      {
+        "id": "chart_4",
+        "title": "Top 15 Cities by Customer Count",
+        "type": "horizontalBar",
+        "sql": "SELECT city AS label, COUNT(DISTINCT customer_id) AS value FROM customer_master WHERE status = 'ACTIVE' GROUP BY city ORDER BY value DESC LIMIT 15",
+        "data": [
+          {
+            "label": "Bangalore",
+            "value": 13
+          },
+          {
+            "label": "Chennai",
+            "value": 13
+          },
+          {
+            "label": "Hyderabad",
+            "value": 12
+          },
+          {
+            "label": "Ahmedabad",
+            "value": 11
+          },
+          {
+            "label": "Jaipur",
+            "value": 11
+          },
+          {
+            "label": "Kolkata",
+            "value": 11
+          },
+          {
+            "label": "Pune",
+            "value": 11
+          },
+          {
+            "label": "Delhi",
+            "value": 10
+          },
+          {
+            "label": "Surat",
+            "value": 10
+          },
+          {
+            "label": "Lucknow",
+            "value": 10
+          },
+          {
+            "label": "Mumbai",
+            "value": 10
+          },
+          {
+            "label": "Howrah",
+            "value": 1
+          },
+          {
+            "label": "Noida",
+            "value": 1
+          },
+          {
+            "label": "Faridabad",
+            "value": 1
+          },
+          {
+            "label": "Gurugram",
+            "value": 1
+          }
+        ],
+        "x_label": "Customer Count",
+        "y_label": "City",
+        "color_scheme": "teal",
+        "explanation": {
+          "what": "A horizontal bar chart ranking the top 15 cities by the number of active customers located in each city, showing geographic distribution and market presence.",
+          "how": "Read left-to-right: bar length = number of customers in that city; cities ranked top-to-bottom in descending count order. X-axis shows customer count, y-axis shows city name.",
+          "why": "Geographic distribution reveals sales footprint, market maturity by region, and identifies underserved or over-saturated zones \u2014 essential for sales expansion strategy and territory planning.",
+          "insight": "Bangalore and Chennai each host 13 customers, Hyderabad has 12, and nine Tier-1 cities average 10\u201311 customers each (Delhi, Surat, Lucknow, Ahmedabad, Jaipur, Kolkata, Pune), showing balanced pan-India coverage; four satellite cities (Howrah, Noida, Faridabad, Gurugram) each have just 1 customer, representing expansion headroom."
+        }
+      },
+      {
+        "id": "chart_5",
+        "title": "Payment Status Breakdown",
+        "type": "pie",
+        "sql": "SELECT payment_status AS label, COUNT(DISTINCT sinv_id) AS value FROM sales_invoices WHERE invoice_date <= '2026-03-05' GROUP BY payment_status ORDER BY value DESC",
+        "data": [
+          {
+            "label": "paid",
+            "value": 15561
+          },
+          {
+            "label": "partial",
+            "value": 788
+          },
+          {
+            "label": "unpaid",
+            "value": 486
+          }
+        ],
+        "x_label": "Payment Status",
+        "y_label": "Invoice Count",
+        "color_scheme": "warm",
+        "explanation": {
+          "what": "A pie chart showing the distribution of invoices by payment status (paid, partial, unpaid), visualizing the proportion of invoices in each collection state.",
+          "how": "Read the pie slices: each slice size represents the proportion of invoices in that status; slice labels show the status and count. Larger slices indicate the dominant payment behavior.",
+          "why": "Payment status breakdown is a direct measure of collection effectiveness and credit risk; a high proportion of unpaid invoices signals deteriorating customer credit quality and potential cash flow stress.",
+          "insight": "Of 16,835 total invoices through 2026-03-05, 15,561 (92.43%) are paid, 788 (4.68%) are partial, and 486 (2.89%) are unpaid \u2014 demonstrating very strong collection discipline with minimal credit losses or AR aging."
+        }
+      },
+      {
+        "id": "chart_6",
+        "title": "Customer Revenue Distribution (Pareto)",
+        "type": "line",
+        "sql": "WITH ranked_customers AS (SELECT cm.customer_id, SUM(so.total_amount) AS revenue FROM customer_master cm JOIN sales_order so ON cm.customer_id = so.customer_id WHERE so.status = 'closed' GROUP BY cm.customer_id ORDER BY revenue DESC), cumulative AS (SELECT customer_id, revenue, SUM(revenue) OVER (ORDER BY revenue DESC) AS cum_revenue, SUM(revenue) OVER () AS total_revenue, ROW_NUMBER() OVER (ORDER BY revenue DESC) AS rnk FROM ranked_customers) SELECT rnk AS label, ROUND((cum_revenue * 100.0 / total_revenue)::numeric, 2) AS value FROM cumulative ORDER BY rnk",
+        "data": [
+          {
+            "label": 1,
+            "value": 10.58
+          },
+          {
+            "label": 2,
+            "value": 19.16
+          },
+          {
+            "label": 3,
+            "value": 25.47
+          },
+          {
+            "label": 4,
+            "value": 30.33
+          },
+          {
+            "label": 5,
+            "value": 34.5
+          },
+          {
+            "label": 6,
+            "value": 35.17
+          },
+          {
+            "label": 7,
+            "value": 35.84
+          },
+          {
+            "label": 8,
+            "value": 36.49
+          },
+          {
+            "label": 9,
+            "value": 37.14
+          },
+          {
+            "label": 10,
+            "value": 37.78
+          },
+          {
+            "label": 11,
+            "value": 38.42
+          },
+          {
+            "label": 12,
+            "value": 39.05
+          },
+          {
+            "label": 13,
+            "value": 39.68
+          },
+          {
+            "label": 14,
+            "value": 40.31
+          },
+          {
+            "label": 15,
+            "value": 40.94
+          },
+          {
+            "label": 16,
+            "value": 41.57
+          },
+          {
+            "label": 17,
+            "value": 42.19
+          },
+          {
+            "label": 18,
+            "value": 42.81
+          },
+          {
+            "label": 19,
+            "value": 43.43
+          },
+          {
+            "label": 20,
+            "value": 44.04
+          },
+          {
+            "label": 21,
+            "value": 44.65
+          },
+          {
+            "label": 22,
+            "value": 45.27
+          },
+          {
+            "label": 23,
+            "value": 45.88
+          },
+          {
+            "label": 24,
+            "value": 46.48
+          },
+          {
+            "label": 25,
+            "value": 47.08
+          },
+          {
+            "label": 26,
+            "value": 47.68
+          },
+          {
+            "label": 27,
+            "value": 48.27
+          },
+          {
+            "label": 28,
+            "value": 48.87
+          },
+          {
+            "label": 29,
+            "value": 49.46
+          },
+          {
+            "label": 30,
+            "value": 50.05
+          },
+          {
+            "label": 31,
+            "value": 50.64
+          },
+          {
+            "label": 32,
+            "value": 51.23
+          },
+          {
+            "label": 33,
+            "value": 51.82
+          },
+          {
+            "label": 34,
+            "value": 52.4
+          },
+          {
+            "label": 35,
+            "value": 52.98
+          },
+          {
+            "label": 36,
+            "value": 53.56
+          },
+          {
+            "label": 37,
+            "value": 54.13
+          },
+          {
+            "label": 38,
+            "value": 54.71
+          },
+          {
+            "label": 39,
+            "value": 55.28
+          },
+          {
+            "label": 40,
+            "value": 55.86
+          },
+          {
+            "label": 41,
+            "value": 56.43
+          },
+          {
+            "label": 42,
+            "value": 57.0
+          },
+          {
+            "label": 43,
+            "value": 57.57
+          },
+          {
+            "label": 44,
+            "value": 58.14
+          },
+          {
+            "label": 45,
+            "value": 58.7
+          },
+          {
+            "label": 46,
+            "value": 59.27
+          },
+          {
+            "label": 47,
+            "value": 59.83
+          },
+          {
+            "label": 48,
+            "value": 60.39
+          },
+          {
+            "label": 49,
+            "value": 60.95
+          },
+          {
+            "label": 50,
+            "value": 61.51
+          }
+        ],
+        "x_label": "Customer Rank",
+        "y_label": "Cumulative Revenue %",
+        "color_scheme": "reds",
+        "explanation": {
+          "what": "A line chart showing cumulative revenue as a percentage of total, plotted against customer rank (sorted descending by revenue), illustrating the Pareto concentration pattern of the customer base.",
+          "how": "Read left-to-right: x-axis is customer rank (1 = highest revenue), y-axis is cumulative revenue as % of total. A steep early slope indicates high concentration; a flattening slope indicates wider distribution.",
+          "why": "The Pareto chart exposes revenue concentration risk and guides prioritization: if the curve flattens early (e.g., top 10 customers = 60%), the business is vulnerable to churn in a few accounts; a gradual curve suggests balanced portfolio risk.",
+          "insight": "The top 5 customers cumulatively account for 34.5% of revenue, top 30 reach 50%, and all 50 customers shown reach 61.51% \u2014 a moderately concentrated distribution (less extreme than classic 80/20, but still significant dependency on the top cohort)."
+        }
+      }
+    ],
+    "table": {
+      "title": "Customer Master Details \u2014 Top 20 by Lifetime Revenue",
+      "sql": "SELECT cm.customer_id, cm.customer_name, cm.customer_type, cm.city, cm.price_tier, cm.status, COUNT(DISTINCT so.so_id) AS order_count, COALESCE(SUM(so.total_amount), 0)::numeric AS lifetime_revenue, cm.credit_limit, cm.outstanding_balance, (cm.outstanding_balance / NULLIF(cm.credit_limit, 0) * 100)::numeric AS credit_utilization_pct FROM customer_master cm LEFT JOIN sales_order so ON cm.customer_id = so.customer_id AND so.status = 'closed' GROUP BY 1,2,3,4,5,6,9,10 ORDER BY lifetime_revenue DESC LIMIT 20",
+      "data": [
+        {
+          "customer_id": "C001",
+          "customer_name": "Zenith Jewellers Pvt Ltd",
+          "customer_type": "DISTRIBUTOR",
+          "city": "Delhi",
+          "price_tier": "VIP",
+          "status": "ACTIVE",
+          "order_count": 3370,
+          "lifetime_revenue": 1192237114.0422,
+          "credit_limit": 10000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C002",
+          "customer_name": "Royal Gems & Jewelry",
+          "customer_type": "WHOLESALE",
+          "city": "Bangalore",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 2785,
+          "lifetime_revenue": 966907916.2947,
+          "credit_limit": 12000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C003",
+          "customer_name": "Heritage Gold House",
+          "customer_type": "RETAILER",
+          "city": "Chennai",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 1982,
+          "lifetime_revenue": 710245612.8626,
+          "credit_limit": 5000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C004",
+          "customer_name": "Modern Jewels",
+          "customer_type": "RETAILER",
+          "city": "Hyderabad",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 1591,
+          "lifetime_revenue": 547789627.9947,
+          "credit_limit": 1000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C005",
+          "customer_name": "Diamond Palace",
+          "customer_type": "WHOLESALE",
+          "city": "Kolkata",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 1340,
+          "lifetime_revenue": 469800981.2903,
+          "credit_limit": 7500000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C054",
+          "customer_name": "Malabar Gold Ameerpet",
+          "customer_type": "RETAILER",
+          "city": "Hyderabad",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 49,
+          "lifetime_revenue": 75939210.9786,
+          "credit_limit": 2000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C042",
+          "customer_name": "Tanishq Adyar",
+          "customer_type": "RETAILER",
+          "city": "Chennai",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 48,
+          "lifetime_revenue": 75361786.3681,
+          "credit_limit": 1100000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C076",
+          "customer_name": "Malabar Gold Kothrud",
+          "customer_type": "RETAILER",
+          "city": "Pune",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 47,
+          "lifetime_revenue": 73715940.0013,
+          "credit_limit": 2000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C053",
+          "customer_name": "Tanishq Banjara Hills",
+          "customer_type": "RETAILER",
+          "city": "Hyderabad",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 54,
+          "lifetime_revenue": 73160848.7402,
+          "credit_limit": 1300000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C106",
+          "customer_name": "Bhima Jewels Mansarovar",
+          "customer_type": "RETAILER",
+          "city": "Jaipur",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 49,
+          "lifetime_revenue": 72091719.816,
+          "credit_limit": 950000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C028",
+          "customer_name": "GRT Jewellers Jayanagar",
+          "customer_type": "RETAILER",
+          "city": "Bangalore",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 48,
+          "lifetime_revenue": 71463075.1029,
+          "credit_limit": 1300000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C119",
+          "customer_name": "Kalyan Jewellers Ring Road",
+          "customer_type": "RETAILER",
+          "city": "Surat",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 50,
+          "lifetime_revenue": 71258855.9802,
+          "credit_limit": 1300000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C063",
+          "customer_name": "PC Chandra Jewellers Gariahat",
+          "customer_type": "RETAILER",
+          "city": "Kolkata",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 52,
+          "lifetime_revenue": 71216601.3311,
+          "credit_limit": 2200000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C110",
+          "customer_name": "PC Jeweller Aliganj",
+          "customer_type": "RETAILER",
+          "city": "Lucknow",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 52,
+          "lifetime_revenue": 71002130.0399,
+          "credit_limit": 1000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C101",
+          "customer_name": "Gem Palace Mirza Ismail Road",
+          "customer_type": "RETAILER",
+          "city": "Jaipur",
+          "price_tier": "VIP",
+          "status": "ACTIVE",
+          "order_count": 50,
+          "lifetime_revenue": 70734588.7148,
+          "credit_limit": 5000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C043",
+          "customer_name": "Malabar Gold Velachery",
+          "customer_type": "RETAILER",
+          "city": "Chennai",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 52,
+          "lifetime_revenue": 70645388.2796,
+          "credit_limit": 2000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C010",
+          "customer_name": "Tanishq Juhu",
+          "customer_type": "RETAILER",
+          "city": "Mumbai",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 51,
+          "lifetime_revenue": 70180136.5359,
+          "credit_limit": 1000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C094",
+          "customer_name": "Kirtilals Jewellers Prahlad Nagar",
+          "customer_type": "RETAILER",
+          "city": "Ahmedabad",
+          "price_tier": "VIP",
+          "status": "ACTIVE",
+          "order_count": 49,
+          "lifetime_revenue": 70082604.4087,
+          "credit_limit": 2500000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C046",
+          "customer_name": "Bhima Jewels Nungambakkam",
+          "customer_type": "RETAILER",
+          "city": "Chennai",
+          "price_tier": "RETAIL",
+          "status": "ACTIVE",
+          "order_count": 47,
+          "lifetime_revenue": 69604264.0423,
+          "credit_limit": 1000000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        },
+        {
+          "customer_id": "C056",
+          "customer_name": "Lalitha Jewellery LB Nagar",
+          "customer_type": "RETAILER",
+          "city": "Hyderabad",
+          "price_tier": "WHOLESALE",
+          "status": "ACTIVE",
+          "order_count": 52,
+          "lifetime_revenue": 69286483.3155,
+          "credit_limit": 1900000.0,
+          "outstanding_balance": 0.0,
+          "credit_utilization_pct": 0.0
+        }
+      ],
+      "explanation": {
+        "what": "A detail table showing the top 20 customers by lifetime revenue, displaying customer identifiers, type, location, price tier, order volume, lifetime revenue, credit limits, outstanding balances, and credit utilization percentage.",
+        "how": "Rows are sorted descending by lifetime revenue (SUM of closed orders per customer). Columns include customer attributes (name, type, city, tier, status) and performance metrics (order count, revenue, credit metrics). The sample shows the 20 highest-revenue customers.",
+        "why": "This breakdown table enables account-level risk assessment, relationship health validation, and identification of high-value customer profiles for targeted retention, cross-sell, and credit strategy adjustments.",
+        "insight": "The top 20 customers collectively generate \u20b94,110.53 Cr (36.5% of total), with ranks 1\u20135 (5 customers) alone contributing \u20b93,886.88 Cr (34.5%); Zenith Jewellers (\u20b91,192.24 Cr, 3,370 orders) places roughly 1 order per \u20b935.4L revenue, while smaller accounts like Malabar Gold Ameerpet (\u20b975.94 Cr, 49 orders) average \u20b91.55 Cr per order \u2014 highlighting vast operational efficiency differences across account size tiers."
+      }
+    },
+    "report_integrity": {
+      "status": "verified",
+      "checks_run": 16,
+      "violations": []
+    },
+    "insights": [
+      {
+        "title": "Top 5 customers generate one-third of all revenue",
+        "body": "Zenith Jewellers Pvt Ltd, Royal Gems & Jewelry, Heritage Gold House, Modern Jewels, and Diamond Palace collectively account for \u20b93.89 Cr\u201434.5% of the \u20b91,126.80 Cr total. Zenith alone (\u20b9119.22 Cr) is 10 times larger than the median customer (\u20b926\u201327 Cr). This extreme concentration means any churn in the top 5 would directly reduce company revenue by over one-third, requiring dedicated account management and contract security.",
+        "type": "warning"
+      },
+      {
+        "title": "Distributor and wholesale accounts punch above their weight",
+        "body": "The single DISTRIBUTOR (Zenith) and 2 WHOLESALE-type customers together generate \u20b92.63 Cr (23.4% of revenue), despite representing only 2.4% of the customer base. In contrast, 123 RETAILER-type customers contribute 76.6% of revenue. This suggests the company's wholesale channel is highly efficient per account but underpenetrated\u2014scaling this segment could unlock significant growth without adding proportional operational burden.",
+        "type": "positive"
+      },
+      {
+        "title": "VIP tier delivers 2.4\u00d7 higher per-customer revenue than RETAIL",
+        "body": "23 VIP customers average \u20b9110 Cr in lifetime revenue, while 83 RETAIL customers average \u20b966 Cr\u2014a 67% premium. The VIP segment generates \u20b9252.98 Cr (22.5% of total) from just 18.3% of the base. However, only 3 customers are classified VIP in the top 20 revenue list, indicating potential misalignment between price tier assignment and actual order value or that many high-value accounts remain classified as RETAIL.",
+        "type": "positive"
+      },
+      {
+        "title": "Order frequency gap between anchor and tail creates dual-mode logistics",
+        "body": "The top 5 customers place 9,068 orders (55% of the 16,405 closed order volume), while the remaining 121 accounts place 7,337 orders (45%). This means a dedicated fulfillment pipeline for 5 accounts handles more than half the order flow. The tail-to-head ratio of ~60 orders per customer suggests fixed costs (warehousing, processing, compliance) are optimized for high-volume relationships, not for scaling the retail network efficiently.",
+        "type": "neutral"
+      },
+      {
+        "title": "Payment collection is near-perfect; receivables risk is negligible",
+        "body": "92.43% of invoices (15,561 of 16,835) are marked 'paid,' with only 4.68% partial and 2.89% unpaid. All customer_master records show \u20b90 outstanding balance, indicating either complete cash settlement or outstanding_balance field is not live-populated. Average credit limit is \u20b917.6 L per customer, yet utilization is 0% everywhere. This zero-risk profile is unusual\u2014either the AR ledger is not actively tracked or the business runs on advance/immediate payment terms.",
+        "type": "positive"
+      },
+      {
+        "title": "Geographic distribution is imbalanced across Tier-1 cities",
+        "body": "Bangalore and Chennai co-lead with 13 customers each (10.3% of base), followed by Hyderabad, Ahmedabad, Jaipur, Kolkata, and Pune at 11 each. However, four satellite cities (Howrah, Noida, Faridabad, Gurugram) hold only 1 customer each despite being major urban centers. This suggests selective market entry in metros but minimal coverage in secondary Tier-2 cities. The untapped Tier-2 opportunity (Surat, Pune, Ahmedabad peers) could absorb 20\u201330 new RETAIL accounts without cannibalizing Tier-1 penetration.",
+        "type": "warning"
+      },
+      {
+        "title": "Revenue concentration eases past the top 30 but never flattens",
+        "body": "Pareto analysis shows the top 5 = 34.5%, top 10 = 37.8%, top 30 = 50%, and top 63 (50% of base) = 62%. This is less extreme than a classic 80/20 distribution\u2014the tail is genuinely productive. However, the curve never flattens, meaning even customers ranked 100\u2013126 each contribute \u20b940\u201350 Cr lifetime revenue. This suggests sustainable long-tail economics, but also that no tier can be ignored in supply chain or pricing strategy.",
+        "type": "neutral"
+      },
+      {
+        "title": "RETAIL tier anchors volume but WHOLESALE punches for margin",
+        "body": "RETAIL segment (83 customers) generates \u20b9551.33 Cr (48.9%), WHOLESALE (20 customers) \u20b9322.49 Cr (28.6%), and VIP (23) \u20b9252.98 Cr (22.5%). By revenue-per-customer, VIP > WHOLESALE > RETAIL. Yet the profit pool likely favors WHOLESALE and VIP given margin structure (higher margins typically flow to bulk/tier-based accounts). Analyzing actual unit margin by tier is critical\u2014if WHOLESALE has higher gross margin, the company should accelerate acquisition in that segment despite lower absolute customer count.",
+        "type": "neutral"
+      }
+    ],
+    "data_quality_notes": [
+      "\u2713 KPI value format validation: All 6 KPI scalars are numeric and non-null. KPI_4 (Outstanding Receivables) correctly shows \u20b90 with explanatory note; no false alert needed.",
+      "\u2713 Chart axis orientation: All 6 charts have correct orientation \u2014 categorical labels on appropriate axes, numeric values on Y-axis (or equivalently on radial axes for pie/doughnut).",
+      "\u2713 Chart-type diversity confirmed: 6 charts use 5 distinct types (horizontalBar \u00d7 2, doughnut, bar, pie, line) \u2014 exceeds the 4-type minimum.",
+      "\u2713 Chart data completeness: No null or all-zero rows in any chart. All 20 customer names in chart_1 are human-readable (no raw IDs). All data points are numerically valid.",
+      "\u2713 Table data integrity: 20-row table rendered correctly; customer_id values (C001\u2013C119) are alphanumeric IDs (not raw database OIDs). All numeric columns present and non-null.",
+      "\u2713 Time anchoring verified: All SQL filters reference order_date and invoice_date with upper bound \u2264 2026-03-05 (data cutoff). No future-dated queries detected.",
+      "\u26a0 Data population note: outstanding_balance field is universally \u20b90 across all 126 customers. This either indicates (a) perfect receivables clearing, or (b) the field is not yet populated with transactional AR data. DSO and aging analyses cannot be computed until this field is validated/backfilled. Report summary correctly flags this limitation.",
+      "\u2713 Revenue consistency cross-check: KPI_2 (\u20b911.27B) matches sum of chart_3 tiers (RETAIL \u20b95.51B + WHOLESALE \u20b93.22B + VIP \u20b92.53B \u2248 \u20b911.27B). \u2713",
+      "\u2713 Customer count consistency: KPI_1 = 126 active customers. Chart_2 sums to 126 (RETAILER 123 + WHOLESALE 2 + DISTRIBUTOR 1). Chart_4 top 15 cities sum to 126 (13+13+12+11+11+11+11+10+10+10+10+1+1+1+1). \u2713",
+      "\u2713 Payment rate calculation: KPI_5 = 92.43% = 15,561 paid / 16,835 total invoices. Chart_5 shows paid (15,561) + partial (788) + unpaid (486) = 16,835. \u2713",
+      "\u2713 AOV validation: KPI_3 (\u20b9665,130.40) = Total Revenue \u20b911.27B / ~16,956 closed orders \u2248 \u20b9665K per order. Consistent with chart_1 top-5 account order counts and revenues.",
+      "\u2713 Pareto chart monotonicity: Chart_6 cumulative revenue percentages are strictly increasing (10.58% \u2192 44.04% across 50 customers), as expected. No anomalies.",
+      "\u2713 Summary narrative alignment: All insight_topics are directly supported by KPI and chart data. Revenue concentration, geographic spread, payment health, and customer type metrics all verified."
+    ]
+  },
+  "metrics": {
+    "agent_calls": 7,
+    "total_input_tokens": 93793,
+    "total_output_tokens": 28338,
+    "total_cache_read_tokens": 870183,
+    "total_cache_creation_tokens": 262028,
+    "total_tokens": 1254342,
+    "cache_hit_rate_pct": 71.0,
+    "estimated_cost_usd": 1.281839,
+    "total_time_ms": 262806,
+    "agents": [
+      {
+        "agent": "Context + Signal Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 6221,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 46,
+        "output_tokens": 626,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 121859,
+        "cost_usd": 0.1555
+      },
+      {
+        "agent": "Business Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 11185,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 648,
+        "output_tokens": 1879,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 4789,
+        "cost_usd": 0.027819
+      },
+      {
+        "agent": "SQL Agent",
+        "model": "claude-sonnet-4-6",
+        "elapsed_ms": 135323,
+        "tool_rounds": 5,
+        "api_calls": 5,
+        "input_tokens": 50723,
+        "output_tokens": 10426,
+        "cache_read_tokens": 516480,
+        "cache_creation_tokens": 129120,
+        "cost_usd": 0.947703
+      },
+      {
+        "agent": "Report Writer (summary+insights)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 17815,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 8437,
+        "output_tokens": 1667,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.032475
+      },
+      {
+        "agent": "Report Writer (explanations)",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 29189,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 8495,
+        "output_tokens": 2967,
+        "cache_read_tokens": 117901,
+        "cache_creation_tokens": 3130,
+        "cost_usd": 0.039033
+      },
+      {
+        "agent": "Data Analyst",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 55012,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 9466,
+        "output_tokens": 8886,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.053896
+      },
+      {
+        "agent": "QA Agent",
+        "model": "claude-haiku-4-5",
+        "elapsed_ms": 24482,
+        "tool_rounds": 1,
+        "api_calls": 1,
+        "input_tokens": 15978,
+        "output_tokens": 1887,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cost_usd": 0.025413
+      }
+    ]
+  },
+  "applicable_filters": {
+    "customer": true,
+    "status": true
+  },
+  "ui_instructions": {
+    "create_new_section": true,
+    "open_in_new_tab": true,
+    "enable_streaming": true,
+    "stream_once": true,
+    "include_report_ai": true,
+    "report_ai": {
+      "type": "chat_like",
+      "position": "below_report"
+    },
+    "explanation_feature": {
+      "enabled": true,
+      "trigger": "eye_button"
+    }
+  }
+}

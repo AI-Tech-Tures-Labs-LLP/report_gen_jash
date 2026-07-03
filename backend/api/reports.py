@@ -37,6 +37,46 @@ def save_report_endpoint(req: SaveReportRequest, current_user: dict = Depends(ge
     return {"ok": True}
 
 
+class UpdateReportRequest(BaseModel):
+    report_data: Dict[str, Any]
+
+
+@router.put("/reports/{report_id}")
+def update_report_endpoint(report_id: str, req: UpdateReportRequest,
+                           current_user: dict = Depends(get_current_user)):
+    """Patch a saved report's data in place (user-scoped). Used when the viewer edits
+    a report (reorder/filter/modify) so the change survives reload — the viewer no
+    longer keeps a localStorage copy. 404 if the report doesn't exist for this user."""
+    from db.user_data import get_report, save_report
+
+    existing = get_report(user_id=current_user["user_id"], report_id=report_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Report not found")
+    # Preserve the original conv_id/question; only the payload changes.
+    save_report(
+        user_id=current_user["user_id"],
+        conv_id=existing.get("conv_id", ""),
+        report_id=report_id,
+        question=existing.get("question", ""),
+        report_data=req.report_data,
+    )
+    return {"ok": True}
+
+
+@router.get("/reports/{report_id}")
+def get_report_endpoint(report_id: str, current_user: dict = Depends(get_current_user)):
+    """Fetch a saved report by id (user-scoped via JWT). This is the source of truth
+    the report-view tab reads from — reports are no longer mirrored to localStorage.
+    Returns the stored report_data payload, or 404 if it doesn't exist for this user."""
+    from db.user_data import get_report
+
+    doc = get_report(user_id=current_user["user_id"], report_id=report_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Report not found")
+    # `report_data` is the exact payload the viewer expects (what openReport saved).
+    return doc.get("report_data") or {}
+
+
 @router.post("/report")
 def report_endpoint(req: ReportRequest):
     """Generate a full analytics report from a natural-language question."""

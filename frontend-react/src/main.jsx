@@ -51,12 +51,12 @@ function Root() {
         alignItems: "center",
         justifyContent: "center",
         background: "linear-gradient(135deg, #fefefe 0%, #faf8f3 30%, #f5f0e8 60%, #fefefe 100%)",
-        fontFamily: "'Inter', sans-serif",
+        fontFamily: "'Figtree', sans-serif",
       }}>
         <div style={{
           width: 40, height: 40,
-          border: "3px solid rgba(212,175,55,0.15)",
-          borderTopColor: "#d4af37",
+          border: "3px solid rgba(219,131,16,0.15)",
+          borderTopColor: "#DB8310",
           borderRadius: "50%",
           animation: "spin 0.8s linear infinite",
         }} />

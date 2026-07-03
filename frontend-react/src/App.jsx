@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getTheme } from "./theme.js";
-import { askStream, openReport } from "./api.js";
+import { askStream, openReport, generateReport } from "./api.js";
 import { loadConversations, saveConversations, newConversationId, saveMessages, loadMessages, deleteConversation, saveActiveConvId, loadActiveConvId } from "./storage.js";
 import { getAuthHeaders, logout, getUser } from "./auth.js";
 import { CHAT_STEPS, MIN_STEP_MS, stepIndexForStage, rowCountSuffix, reasoningFor } from "./progressSteps.js";
@@ -9,12 +9,22 @@ import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
 
 const CHIPS = [
-  { q: "What is the total revenue this year?", label: "Total revenue this year" },
-  { q: "Top 10 customers by revenue", label: "Top 10 customers" },
-  { q: "Which vendor has the highest purchase order value?", label: "Top vendor by PO value" },
-  { q: "What is the average order value?", label: "Average order value" },
-  { q: "Generate a sales performance report", label: "Sales Performance Report", report: true },
-  { q: "Generate a gold products analysis report", label: "Gold Products Analysis", report: true },
+  { q: "What is the total revenue this year?",                         label: "Total revenue this year" },
+  { q: "Top 10 customers by revenue",                                  label: "Top 10 customers" },
+  { q: "Which vendor has the highest purchase order value?",           label: "Top vendor by PO value" },
+  { q: "What is the average order value?",                             label: "Average order value" },
+  { q: "Show me the current inventory and stock status",               label: "Inventory & stock status" },
+];
+
+
+// Hardcoded report queries — clicking these calls /report directly,
+// skipping intent classification entirely for faster generation.
+const REPORT_CHIPS = [
+  { q: "Give sales performance report", label: "Sales Performance" },
+  { q: "Give gold analysis report", label: "Gold Products Analysis" },
+  { q: "Give customer analytics report", label: "Customer Analytics" },
+  { q: "Give vendor and PO report", label: "Vendor & PO Report" },
+  { q: "Give monthly revenue trends report", label: "Monthly Revenue Trends" },
 ];
 
 export default function App() {
@@ -43,6 +53,15 @@ export default function App() {
   const [convId, setConvId] = useState(() => loadActiveConvId() || newConversationId());
   const [convs, setConvs] = useState(() => loadConversations());
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Drag-resizable sidebar width, persisted across reloads. Clamped in onMouseMove.
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = parseInt(localStorage.getItem("sqlbot_sidebar_width") || "", 10);
+    return Number.isFinite(saved) ? saved : 250;
+  });
+  const [resizing, setResizing] = useState(false);
+  // Inline conversation rename: which conv is being edited + the draft title.
+  const [editingConvId, setEditingConvId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState("");
   const threadRef = useRef(null);
   const textareaRef = useRef(null);
   const syncTimer = useRef(null); // debounce MongoDB sync
@@ -144,6 +163,35 @@ export default function App() {
 
   function pushMessage(m) {
     setMessages((prev) => [...prev, { id: Date.now() + Math.random(), ...m }]);
+  }
+
+  async function handleDirectReport(question) {
+    if (loading) return;
+    setLoading(true);
+    resetProgress();
+    setReportMode(true);
+    setStepIndex(0);
+    pushMessage({ role: "user", text: question });
+
+    // register conversation in sidebar
+    setConvs((prev) => {
+      if (prev.find((c) => c.id === convId)) return prev;
+      const next = [{ id: convId, title: question.slice(0, 40) }, ...prev];
+      saveConversations(next);
+      return next;
+    });
+
+    try {
+      // Directly call /report — skips intent classification & schema warm for speed
+      const reportData = await generateReport(question);
+      const reportId = openReport(question, reportData, convId);
+      pushMessage({ role: "ai", reportId });
+    } catch (err) {
+      pushMessage({ role: "ai", error: err.message || "Report generation failed." });
+    } finally {
+      setLoading(false);
+      resetProgress();
+    }
   }
 
   // Advance the VISIBLE step toward the target, never faster than MIN_STEP_MS between
@@ -302,15 +350,8 @@ export default function App() {
   async function handleDeleteConversation(e, targetConvId) {
     e.stopPropagation();
 
-    // Clean up any report data in localStorage for this conversation
-    const msgs = loadMessages(targetConvId);
-    for (const m of msgs) {
-      if (m.reportId) {
-        localStorage.removeItem("sqlbot_report_" + m.reportId);
-        localStorage.removeItem("sqlbot_report_" + m.reportId + "_question");
-        localStorage.removeItem("sqlbot_report_" + m.reportId + "_theme");
-      }
-    }
+    // Reports live in MongoDB now (deleted via the cascade below) — no localStorage
+    // report copies to clean up.
 
     // Remove from localStorage (conversations list + messages)
     const remaining = deleteConversation(targetConvId);
@@ -330,26 +371,92 @@ export default function App() {
     window.location.href = "/";
   }
 
+  // ── Sidebar resize: drag the right edge. Global listeners live only while
+  //    `resizing` is true. Width is clamped [180, 480] and persisted on release. ──
+  useEffect(() => {
+    if (!resizing) return;
+    const onMove = (e) => {
+      const w = Math.min(480, Math.max(180, e.clientX));
+      setSidebarWidth(w);
+    };
+    const onUp = () => setResizing(false);
+    // Suppress text selection / cursor flicker during the drag.
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [resizing]);
+
+  // Persist the width once a drag ends (not on every mousemove frame).
+  useEffect(() => {
+    if (!resizing) localStorage.setItem("sqlbot_sidebar_width", String(sidebarWidth));
+  }, [resizing, sidebarWidth]);
+
+  // ── Conversation rename ──
+  function startRename(e, conv) {
+    e.stopPropagation();
+    setEditingConvId(conv.id);
+    setEditingTitle(conv.title || "");
+  }
+
+  function cancelRename() {
+    setEditingConvId(null);
+    setEditingTitle("");
+  }
+
+  async function commitRename(convIdToRename) {
+    const newTitle = editingTitle.trim();
+    cancelRename();
+    // Empty or unchanged → keep the existing title (rename is a non-destructive override).
+    const current = convs.find((c) => c.id === convIdToRename);
+    if (!newTitle || (current && current.title === newTitle)) return;
+    // Optimistic local update + persist to localStorage.
+    setConvs((prev) => {
+      const next = prev.map((c) => (c.id === convIdToRename ? { ...c, title: newTitle } : c));
+      saveConversations(next);
+      return next;
+    });
+    // Sync just the title to MongoDB (PATCH — no message reload).
+    try {
+      const res = await fetch(`/conversations/${convIdToRename}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      if (!res.ok) console.warn("Failed to rename conversation:", res.status);
+    } catch (err) {
+      console.warn("Rename sync failed:", err);
+    }
+  }
+
   const welcome = messages.length === 0;
 
   return (
-    <div style={{ display: "flex", height: "100%", background: t.bg, color: t.text, fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ display: "flex", height: "100%", background: t.bg, color: t.text, fontFamily: "'Figtree', sans-serif" }}>
       {/* ── Sidebar ── */}
       {sidebarOpen && (
         <aside
           style={{
-            width: 250, flexShrink: 0, background: t.bgPanel,
+            width: sidebarWidth, flexShrink: 0, background: t.bgPanel,
             borderRight: `1px solid ${t.border}`, display: "flex", flexDirection: "column",
             backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-            transition: "width 0.3s ease",
+            // No width transition while dragging, or the panel lags the cursor.
+            transition: resizing ? "none" : "width 0.3s ease",
+            position: "relative",
           }}
         >
           <div style={{ padding: "0.85rem 1rem", height: 50, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${t.border}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontWeight: 700, fontSize: "0.92rem", color: t.text }}>
               <div style={{
-                width: 28, height: 28, background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                width: 28, height: 28, background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
                 borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
-                boxShadow: "0 2px 8px rgba(212,175,55,0.3)"
+                boxShadow: "0 2px 8px rgba(219,131,16,0.3)"
               }}>
                 <svg viewBox="0 0 24 24" width="16" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
@@ -366,44 +473,84 @@ export default function App() {
             ) : (
               convs.map((c) => {
                 const isActive = c.id === convId;
+                const isEditing = editingConvId === c.id;
                 return (
                   <div
                     key={c.id}
-                    onClick={() => switchConversation(c.id)}
+                    onClick={() => { if (!isEditing) switchConversation(c.id); }}
                     className="sidebar-conv-item"
                     style={{
-                      padding: "0.6rem 0.75rem", paddingRight: "2rem", borderRadius: 8, fontSize: "0.8rem",
+                      padding: "0.6rem 0.75rem", paddingRight: isEditing ? "0.75rem" : "3.2rem", borderRadius: 8, fontSize: "0.8rem",
                       fontWeight: isActive ? 600 : 500,
-                      color: isActive ? "#b8860b" : t.textMuted, cursor: "pointer",
+                      color: isActive ? "#b86a08" : t.textMuted, cursor: isEditing ? "default" : "pointer",
                       background: isActive ? "linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(184, 134, 11, 0.08) 100%)" : "transparent",
                       border: isActive ? "1px solid rgba(212, 175, 55, 0.3)" : "1px solid transparent",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 3,
                       position: "relative",
                       transition: "all 0.15s ease",
                     }}
-                    title={c.title}
+                    title={isEditing ? undefined : c.title}
                   >
                     {isActive && (
-                      <div style={{ position: "absolute", left: 0, top: "20%", bottom: "20%", width: 3, background: "linear-gradient(135deg,#d4af37 0%,#b8860b 100%)", borderRadius: "0 3px 3px 0" }} />
+                      <div style={{ position: "absolute", left: 0, top: "20%", bottom: "20%", width: 3, background: "linear-gradient(135deg,#DB8310 0%,#b86a08 100%)", borderRadius: "0 3px 3px 0" }} />
                     )}
-                    {c.title}
-                    <button
-                      onClick={(e) => handleDeleteConversation(e, c.id)}
-                      className="sidebar-delete-btn"
-                      title="Delete conversation"
-                      style={{
-                        position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
-                        background: "none", border: "none", cursor: "pointer",
-                        color: t.textMuted, padding: 4, borderRadius: 6,
-                        opacity: 0, transition: "opacity 0.15s, color 0.15s",
-                        display: "grid", placeItems: "center",
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); commitRename(c.id); }
+                          else if (e.key === "Escape") { e.preventDefault(); cancelRename(); }
+                        }}
+                        onBlur={() => commitRename(c.id)}
+                        style={{
+                          width: "100%", background: t.bg, color: t.text,
+                          border: `1px solid rgba(212,175,55,0.5)`, borderRadius: 5,
+                          padding: "0.15rem 0.4rem", fontSize: "0.8rem", fontWeight: 500,
+                          outline: "none", fontFamily: "inherit",
+                        }}
+                      />
+                    ) : (
+                      <>
+                        {c.title}
+                        <button
+                          onClick={(e) => startRename(e, c)}
+                          className="sidebar-edit-btn"
+                          title="Rename conversation"
+                          style={{
+                            position: "absolute", right: 28, top: "50%", transform: "translateY(-50%)",
+                            background: "none", border: "none", cursor: "pointer",
+                            color: t.textMuted, padding: 4, borderRadius: 6,
+                            opacity: 0, transition: "opacity 0.15s, color 0.15s",
+                            display: "grid", placeItems: "center",
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteConversation(e, c.id)}
+                          className="sidebar-delete-btn"
+                          title="Delete conversation"
+                          style={{
+                            position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                            background: "none", border: "none", cursor: "pointer",
+                            color: t.textMuted, padding: 4, borderRadius: 6,
+                            opacity: 0, transition: "opacity 0.15s, color 0.15s",
+                            display: "grid", placeItems: "center",
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               })
@@ -432,6 +579,20 @@ export default function App() {
               Sign Out
             </button>
           </div>
+
+          {/* Resize handle — drag the sidebar's right edge to change its width. */}
+          <div
+            onMouseDown={(e) => { e.preventDefault(); setResizing(true); }}
+            title="Drag to resize"
+            style={{
+              position: "absolute", top: 0, right: -3, width: 6, height: "100%",
+              cursor: "col-resize", zIndex: 20,
+              background: resizing ? "rgba(219,131,16,0.35)" : "transparent",
+              transition: "background 0.15s ease",
+            }}
+            onMouseEnter={(e) => { if (!resizing) e.currentTarget.style.background = "rgba(219,131,16,0.2)"; }}
+            onMouseLeave={(e) => { if (!resizing) e.currentTarget.style.background = "transparent"; }}
+          />
         </aside>
       )}
 
@@ -455,7 +616,7 @@ export default function App() {
         {/* Thread */}
         <div ref={threadRef} style={{ flex: 1, overflowY: "auto", padding: "1.5rem", maxWidth: 840, width: "100%", margin: "0 auto", position: "relative" }}>
           {welcome ? (
-            <Welcome t={t} onChip={(q) => handleSubmit(q)} />
+            <Welcome t={t} onChip={(q) => handleSubmit(q)} onReport={(q) => handleDirectReport(q)} />
           ) : (
             messages.map((m) => (
               <div key={m.id}>
@@ -511,6 +672,7 @@ export default function App() {
                 })}
               </div>
             )
+
           )}
         </div>
 
@@ -568,9 +730,9 @@ export default function App() {
                   border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
                   cursor: !input.trim() ? "default" : "pointer",
                   opacity: !input.trim() ? 0.45 : 1, color: "#fff",
-                  background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+                  background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
                   display: "grid", placeItems: "center", transition: "transform 0.1s ease, box-shadow 0.15s ease",
-                  boxShadow: "0 2px 10px rgba(212,175,55,0.3)"
+                  boxShadow: "0 2px 10px rgba(219,131,16,0.3)"
                 }}
               >
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -588,15 +750,15 @@ export default function App() {
   );
 }
 
-function Welcome({ t, onChip }) {
+function Welcome({ t, onChip, onReport }) {
   return (
-    <div style={{ textAlign: "center", marginTop: "8vh", animation: "fadeIn 0.3s ease both" }}>
+    <div style={{ textAlign: "center", marginTop: "6vh", animation: "fadeIn 0.3s ease both" }}>
       <div style={{ display: "grid", placeItems: "center", marginBottom: "1.25rem" }}>
         <div style={{
           width: 60, height: 60,
-          background: "linear-gradient(135deg, #d4af37 0%, #b8860b 50%, #8b6914 100%)",
+          background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)",
           borderRadius: 14, display: "flex", color: "#fff",
-          boxShadow: "0 4px 20px rgba(212,175,55,0.35)",
+          boxShadow: "0 4px 20px rgba(219,131,16,0.35)",
           alignItems: "center", justifyContent: "center",
         }}>
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -604,19 +766,21 @@ function Welcome({ t, onChip }) {
           </svg>
         </div>
       </div>
-      <h2 style={{ fontSize: "1.65rem", fontWeight: 800, marginBottom: "0.6rem", background: "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI SQL Analyst</h2>
-      <p style={{ color: t.textMuted, fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 1.75rem", lineHeight: 1.65 }}>
+      <h2 style={{ fontSize: "1.65rem", fontWeight: 800, marginBottom: "0.6rem", background: "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI SQL Analyst</h2>
+      <p style={{ color: t.textMuted, fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 1.5rem", lineHeight: 1.65 }}>
         Ask anything about your data. I'll write the SQL, run it, and explain the results — or generate a full analytics report.
       </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center", maxWidth: 640, margin: "0 auto" }}>
+
+      {/* Quick Ask chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center", maxWidth: 640, margin: "0 auto 1.75rem" }}>
         {CHIPS.map((c) => (
           <button
             key={c.q}
             onClick={() => onChip(c.q)}
             style={{
-              border: `1px solid ${c.report ? "rgba(212, 175, 55, 0.4)" : t.border}`,
-              background: c.report ? "rgba(212, 175, 55, 0.06)" : t.bgCard,
-              color: c.report ? "#b8860b" : t.text,
+              border: `1px solid ${t.border}`,
+              background: t.bgCard,
+              color: t.text,
               borderRadius: 20, padding: "0.48rem 1rem", fontSize: "0.8rem", cursor: "pointer",
               fontWeight: 500, boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
               transition: "all 0.15s ease",
@@ -626,6 +790,33 @@ function Welcome({ t, onChip }) {
             {c.label}
           </button>
         ))}
+      </div>
+
+      {/* Quick Reports — directly calls /report, skipping chat routing */}
+      <div style={{ maxWidth: 680, margin: "0 auto" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center" }}>
+          {REPORT_CHIPS.map((c) => (
+            <button
+              key={c.q}
+              onClick={() => onReport(c.q)}
+              className="rpt-welcome-chip"
+              style={{
+                border: "1px solid rgba(219,131,16,0.45)",
+                background: "linear-gradient(135deg, rgba(219,131,16,0.08) 0%, rgba(248,213,124,0.06) 100%)",
+                color: "#b86a08",
+                borderRadius: 20, padding: "0.5rem 1.1rem", fontSize: "0.8rem", cursor: "pointer",
+                fontWeight: 600, transition: "all 0.15s ease",
+                display: "flex", alignItems: "center", gap: "0.35rem",
+                boxShadow: "0 1px 4px rgba(219,131,16,0.12)",
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              {c.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -642,9 +833,9 @@ function Switcher({ t, label, value, options, onChange }) {
             onClick={() => onChange(o.v)}
             style={{
               border: "none", borderRadius: 16, padding: "0.35rem 0.85rem", fontSize: "0.76rem", cursor: "pointer",
-              background: value === o.v ? "linear-gradient(135deg, #d4af37 0%, #b8860b 100%)" : "transparent",
+              background: value === o.v ? "linear-gradient(135deg, #DB8310 0%, #F8D57C 100%)" : "transparent",
               color: value === o.v ? "#fff" : t.textMuted, fontWeight: value === o.v ? 600 : 400,
-              boxShadow: value === o.v ? "0 2px 8px rgba(212,175,55,0.25)" : "none",
+              boxShadow: value === o.v ? "0 2px 8px rgba(219,131,16,0.25)" : "none",
               transition: "all 0.15s ease",
             }}
           >
