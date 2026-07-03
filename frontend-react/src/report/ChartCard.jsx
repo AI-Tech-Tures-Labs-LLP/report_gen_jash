@@ -1,20 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import ChartView from "./ChartView.jsx";
 import ChartFilterDrawer from "./ChartFilterDrawer.jsx";
-import ChartAiPanel from "./ChartAiPanel.jsx";
 import { downloadChartPNG, downloadChartPDF } from "./exporters.js";
 
-// One chart card: title + toolbar (explain / AI modify / download / filter),
-// the chart itself, plus the per-chart filter drawer and AI panel.
+// One chart card: title + toolbar (download / filter), the chart itself,
+// plus the per-chart filter drawer.
 export default function ChartCard({
-  spec, chartIdx, themeMode, t, wide,
-  report, onUpdateReport, onExplain, onChartReady, editMode,
+  spec, chartIdx, themeMode, t, wide, onChartReady, editMode,
 }) {
   // Filtered data drives ChartView; null = show original spec.data.
   const [filteredData, setFilteredData] = useState(null);
   const [chips, setChips] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
   const [dlOpen, setDlOpen] = useState(false);
   const dlRef = useRef(null);
   const instRef = useRef(null);
@@ -57,14 +54,6 @@ export default function ChartCard({
         )}
         {/* Toolbar */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.2rem", flexShrink: 0 }}>
-          {spec.explanation && (
-            <ChartToolBtn title="Explain" active={false} t={t} onClick={() => onExplain({ title, explanation: spec.explanation, sql: spec.sql })}>
-              <EyeIcon />
-            </ChartToolBtn>
-          )}
-          <ChartToolBtn title="AI Modify" active={aiOpen} t={t} onClick={() => { setAiOpen((o) => !o); setDrawerOpen(false); }}>
-            <EditIcon />
-          </ChartToolBtn>
           <div ref={dlRef} style={{ position: "relative" }}>
             <ChartToolBtn title="Download" active={dlOpen} t={t} onClick={(e) => { e.stopPropagation(); setDlOpen((o) => !o); }}>
               <DownloadIcon />
@@ -76,7 +65,7 @@ export default function ChartCard({
               </div>
             )}
           </div>
-          <ChartToolBtn title="Filter chart" active={drawerOpen || chips.length > 0} t={t} onClick={() => { setDrawerOpen((o) => !o); setAiOpen(false); }}>
+          <ChartToolBtn title="Filter chart" active={drawerOpen || chips.length > 0} t={t} onClick={() => setDrawerOpen((o) => !o)}>
             <FilterIcon />
             {chips.length > 0 && (
               <span style={{ position: "absolute", top: -4, right: -4, background: t.accent, color: "#fff", borderRadius: "50%", fontSize: "0.55rem", minWidth: 14, height: 14, lineHeight: "14px", textAlign: "center", padding: "0 2px", fontWeight: 700 }}>{chips.length}</span>
@@ -104,16 +93,6 @@ export default function ChartCard({
         wide={wide}
         onReady={handleReady}
       />
-
-      {aiOpen && (
-        <ChartAiPanel
-          chartIdx={chartIdx}
-          report={report}
-          t={t}
-          onClose={() => setAiOpen(false)}
-          onUpdate={(newReport) => { onUpdateReport(newReport); setAiOpen(false); }}
-        />
-      )}
     </div>
   );
 }
@@ -131,12 +110,6 @@ function ChartToolBtn({ t, active, title, onClick, children }) {
       {children}
     </button>
   );
-}
-function EyeIcon() {
-  return <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="8" rx="7" ry="4.5" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>;
-}
-function EditIcon() {
-  return <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M9 2l2 2-7 7H2V9l7-7z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 }
 function DownloadIcon() {
   return <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3.5 6.5l3 3 3-3M1.5 11.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>;

@@ -1600,12 +1600,15 @@ class ReportPipeline:
         # e.g. Revenue (crores) + Order Count (hundreds) can NOT share a Y-axis.
         # The small series becomes invisible and its tooltip shows ₹ which is wrong.
         # Fix: keep only the primary (largest magnitude) series.
+        # EXCLUDES scatter: a scatter chart's whole purpose is plotting two
+        # different-scale metrics against each other (its 2nd column is the
+        # X-AXIS, not a second Y-series) — deleting it breaks the chart entirely.
         current_data = chart.get("data", data)
         if current_data:
             current_keys = list(current_data[0].keys())
             current_vkeys = current_keys[1:]
             if (len(current_vkeys) > 1
-                    and chart.get("type", "bar").lower() not in ("pie", "doughnut", "stackedbar")):
+                    and chart.get("type", "bar").lower() not in ("pie", "doughnut", "stackedbar", "scatter")):
                 max_by_key = {}
                 for vk in current_vkeys:
                     try:
@@ -1762,17 +1765,23 @@ class ReportPipeline:
 
     @staticmethod
     def _detect_applicable_filters(report: dict) -> dict:
-        """Analyze all SQL in the report to determine which filters are applicable.
+        """Detect the report's business domain and which of that domain's
+        filters apply, based on the tables its SQL touches.
 
-        Returns a dict like:
+        Returns e.g. for a sales report:
         {
-            "date_range": True,   # has sales_order with order_date
-            "category": True,     # has product_master
-            "product": True,      # has product_master
-            "customer": True,     # has customer_master
-            "status": True,       # has sales_order with status
+            "_domain": "sales",
+            "date_range": True,   # domain defines date_from + date_to
+            "status": True,
+            "category": True,
+            "product": True,
+            "customer": True,
         }
+        A filter is applicable when its anchor table appears in the report SQL.
+        Falls back to the "sales" domain if no domain's anchor tables match.
         """
+        from services.domain_filters import DOMAINS, detect_domain
+
         # Collect all SQL from KPIs, charts, and table
         all_sql = []
         for kpi in report.get("kpis", []):
@@ -1784,33 +1793,29 @@ class ReportPipeline:
         if report.get("table", {}).get("sql"):
             all_sql.append(report["table"]["sql"])
 
-        combined = " ".join(all_sql).lower()
+        combined = " ".join(all_sql)
 
-        has_sales_order = bool(re.search(r'\bsales_order\b(?!_)', combined))
-        has_product_master = bool(re.search(r'\bproduct_master\b', combined))
-        has_customer_master = bool(re.search(r'\bcustomer_master\b', combined))
-        has_order_date = bool(re.search(r'\border_date\b', combined))
+        domain = detect_domain(combined) or "sales"
+        cfg = DOMAINS.get(domain, DOMAINS["sales"])
+        fdefs = cfg["filters"]
 
-        filters = {}
+        filters = {"_domain": domain}
 
-        # Date range filter — applicable if sales_order is referenced
-        if has_sales_order and has_order_date:
-            filters["date_range"] = True
+        # Date range applies when the date filter's anchor table is present.
+        if "date_from" in fdefs and "date_to" in fdefs:
+            anchor = fdefs["date_from"]["from_anchor"]
+            if re.search(rf'\b{anchor}\b(?!_)', combined, re.IGNORECASE):
+                filters["date_range"] = True
 
-        # Category & Product — applicable if product_master is referenced
-        if has_product_master:
-            filters["category"] = True
-            filters["product"] = True
+        # Every non-date filter applies when its anchor table is present.
+        for name, fdef in fdefs.items():
+            if name in ("date_from", "date_to"):
+                continue
+            anchor = fdef["from_anchor"]
+            if re.search(rf'\b{anchor}\b(?!_)', combined, re.IGNORECASE):
+                filters[name] = True
 
-        # Customer — applicable if customer_master is referenced
-        if has_customer_master:
-            filters["customer"] = True
-
-        # Status — applicable if sales_order is referenced
-        if has_sales_order:
-            filters["status"] = True
-
-        logger.info("Detected applicable filters: %s", filters)
+        logger.info("Detected domain=%s applicable filters: %s", domain, filters)
         return filters
 
     def apply_filters(self, report: dict, filters: dict) -> dict[str, Any]:
@@ -1818,73 +1823,134 @@ class ReportPipeline:
 
         This does NOT call the LLM — it modifies existing SQL directly.
         Much faster and more reliable than re-generating.
+
+        Two correctness guarantees:
+        1. IDEMPOTENT — filters are always injected into the PRISTINE base SQL
+           (captured once under `_base_sql`), never into already-filtered SQL.
+           So removing/changing a filter and re-applying yields the correct
+           result without needing a full Clear Filters reset first.
+        2. STABLE IDENTITY — the same KPI/chart cards stay in place; filtering
+           only refreshes their values. `_clean_kpis()` is NOT run here (it is
+           for initial generation only — it dedupes/reorders/drops cards and can
+           inject fresh HARD-CODED UNFILTERED replacement KPIs, which would mix
+           unfiltered data into a filtered report and change which metrics show).
         """
         import copy
         report = copy.deepcopy(report)
 
-        logger.info("Applying filters to existing report: %s", filters)
+        # Detect the report's domain ONCE so every KPI/chart/table filters
+        # against the same vocabulary (a stray query won't be mis-detected
+        # into a different domain than its siblings).
+        domain = self._detect_applicable_filters(report).get("_domain", "sales")
+
+        logger.info("Applying filters to existing report (domain=%s): %s", domain, filters)
+
+        def _refilter(item: dict) -> None:
+            # Always inject from the pristine base (captured on first apply),
+            # not from the last-filtered sql — this is what makes it idempotent.
+            base_sql = item.get("_base_sql") or item.get("sql", "")
+            if not base_sql:
+                return
+            item["_base_sql"] = base_sql
+            filtered_sql = _inject_filters(base_sql, filters, domain=domain)
+            # _fix_report_sql carries SALES-specific auto-corrections (e.g. it
+            # assumes gold_kt implies a sales_order_line_gold join). Those rules
+            # corrupt non-sales queries (e.g. gold_kt on job_card). The base SQL
+            # was already fixed at generation time and the injector only appends
+            # verified WHERE/JOIN clauses, so only re-run the sales fixer for the
+            # sales domain.
+            if domain == "sales":
+                filtered_sql = _fix_report_sql(filtered_sql)
+            item["sql"] = filtered_sql
+
+        # SAFETY NET: filter injection is regex-based, not a real SQL parser —
+        # it cannot be proven correct for every possible query shape. If the
+        # filtered SQL fails to execute for some edge case it doesn't handle,
+        # the user must NEVER see an "Error" card. Instead, fall back to
+        # re-executing the PRISTINE base SQL (unfiltered) for that one item,
+        # and flag it so the UI can note the filter didn't apply there —
+        # correct old data beats a broken card every time.
+        def _execute_with_fallback(item: dict, executor) -> None:
+            base_sql = item.get("_base_sql")
+            executor(item)
+            if item.get("error") and base_sql and item.get("sql") != base_sql:
+                logger.warning(
+                    "Filtered SQL failed for '%s' — falling back to unfiltered base SQL: %s",
+                    item.get("label") or item.get("title") or item.get("id"), item.get("error"),
+                )
+                item["sql"] = base_sql
+                item.pop("error", None)
+                item.pop("value", None)
+                item["data"] = []
+                executor(item)
+                item["_filter_not_applied"] = True
 
         # Apply filters to all KPI SQLs and re-execute
         for kpi in report.get("kpis", []):
-            original_sql = kpi.get("sql", "")
-            if original_sql:
-                filtered_sql = _inject_filters(original_sql, filters)
-                filtered_sql = _fix_report_sql(filtered_sql)
-                kpi["sql"] = filtered_sql
-                # Clear previous error/value
+            kpi.pop("_filter_not_applied", None)
+            if kpi.get("_base_sql") or kpi.get("sql"):
+                _refilter(kpi)
                 kpi.pop("error", None)
                 kpi.pop("value", None)
-            self._execute_kpi_sql(kpi)
+            _execute_with_fallback(kpi, self._execute_kpi_sql)
 
         # Apply filters to all chart SQLs and re-execute
         for chart in report.get("charts", []):
-            original_sql = chart.get("sql", "")
-            if original_sql:
-                filtered_sql = _inject_filters(original_sql, filters)
-                filtered_sql = _fix_report_sql(filtered_sql)
-                chart["sql"] = filtered_sql
-                # Clear previous error/data
+            chart.pop("_filter_not_applied", None)
+            if chart.get("_base_sql") or chart.get("sql"):
+                _refilter(chart)
                 chart.pop("error", None)
                 chart["data"] = []
-            self._execute_chart_sql(chart)
+            _execute_with_fallback(chart, self._execute_chart_sql)
 
         # Apply filters to table SQL and re-execute
         if "table" in report and report["table"]:
-            original_sql = report["table"].get("sql", "")
-            if original_sql:
-                filtered_sql = _inject_filters(original_sql, filters)
-                filtered_sql = _fix_report_sql(filtered_sql)
-                report["table"]["sql"] = filtered_sql
+            report["table"].pop("_filter_not_applied", None)
+            if report["table"].get("_base_sql") or report["table"].get("sql"):
+                _refilter(report["table"])
                 report["table"].pop("error", None)
                 report["table"]["data"] = []
-            self._execute_table_sql(report["table"])
+            _execute_with_fallback(report["table"], self._execute_table_sql)
 
         logger.info("Filter application complete — all SQL re-executed")
 
-        # ── Post-processing: clean up after filter application ────────
+        # ── Post-processing: KPIs keep their identity when filtering ──────
+        # Do NOT call _clean_kpis() here (see docstring). Only surface a genuine
+        # SQL error as N/A; never drop, reorder, or replace a card.
         if "kpis" in report:
-            report["kpis"] = self._clean_kpis(report["kpis"])
+            for kpi in report["kpis"]:
+                if kpi.get("error"):
+                    kpi["value"] = "N/A"
 
+        # Mark (never DELETE) charts with no data for the current filter combo.
+        # Deleting a chart here would permanently discard its `_base_sql`, so a
+        # narrow filter combination that legitimately matches 0 rows would make
+        # that chart unrecoverable — even Clear Filters couldn't bring it back,
+        # since there'd be nothing left in the report to restore. Instead, flag
+        # it with `_no_data_for_filter` so the frontend can show an empty state
+        # while the chart (and its `_base_sql`) stays in the report for the next
+        # filter change.
         if "charts" in report:
-            valid_charts = []
             for chart in report["charts"]:
+                chart.pop("_no_data_for_filter", None)
                 if chart.get("error"):
+                    chart["_no_data_for_filter"] = True
                     continue
-                if not chart.get("data") or len(chart["data"]) == 0:
+                data = chart.get("data") or []
+                if len(data) == 0:
+                    chart["_no_data_for_filter"] = True
                     continue
-                row_keys = list(chart["data"][0].keys()) if chart["data"] else []
+                row_keys = list(data[0].keys())
                 if len(row_keys) < 2:
+                    chart["_no_data_for_filter"] = True
                     continue
                 value_keys = row_keys[1:]
                 all_zero = all(
                     all((v := row.get(k)) is None or v == 0 or v == "" for k in value_keys)
-                    for row in chart["data"]
+                    for row in data
                 )
                 if all_zero:
-                    continue
-                valid_charts.append(chart)
-            # Always update — even if empty — so stale pre-filter data is never shown
-            report["charts"] = valid_charts
+                    chart["_no_data_for_filter"] = True
 
         # ── Smart chart-type auto-correction (same as generate) ──────────
         if "charts" in report:

@@ -999,7 +999,7 @@ class ClaudeReportPipeline:
     # PUBLIC API
     # ═══════════════════════════════════════════════════════════════════════
 
-    def generate(self, question: str, force_refresh: bool = False) -> dict[str, Any]:
+    def generate(self, question: str, filters: dict | None = None, force_refresh: bool = False) -> dict[str, Any]:
         """Generate a complete report using the 6-agent pipeline.
 
         Supports two modes:
@@ -1012,6 +1012,7 @@ class ClaudeReportPipeline:
         logger.info("Claude pipeline START — question: %s", question[:120])
 
         self._retry_count = 0
+        self._filters = filters or {}
         self.client.reset_usage()  # clear telemetry for this run
 
         # Build the SHARED database-context block ONCE for this run. Passed as a
@@ -1082,6 +1083,14 @@ class ClaudeReportPipeline:
                 f"KPI samples  : {', '.join(kpi_values)}",
                 f"Chart data   : {', '.join(chart_rows)}",
             ])
+
+            # ── Global filter safety pass ─────────────────────────────────
+            # If the user set global filters before generating the report,
+            # deterministically inject them into every SQL query and re-execute.
+            # This is the same logic used by /report/apply-filters (per-chart),
+            # reused here as a guaranteed safety net after Agent 3.
+            if self._filters:
+                report_with_data = self._apply_global_filters(report_with_data)
 
             # ── SQL Traceability Log ──────────────────────────────────────
             self._log_sql_traceability(report_with_data)
@@ -1374,6 +1383,59 @@ class ClaudeReportPipeline:
             blueprint['title'] = f"Report: {context.get('subject', question[:50])}"
 
         return blueprint
+
+    def _apply_global_filters(self, report: dict) -> dict:
+        """Deterministic safety pass: inject global filters into every SQL query
+        and re-execute. Reuses filter_injector logic (same as /report/apply-filters).
+        Only runs when self._filters is non-empty."""
+        from services.filter_injector import _inject_filters
+        from ai.claude_tools import handle_execute_sql_query
+        import copy, json as _json
+
+        filters = self._filters
+        report = copy.deepcopy(report)
+
+        def _rerun(item: dict, label: str) -> dict:
+            original_sql = item.get("sql", "")
+            if not original_sql:
+                return item
+            filtered_sql = _inject_filters(original_sql, filters)
+            if filtered_sql == original_sql:
+                return item  # nothing changed — skip re-execution
+            result_str = handle_execute_sql_query(filtered_sql, f"filtered {label}")
+            try:
+                result = _json.loads(result_str)
+                if result.get("success"):
+                    item["sql"] = filtered_sql
+                    rows = result.get("data", [])
+                    if "value" in item:
+                        # Prefer a column literally named 'value'; else the first
+                        # column. Never blindly take the first key — a multi-column
+                        # KPI row (e.g. {"label": ..., "value": ...}) would otherwise
+                        # extract the wrong field.
+                        if rows:
+                            row = rows[0]
+                            col = "value" if "value" in row else next(iter(row), None)
+                            item["value"] = row.get(col) if col is not None else None
+                        else:
+                            item["value"] = None
+                    if "data" in item:
+                        item["data"] = rows
+                else:
+                    logger.warning("Global filter re-execute failed for %s: %s", label, result.get("error"))
+            except Exception as exc:
+                logger.warning("Global filter re-execute error for %s: %s", label, exc)
+            return item
+
+        for kpi in report.get("kpis", []):
+            _rerun(kpi, kpi.get("label", "kpi"))
+        for chart in report.get("charts", []):
+            _rerun(chart, chart.get("title", "chart"))
+        if report.get("table", {}).get("sql"):
+            _rerun(report["table"], "table")
+
+        logger.info("Global filter safety pass complete — filters: %s", filters)
+        return report
 
     def _run_sql_agent(
         self,

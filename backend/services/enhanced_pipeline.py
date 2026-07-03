@@ -116,6 +116,7 @@ class EnhancedReportPipeline:
             # Call base pipeline
             base_result = self._call_base_pipeline(
                 question=question,
+                filters=filters,
                 provider=provider,
                 force_refresh=force_refresh
             )
@@ -205,15 +206,14 @@ class EnhancedReportPipeline:
     def _call_base_pipeline(
         self,
         question: str,
+        filters: Optional[Dict],
         provider: str,
         force_refresh: bool
     ) -> Dict[str, Any]:
         """Call the base Claude pipeline (synchronous wrapper)"""
-        
-        # The base pipeline is synchronous, so we call it directly
-        # In production, you might want to run this in a thread pool
         return self.base_pipeline.generate(
             question=question,
+            filters=filters,
             force_refresh=force_refresh
         )
     

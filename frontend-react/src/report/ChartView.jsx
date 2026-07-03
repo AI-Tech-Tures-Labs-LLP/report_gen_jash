@@ -131,7 +131,24 @@ function buildChart(canvas, chartSpec, data, theme) {
     }
 
     if (chartType === "scatter") {
-      cfg.data = data.map((row) => ({ x: Number(row[labelKey]) || 0, y: Number(row[key]) || 0 }));
+      // Two+ numeric value columns (e.g. unit_count, value) → the FIRST is the
+      // x-axis and the SECOND is y, with the categorical label kept per-point
+      // for tooltips. This only builds one dataset (the i===0 pass); skip the
+      // second value column's own would-be dataset since it's consumed as y.
+      // One numeric value column → fall back to using the label itself as x
+      // (only sensible when the label is genuinely numeric, e.g. a day count).
+      if (valueKeys.length >= 2) {
+        if (i > 0) return null; // only emit once, built from valueKeys[0] and [1]
+        const xKey = valueKeys[0], yKey = valueKeys[1];
+        cfg.label = `${formatColumnName(xKey)} vs ${formatColumnName(yKey)}`;
+        cfg.data = data.map((row) => ({
+          x: Number(row[xKey]) || 0,
+          y: Number(row[yKey]) || 0,
+          _pointLabel: String(row[labelKey]),
+        }));
+      } else {
+        cfg.data = data.map((row) => ({ x: Number(row[labelKey]) || 0, y: Number(row[key]) || 0 }));
+      }
       cfg.pointRadius = 5;
       cfg.pointHoverRadius = 8;
       cfg.pointBackgroundColor = color + "cc";
@@ -139,7 +156,7 @@ function buildChart(canvas, chartSpec, data, theme) {
       cfg.pointBorderWidth = 2;
     }
     return cfg;
-  });
+  }).filter(Boolean);
 
   const canvasBgPlugin = {
     id: "canvasBackground",
@@ -190,8 +207,23 @@ function buildChart(canvas, chartSpec, data, theme) {
           titleMarginBottom: 8, bodySpacing: 6, boxPadding: 6,
           displayColors: true, usePointStyle: true,
           callbacks: {
-            title: (items) => (items.length ? items[0].label || "" : ""),
+            title: (items) => {
+              if (!items.length) return "";
+              if (chartType === "scatter" && valueKeys.length >= 2) {
+                const raw = items[0].raw;
+                if (raw && raw._pointLabel !== undefined) return raw._pointLabel;
+              }
+              return items[0].label || "";
+            },
             label: (ctx) => {
+              if (chartType === "scatter" && valueKeys.length >= 2) {
+                const xKey = valueKeys[0], yKey = valueKeys[1];
+                const xVal = ctx.parsed.x, yVal = ctx.parsed.y;
+                return [
+                  ` ${formatColumnName(xKey)}: ${formatNum(xVal, isCurrencyColumn(xKey))}`,
+                  ` ${formatColumnName(yKey)}: ${formatNum(yVal, isCurrencyColumn(yKey))}`,
+                ];
+              }
               let val;
               if (isPieType(chartType)) val = ctx.parsed;
               else if (isHorizontal) val = ctx.parsed.x;

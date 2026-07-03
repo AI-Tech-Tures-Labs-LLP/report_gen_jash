@@ -80,9 +80,20 @@ export default function ReportPage() {
 
   const updateReport = persist;
 
+  // Persist a filter apply/clear the same way as other report mutations, so
+  // a page reload sees the just-filtered (or just-restored) data instead of
+  // reverting to whatever was last saved to localStorage.
   const applyFiltered = useCallback((newPayload) => {
-    setPayload((p) => ({ ...(p || {}), ...newPayload }));
-  }, []);
+    setPayload((p) => {
+      const next = { ...(p || {}), ...newPayload };
+      try { localStorage.setItem("sqlbot_report_" + reportId, JSON.stringify(next)); } catch { /* */ }
+      return next;
+    });
+    try {
+      const bc = bcRef.current || new BroadcastChannel("report_sync");
+      bc.postMessage({ type: "report_updated", reportId, report: newPayload.report });
+    } catch { /* */ }
+  }, [reportId]);
 
   const handleChartReady = useCallback((idx, instance) => {
     if (instance) chartInstances.current[idx] = instance;
@@ -302,13 +313,10 @@ export default function ReportPage() {
                       cursor: editMode ? "grab" : "default",
                     }}>
                     <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: gradient }} />
-                    <div style={{ fontSize: "0.64rem", color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.45rem", lineHeight: 1.3, paddingRight: k.explanation ? 22 : 0 }}>{k.label}</div>
+                    <div style={{ fontSize: "0.64rem", color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.45rem", lineHeight: 1.3 }}>{k.label}</div>
                     <div style={{ fontSize: "1.6rem", fontWeight: 700, color: k.error ? "#ef4444" : t.text, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
                       {k.error ? "Error" : formatKPIValue(k.value, k.format)}
                     </div>
-                    {!editMode && k.explanation && (
-                      <EyeButton t={t} onClick={() => setExplain({ title: k.label, explanation: k.explanation, sql: k.sql })} />
-                    )}
                     {editMode && <DeleteBtn t={t} onClick={() => deleteComponent("kpi", rawIdx)} />}
                   </div>
                 );
@@ -337,8 +345,7 @@ export default function ReportPage() {
                     style={{ gridColumn: shouldBeWide[i] ? "1 / -1" : "auto", cursor: editMode ? "grab" : "default", position: "relative" }}>
                     <ChartCard
                       spec={c} chartIdx={rawIdx} themeMode={themeMode} t={t} wide={shouldBeWide[i]}
-                      report={report} onUpdateReport={persist}
-                      onExplain={setExplain} onChartReady={handleChartReady} editMode={editMode}
+                      onChartReady={handleChartReady} editMode={editMode}
                     />
                     {editMode && <DeleteBtn t={t} onClick={() => deleteComponent("chart", rawIdx)} />}
                   </div>
@@ -353,12 +360,6 @@ export default function ReportPage() {
           <div className="rpt-section" style={{ marginBottom: "0.75rem" }}>
             <SectionLabel t={t} icon={<TableIcon />}>
               {table.title || "Detail Data"}
-              {table.explanation && (
-                <button onClick={() => setExplain({ title: table.title || "Detail Data", explanation: table.explanation, sql: table.sql })}
-                  style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: t.textMuted, display: "inline-flex", alignItems: "center" }} title="Explain">
-                  <EyeSvg size={13} color={t.textMuted} />
-                </button>
-              )}
             </SectionLabel>
             <DataTable rows={table.data} t={t} />
           </div>
@@ -409,7 +410,7 @@ export default function ReportPage() {
       </div>
 
       {explain && <ExplainModal {...explain} t={t} onClose={() => setExplain(null)} />}
-      <ModifyPanel report={report} onUpdate={updateReport} t={t} />
+      {/* <ModifyPanel report={report} onUpdate={updateReport} t={t} /> */}
     </div>
   );
 }
@@ -449,22 +450,6 @@ function DataTable({ rows, t }) {
   );
 }
 
-function EyeSvg({ size = 14, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <ellipse cx="8" cy="8" rx="7" ry="4.5" stroke={color} strokeWidth="1.4"/>
-      <circle cx="8" cy="8" r="2" fill={color}/>
-    </svg>
-  );
-}
-function EyeButton({ t, onClick }) {
-  return (
-    <button onClick={onClick} title="Explain"
-      style={{ position: "absolute", top: 8, right: 8, border: `1px solid ${t.border}`, background: t.bgPanel, color: t.textMuted, borderRadius: 6, width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-      <EyeSvg size={13} color={t.textMuted} />
-    </button>
-  );
-}
 function DeleteBtn({ t, onClick }) {
   return (
     <button onClick={onClick} title="Delete"
