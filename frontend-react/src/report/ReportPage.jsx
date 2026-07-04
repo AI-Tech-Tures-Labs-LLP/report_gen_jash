@@ -24,9 +24,12 @@ export default function ReportPage() {
 
   // Live Chart.js instances keyed by chart index — for PDF image export.
   const chartInstances = useRef({});
+  // Report body container — captured section-by-section for the PDF export.
+  const reportBodyRef = useRef(null);
   // Drag state for edit-mode reordering.
   const drag = useRef({ type: null, idx: -1 });
   const bcRef = useRef(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", themeMode);
@@ -242,11 +245,18 @@ export default function ReportPage() {
           {editMode ? "✓ Done" : "Edit"}
         </button>
         <div style={{ width: 1, height: 18, background: t.border, flexShrink: 0 }} />
-        <button onClick={() => exportPDF(report, chartInstances.current)} className="rpt-toolbar-btn" style={topBtn(t)}>
+        <button
+          onClick={async () => {
+            if (exportingPdf) return;
+            setExportingPdf(true);
+            try { await exportPDF(report, reportBodyRef.current); }
+            finally { setExportingPdf(false); }
+          }}
+          className="rpt-toolbar-btn" style={topBtn(t)} disabled={exportingPdf}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginRight: 4 }}>
             <path d="M6.5 1v8M3 6l3.5 3.5L10 6M1 12h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          PDF
+          {exportingPdf ? "Exporting…" : "PDF"}
         </button>
         <button onClick={() => exportExcel(report)} className="rpt-toolbar-btn" style={topBtn(t)}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginRight: 4 }}>
@@ -257,7 +267,19 @@ export default function ReportPage() {
       </div>
 
       {/* ── Page body ── */}
-      <div style={{ maxWidth: 1450, margin: "0 auto", padding: "0.5rem 1.5rem 2rem" }}>
+      <div ref={reportBodyRef} style={{ maxWidth: 1450, margin: "0 auto", padding: "0.5rem 1.5rem 2rem", background: t.bg }}>
+
+        {/* Report title — shown only in the captured body (used for PDF export);
+            the topbar above has its own condensed title and isn't captured. */}
+        <div className="rpt-section" style={{ marginBottom: "0.5rem" }}>
+          <div style={{ fontSize: "1.35rem", fontWeight: 700, color: t.text, letterSpacing: "-0.01em" }}>
+            {report.title || "Analytics Report"}
+          </div>
+          <div style={{ width: 56, height: 3, background: "#6366f1", borderRadius: 2, margin: "0.4rem 0" }} />
+          <div style={{ fontSize: "0.72rem", color: t.textMuted }}>
+            Generated: {new Date().toLocaleString()}
+          </div>
+        </div>
 
         {loadError && (
           <div style={{ background: "#fef3c7", border: "1px solid #fbbf24", color: "#92400e", borderRadius: 8, padding: "0.55rem 0.85rem", marginBottom: "0.85rem", fontSize: "0.8rem", display: "flex", gap: "0.4rem", alignItems: "center" }}>
