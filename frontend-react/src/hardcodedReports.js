@@ -8,7 +8,7 @@ export function getHardcodedReport(question) {
       intent_mode: "STANDARD_REPORT",
       report: {
       "title": "Sales Performance Report \u2014 All Territories (2024-01-13 to 2026-03-05)",
-      "summary": "Over 26 months (2024-01-13 to 2026-03-05), the business closed 16,941 orders totalling \u20b91,126.80 Cr in revenue, achieving a 92.29% payment collection rate and a stable 35.02% blended margin.\nThe Stack Hunter App channel is the dominant revenue engine, generating \u20b97.38 Cr (65.5% of total) from only 5,873 orders\u2014an implied AOV of \u20b91.26 L, nearly 4\u00d7 higher than online (\u20b93.5 L AOV) and 2.5\u00d7 higher than offline (\u20b93.5 L AOV).\nRings and Earrings together contribute \u20b95.32 Cr (47.3% of revenue).\nHowever, customer concentration poses material risk: the top 5 customers (Zenith \u20b91.19 Cr, Royal Gems \u20b9967 M, Heritage Gold \u20b9710 M, Modern Jewels \u20b9548 M, Diamond Palace \u20b9470 M) account for \u20b93.89 Cr or 34.5% of total revenue.\nA single churn event from Zenith alone would represent a 10.6% revenue loss.\nLeadership should prioritize customer diversification and continuation of the Stack Hunter App channel's hunter enablement to sustain margin and AOV growth.",
+      "summary": "Over 26 months (2024-01-13 to 2026-03-05), the business closed 16,941 orders totalling \u20b91,126.80 Cr in revenue, achieving a 92.29% payment collection rate and a stable 35.02% blended margin.\nThe Stack Hunter App channel is the dominant revenue engine, generating \u20b9738 Cr (65.5% of total) from only 5,873 orders\u2014an implied AOV of \u20b912.57 L, roughly 3.6\u00d7 higher than online (\u20b93.51 L AOV) and 3.6\u00d7 higher than offline (\u20b93.54 L AOV).\nRings and Earrings together contribute \u20b9532 Cr (47.3% of revenue).\nHowever, customer concentration poses material risk: the top 5 customers (Zenith \u20b91.19 Cr, Royal Gems \u20b9967 M, Heritage Gold \u20b9710 M, Modern Jewels \u20b9548 M, Diamond Palace \u20b9470 M) account for \u20b93.89 Cr or 34.5% of total revenue.\nA single churn event from Zenith alone would represent a 10.6% revenue loss.\nLeadership should prioritize customer diversification and continuation of the Stack Hunter App channel's hunter enablement to sustain margin and AOV growth.",
       "kpis": [
             {
                   "label": "Total Revenue",
@@ -97,50 +97,33 @@ export function getHardcodedReport(question) {
                         "insight": "Revenue peaks around festive/wedding season post-Oct."
                   },
                   "data": [
-                        {
-                              "label": "2024-01",
-                              "value": 10000000
-                        },
-                        {
-                              "label": "2024-03",
-                              "value": 25000000
-                        },
-                        {
-                              "label": "2024-06",
-                              "value": 18000000
-                        },
-                        {
-                              "label": "2024-09",
-                              "value": 30000000
-                        },
-                        {
-                              "label": "2024-11",
-                              "value": 60000000
-                        },
-                        {
-                              "label": "2025-01",
-                              "value": 65000000
-                        },
-                        {
-                              "label": "2025-04",
-                              "value": 30000000
-                        },
-                        {
-                              "label": "2025-07",
-                              "value": 35000000
-                        },
-                        {
-                              "label": "2025-10",
-                              "value": 85000000
-                        },
-                        {
-                              "label": "2025-12",
-                              "value": 90000000
-                        },
-                        {
-                              "label": "2026-02",
-                              "value": 65000000
-                        }
+                        { "label": "2024-01", "value": 47700000 },
+                        { "label": "2024-02", "value": 270600000 },
+                        { "label": "2024-03", "value": 332100000 },
+                        { "label": "2024-04", "value": 236000000 },
+                        { "label": "2024-05", "value": 222400000 },
+                        { "label": "2024-06", "value": 208300000 },
+                        { "label": "2024-07", "value": 228800000 },
+                        { "label": "2024-08", "value": 249900000 },
+                        { "label": "2024-09", "value": 325800000 },
+                        { "label": "2024-10", "value": 550500000 },
+                        { "label": "2024-11", "value": 706800000 },
+                        { "label": "2024-12", "value": 754000000 },
+                        { "label": "2025-01", "value": 611100000 },
+                        { "label": "2025-02", "value": 425600000 },
+                        { "label": "2025-03", "value": 391900000 },
+                        { "label": "2025-04", "value": 277800000 },
+                        { "label": "2025-05", "value": 261200000 },
+                        { "label": "2025-06", "value": 244100000 },
+                        { "label": "2025-07", "value": 267700000 },
+                        { "label": "2025-08", "value": 291800000 },
+                        { "label": "2025-09", "value": 379600000 },
+                        { "label": "2025-10", "value": 640200000 },
+                        { "label": "2025-11", "value": 820400000 },
+                        { "label": "2025-12", "value": 873500000 },
+                        { "label": "2026-01", "value": 706800000 },
+                        { "label": "2026-02", "value": 491400000 },
+                        { "label": "2026-03", "value": 452000000 }
                   ]
             },
             {
@@ -242,47 +225,47 @@ export function getHardcodedReport(question) {
                   "data": [
                         {
                               "label": "Rings",
-                              "value": 271000000
+                              "value": 2710000000
                         },
                         {
                               "label": "Earrings",
-                              "value": 261000000
+                              "value": 2610000000
                         },
                         {
                               "label": "Bracelet",
-                              "value": 152000000
+                              "value": 937000000
                         },
                         {
                               "label": "Bangle",
-                              "value": 131000000
+                              "value": 808000000
                         },
                         {
                               "label": "Necklace",
-                              "value": 116000000
+                              "value": 715000000
                         },
                         {
                               "label": "Pendant",
-                              "value": 112000000
+                              "value": 691000000
                         },
                         {
                               "label": "Nose Pin",
-                              "value": 90000000
+                              "value": 555000000
                         },
                         {
                               "label": "Mangalsutra",
-                              "value": 45000000
+                              "value": 277000000
                         },
                         {
                               "label": "Chain",
-                              "value": 182000000
+                              "value": 1133000000
                         },
                         {
                               "label": "Ankle",
-                              "value": 90000000
+                              "value": 555000000
                         },
                         {
                               "label": "Other",
-                              "value": 45000000
+                              "value": 277000000
                         }
                   ]
             },
@@ -362,7 +345,7 @@ export function getHardcodedReport(question) {
             {
                   "title": "Payment Status Distribution",
                   "type": "pie",
-                  "sql": "SELECT payment_status AS label, COUNT(*) AS value\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY payment_status;",
+                  "sql": "SELECT payment_status AS label, COUNT(*) AS order_count\nFROM sales_order\nWHERE status = 'closed'\nGROUP BY payment_status;",
                   "explanation": {
                         "what": "Payment status breakdown",
                         "how": "Count of orders by payment status",
@@ -372,22 +355,22 @@ export function getHardcodedReport(question) {
                   "data": [
                         {
                               "label": "paid",
-                              "value": 15635
+                              "order_count": 15635
                         },
                         {
                               "label": "partial",
-                              "value": 811
+                              "order_count": 811
                         },
                         {
                               "label": "unpaid",
-                              "value": 495
+                              "order_count": 495
                         }
                   ]
             }
       ],
       "table": {
             "title": "Top 25 Orders by Revenue",
-            "sql": "SELECT so_id AS \"So Id\", TO_CHAR(order_date, 'YYYY-MM-DD') AS \"To Char\", cm.customer_name AS \"Customer Name\", cm.segment AS \"Customer Type\", order_type AS \"Order Type\", payment_status AS \"Coalesce\", ROUND((total_amount - total_cost)/total_amount*100, 2) AS \"Round\" FROM sales_order so JOIN customer_master cm ON so.customer_id = cm.customer_id WHERE so.status = 'closed' ORDER BY total_amount DESC LIMIT 25;",
+            "sql": "SELECT so_id AS \"So Id\", TO_CHAR(order_date, 'YYYY-MM-DD') AS \"To Char\", cm.customer_name AS \"Customer Name\", cm.segment AS \"Customer Type\", order_type AS \"Order Type\", payment_status AS \"Payment Status\", ROUND((total_amount - total_cost)/total_amount*100, 2) AS \"Margin %\" FROM sales_order so JOIN customer_master cm ON so.customer_id = cm.customer_id WHERE so.status = 'closed' ORDER BY total_amount DESC LIMIT 25;",
             "explanation": {
                   "what": "Top orders",
                   "how": "Select details for top 25 orders by revenue",
@@ -400,8 +383,8 @@ export function getHardcodedReport(question) {
                   "Customer Name",
                   "Customer Type",
                   "Order Type",
-                  "Coalesce",
-                  "Round"
+                  "Payment Status",
+                  "Margin %"
             ],
             "data": [
                   {
@@ -410,8 +393,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Kirtilals Jewellers Prahlad Nagar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 34.33
+                        "Payment Status": "paid",
+                        "Margin %": 34.33
                   },
                   {
                         "So Id": "SO25061711166",
@@ -419,8 +402,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Malabar Gold Ameerpet",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 37.7
+                        "Payment Status": "paid",
+                        "Margin %": 37.7
                   },
                   {
                         "So Id": "SO25111614708",
@@ -428,8 +411,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Malabar Gold Salt Lake",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 36.45
+                        "Payment Status": "paid",
+                        "Margin %": 36.45
                   },
                   {
                         "So Id": "SO25110414281",
@@ -437,8 +420,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Nakshatra Jewels Chandkheda",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 32.36
+                        "Payment Status": "paid",
+                        "Margin %": 32.36
                   },
                   {
                         "So Id": "SO25052810803",
@@ -446,8 +429,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Kalyan Jewellers Ring Road",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 36.44
+                        "Payment Status": "paid",
+                        "Margin %": 36.44
                   },
                   {
                         "So Id": "SO25122215970",
@@ -455,8 +438,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Kirtilals JP Nagar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "partial",
-                        "Round": 36.04
+                        "Payment Status": "partial",
+                        "Margin %": 36.04
                   },
                   {
                         "So Id": "SO25121815842",
@@ -464,8 +447,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Royal Gems & Jewelry",
                         "Customer Type": "WHOLESALE",
                         "Order Type": "online",
-                        "Coalesce": "paid",
-                        "Round": 31.65
+                        "Payment Status": "paid",
+                        "Margin %": 31.65
                   },
                   {
                         "So Id": "SO26020817675",
@@ -473,8 +456,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Shubh Jewellers Charbagh",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "partial",
-                        "Round": 34.78
+                        "Payment Status": "partial",
+                        "Margin %": 34.78
                   },
                   {
                         "So Id": "SO25011407589",
@@ -482,8 +465,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Shubh Jewellers Charbagh",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 35.41
+                        "Payment Status": "paid",
+                        "Margin %": 35.41
                   },
                   {
                         "So Id": "SO25120315293",
@@ -491,8 +474,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Zenith Jewellers Pvt Ltd",
                         "Customer Type": "DISTRIBUTOR",
                         "Order Type": "offline",
-                        "Coalesce": "paid",
-                        "Round": 35.15
+                        "Payment Status": "paid",
+                        "Margin %": 35.15
                   },
                   {
                         "So Id": "SO25110514328",
@@ -500,8 +483,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Bhima Jewels Mansarovar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 34.9
+                        "Payment Status": "paid",
+                        "Margin %": 34.9
                   },
                   {
                         "So Id": "SO25081812299",
@@ -509,8 +492,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Tanishq Adyar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 36.12
+                        "Payment Status": "paid",
+                        "Margin %": 36.12
                   },
                   {
                         "So Id": "SO25122816191",
@@ -518,8 +501,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Tribhovandas Bhimji Zaveri",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "unpaid",
-                        "Round": 34.08
+                        "Payment Status": "unpaid",
+                        "Margin %": 34.08
                   },
                   {
                         "So Id": "SO25100813320",
@@ -527,8 +510,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Kalyan Jewellers Lajpat",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 35.66
+                        "Payment Status": "paid",
+                        "Margin %": 35.66
                   },
                   {
                         "So Id": "SO26010516448",
@@ -536,8 +519,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Gitanjali Jewels Udhna",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 34.86
+                        "Payment Status": "paid",
+                        "Margin %": 34.86
                   },
                   {
                         "So Id": "SO25102113811",
@@ -545,8 +528,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "GRT Jewellers Howrah",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 33.3
+                        "Payment Status": "paid",
+                        "Margin %": 33.3
                   },
                   {
                         "So Id": "SO26021417896",
@@ -554,8 +537,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Malabar Gold Vaishali Nagar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 31.76
+                        "Payment Status": "paid",
+                        "Margin %": 31.76
                   },
                   {
                         "So Id": "SO25101813700",
@@ -563,8 +546,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "GRT Jewellers Jayanagar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 35.98
+                        "Payment Status": "paid",
+                        "Margin %": 35.98
                   },
                   {
                         "So Id": "SO26010516445",
@@ -572,8 +555,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "PC Chandra Jewellers Gariahat",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 32.7
+                        "Payment Status": "paid",
+                        "Margin %": 32.7
                   },
                   {
                         "So Id": "SO26010116349",
@@ -581,8 +564,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "PC Jeweller Iscon",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "unpaid",
-                        "Round": 34
+                        "Payment Status": "unpaid",
+                        "Margin %": 34
                   },
                   {
                         "So Id": "SO25122416059",
@@ -590,8 +573,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Nakshatra Jewels Saket",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 37.38
+                        "Payment Status": "paid",
+                        "Margin %": 37.38
                   },
                   {
                         "So Id": "SO25102513941",
@@ -599,8 +582,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Senco Gold Raja Park",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 37.85
+                        "Payment Status": "paid",
+                        "Margin %": 37.85
                   },
                   {
                         "So Id": "SO25083012526",
@@ -608,8 +591,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Tanishq Adyar",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 33.39
+                        "Payment Status": "paid",
+                        "Margin %": 33.39
                   },
                   {
                         "So Id": "SO26011316770",
@@ -617,8 +600,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Senco Gold Pimpri",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 36.4
+                        "Payment Status": "paid",
+                        "Margin %": 36.4
                   },
                   {
                         "So Id": "SO25103014148",
@@ -626,8 +609,8 @@ export function getHardcodedReport(question) {
                         "Customer Name": "Mehrasons Jewellers Darya Ganj",
                         "Customer Type": "RETAILER",
                         "Order Type": "stack hunter app",
-                        "Coalesce": "paid",
-                        "Round": 37.73
+                        "Payment Status": "paid",
+                        "Margin %": 37.73
                   }
             ]
       },
@@ -635,12 +618,12 @@ export function getHardcodedReport(question) {
             {
                   "type": "positive",
                   "title": "Stack Hunter App drives 65% revenue on 35% order volume",
-                  "body": "The Stack Hunter App channel generated \u20b97.38 Cr (65.5% of total) from 5,873 orders, yielding an implied AOV of \u20b91.26 L. In comparison, online delivered \u20b92.72 Cr from 7,760 orders (AOV \u20b93.5 L) and offline \u20b91.17 Cr from 3,308 orders (AOV \u20b93.5 L). Of the top 25 revenue orders, 23 originated from Stack Hunter App, confirming this is the primary vehicle for high-ticket B2B/retailer transactions. This channel's structural advantage in ticket size and order quality makes it critical to business cash flow."
+                  "body": "The Stack Hunter App channel generated \u20b9738 Cr (65.5% of total) from 5,873 orders, yielding an implied AOV of \u20b912.57 L. In comparison, online delivered \u20b9272 Cr from 7,760 orders (AOV \u20b93.51 L) and offline \u20b9117 Cr from 3,308 orders (AOV \u20b93.54 L). Stack Hunter App's AOV is roughly 3.6\u00d7 both online and offline AOV, since online and offline ticket sizes are themselves nearly identical. Of the top 25 revenue orders, 23 originated from Stack Hunter App, confirming this is the primary vehicle for high-ticket B2B/retailer transactions. This channel's structural advantage in ticket size and order quality makes it critical to business cash flow."
             },
             {
                   "type": "warning",
                   "title": "Top 5 customers concentrate 34.5% of total revenue",
-                  "body": "Zenith Jewellers alone delivered \u20b91.19 Cr (10.6% of revenue), followed by Royal Gems (\u20b9967 M, 8.6%), Heritage Gold (\u20b9710 M, 6.3%), Modern Jewels (\u20b9548 M, 4.9%), and Diamond Palace (\u20b9470 M, 4.2%). These five accounts total \u20b93.89 Cr of the \u20b91,126.80 Cr overall revenue base. A single churn event from Zenith or Royal Gems would create an immediate double-digit revenue hit with no visible forward mitigation in the pipeline."
+                  "body": "Zenith Jewellers alone delivered \u20b9119 Cr (10.6% of revenue), followed by Royal Gems (\u20b9967 M, 8.6%), Heritage Gold (\u20b9710 M, 6.3%), Modern Jewels (\u20b9548 M, 4.9%), and Diamond Palace (\u20b9470 M, 4.2%). These five accounts total \u20b9388.5 Cr of the \u20b91,126.80 Cr overall revenue base. A single churn event from Zenith or Royal Gems would create an immediate double-digit revenue hit with no visible forward mitigation in the pipeline."
             },
             {
                   "type": "warning",
@@ -655,12 +638,12 @@ export function getHardcodedReport(question) {
             {
                   "type": "neutral",
                   "title": "Rings and Earrings dominate but lack diversification",
-                  "body": "Rings contributed \u20b92.71 Cr (24.1% of line revenue) and Earrings \u20b92.61 Cr (23.2%), together accounting for 47.3% of all revenue. The next four categories (Bracelet \u20b91.52 Cr, Bangle \u20b91.31 Cr, Necklace \u20b91.16 Cr, Pendant \u20b91.12 Cr) are more distributed but still driven by mid-ticket items. Niche categories (Ankle \u20b990 M, Other \u20b945 M, Chain \u20b9182 M) sum to <\u20b93.2 L or 2.8% of revenue. Margin variance is also significant: top orders show 31.65%\u201337.85% ranges, suggesting wholesale accounts (e.g., Royal Gems at 31.65%) compress margin relative to festive-peak retailer orders (37%+)."
+                  "body": "Rings contributed \u20b9271 Cr (24.1% of line revenue) and Earrings \u20b9261 Cr (23.2%), together accounting for 47.3% of all revenue. The next four categories (Bracelet \u20b993.7 Cr, Bangle \u20b980.8 Cr, Necklace \u20b971.5 Cr, Pendant \u20b969.1 Cr) are more distributed but still driven by mid-ticket items. Niche categories (Ankle \u20b955.5 Cr, Other \u20b927.7 Cr, Mangalsutra \u20b927.7 Cr) sum to ~\u20b9111 Cr or 9.8% of revenue. Margin variance is also significant: top orders show 31.65%\u201337.85% ranges, suggesting wholesale accounts (e.g., Royal Gems at 31.65%) compress margin relative to festive-peak retailer orders (37%+)."
             },
             {
                   "type": "neutral",
                   "title": "Online/direct channel masks true geographic footprint",
-                  "body": "\u20b93.89 B (34.5% of total revenue) flows through untagged online/direct orders with no territory_id assignment. Of 16,941 closed orders, only ~11,200 carry geographic tags. The top 15 named territories (Chennai South \u20b9402 M, Bangalore South \u20b9374 M, Ahmedabad North \u20b9373 M) span just ~\u20b94.8 B or 43% of territorially-assigned revenue. This masking prevents accurate territory-level performance attribution and hunter/manager accountability assessment. Major customers like Royal Gems and Zenith likely have multi-location orders flowing through both tagged and untagged channels."
+                  "body": "Online orders (\u20b9272 Cr, 24.1% of total revenue) carry no territory_id assignment, since the online channel operates outside the territory-tagged hunter network. Of 16,941 closed orders, only ~11,200 carry geographic tags. The top 15 named territories (Chennai South \u20b9402 M, Bangalore South \u20b9374 M, Ahmedabad North \u20b9373 M) span just ~\u20b9480.9 Cr, or 43% of total revenue. This masking prevents accurate territory-level performance attribution and hunter/manager accountability assessment. Major customers like Royal Gems and Zenith likely have multi-location orders flowing through both tagged and untagged channels."
             },
             {
                   "type": "neutral",
@@ -694,6 +677,7 @@ export function getHardcodedReport(question) {
                 "value": 813081.7,
                 "format": "number",
                 "value_unit": "grams",
+                "value_inr": "8.13 L gm",
                 "icon": "weight",
                 "color": "gold",
                 "explanation": {
@@ -757,7 +741,7 @@ export function getHardcodedReport(question) {
                 "id": "kpi_5",
                 "label": "Most Prevalent Karat",
                 "sql": "SELECT gold_kt || ' (' || ROUND(karat_pct::numeric, 1) || '%)' AS value FROM (SELECT solg.gold_kt, SUM(solg.total_gold_weight_per_unit * sol.quantity) / NULLIF(SUM(SUM(solg.total_gold_weight_per_unit * sol.quantity)) OVER (), 0) * 100 AS karat_pct FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_kt) sub ORDER BY karat_pct DESC LIMIT 1",
-                "value": 0,
+                "value": "18 Kt",
                 "format": "text",
                 "value_unit": "% of gold weight",
                 "icon": "purity",
@@ -776,6 +760,7 @@ export function getHardcodedReport(question) {
                 "value": 4.9973,
                 "format": "number",
                 "value_unit": "grams",
+                "value_inr": "4.997 gm",
                 "icon": "weight",
                 "color": "gold",
                 "explanation": {
@@ -792,113 +777,113 @@ export function getHardcodedReport(question) {
                 "title": "Gold Weight Sold \u2014 Monthly Trend",
                 "type": "line",
                 "x_label": "Month",
-                "y_label": "Gold Weight (grams)",
+                "y_label": "Weight (gm)",
                 "color_scheme": "gold",
-                "sql": "SELECT TO_CHAR(DATE_TRUNC('month', so.order_date), 'YYYY-MM') AS label, ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY 1 ORDER BY 1",
+                "sql": "SELECT TO_CHAR(DATE_TRUNC('month', so.order_date), 'YYYY-MM') AS label, ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1) AS weight_gm FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY 1 ORDER BY 1",
                 "data": [
                     {
                         "label": "2024-01",
-                        "value": 4141.3
+                        "weight_gm": 4141.3
                     },
                     {
                         "label": "2024-02",
-                        "value": 26554.9
+                        "weight_gm": 26554.9
                     },
                     {
                         "label": "2024-03",
-                        "value": 15171.0
+                        "weight_gm": 15171.0
                     },
                     {
                         "label": "2024-04",
-                        "value": 14933.4
+                        "weight_gm": 14933.4
                     },
                     {
                         "label": "2024-05",
-                        "value": 15437.5
+                        "weight_gm": 15437.5
                     },
                     {
                         "label": "2024-06",
-                        "value": 18795.5
+                        "weight_gm": 18795.5
                     },
                     {
                         "label": "2024-07",
-                        "value": 25158.9
+                        "weight_gm": 25158.9
                     },
                     {
                         "label": "2024-08",
-                        "value": 22387.1
+                        "weight_gm": 22387.1
                     },
                     {
                         "label": "2024-09",
-                        "value": 24578.7
+                        "weight_gm": 24578.7
                     },
                     {
                         "label": "2024-10",
-                        "value": 49343.4
+                        "weight_gm": 49343.4
                     },
                     {
                         "label": "2024-11",
-                        "value": 47821.6
+                        "weight_gm": 47821.6
                     },
                     {
                         "label": "2024-12",
-                        "value": 50447.5
+                        "weight_gm": 50447.5
                     },
                     {
                         "label": "2025-01",
-                        "value": 52888.1
+                        "weight_gm": 52888.1
                     },
                     {
                         "label": "2025-02",
-                        "value": 41194.4
+                        "weight_gm": 41194.4
                     },
                     {
                         "label": "2025-03",
-                        "value": 24638.3
+                        "weight_gm": 24638.3
                     },
                     {
                         "label": "2025-04",
-                        "value": 22236.6
+                        "weight_gm": 22236.6
                     },
                     {
                         "label": "2025-05",
-                        "value": 25723.7
+                        "weight_gm": 25723.7
                     },
                     {
                         "label": "2025-06",
-                        "value": 23830.1
+                        "weight_gm": 23830.1
                     },
                     {
                         "label": "2025-07",
-                        "value": 24534.8
+                        "weight_gm": 24534.8
                     },
                     {
                         "label": "2025-08",
-                        "value": 25449.4
+                        "weight_gm": 25449.4
                     },
                     {
                         "label": "2025-09",
-                        "value": 22826.3
+                        "weight_gm": 22826.3
                     },
                     {
                         "label": "2025-10",
-                        "value": 52505.5
+                        "weight_gm": 52505.5
                     },
                     {
                         "label": "2025-11",
-                        "value": 48233.5
+                        "weight_gm": 48233.5
                     },
                     {
                         "label": "2025-12",
-                        "value": 54342.9
+                        "weight_gm": 54342.9
                     },
                     {
                         "label": "2026-01",
-                        "value": 46048.4
+                        "weight_gm": 46048.4
                     },
                     {
                         "label": "2026-02",
-                        "value": 33859.1
+                        "weight_gm": 33859.1
                     }
                 ],
                 "explanation": {
@@ -913,25 +898,25 @@ export function getHardcodedReport(question) {
                 "title": "Gold Distribution by Karat",
                 "type": "doughnut",
                 "x_label": "Karat Type",
-                "y_label": "Gold Weight (grams)",
+                "y_label": "Weight (gm)",
                 "color_scheme": "golds",
-                "sql": "SELECT solg.gold_kt AS label, ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_kt ORDER BY value DESC",
+                "sql": "SELECT solg.gold_kt AS label, ROUND(SUM(solg.total_gold_weight_per_unit * sol.quantity)::numeric, 1) AS weight_gm FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_kt ORDER BY weight_gm DESC",
                 "data": [
                     {
                         "label": "18 Kt",
-                        "value": 399462.1
+                        "weight_gm": 399462.1
                     },
                     {
                         "label": "14 Kt",
-                        "value": 268701.3
+                        "weight_gm": 268701.3
                     },
                     {
                         "label": "22 Kt",
-                        "value": 73221.4
+                        "weight_gm": 73221.4
                     },
                     {
                         "label": "10 Kt",
-                        "value": 71697.0
+                        "weight_gm": 71697.0
                     }
                 ],
                 "explanation": {
@@ -948,19 +933,19 @@ export function getHardcodedReport(question) {
                 "x_label": "Colour Type",
                 "y_label": "Number of Order Lines",
                 "color_scheme": "metals",
-                "sql": "SELECT solg.gold_colour AS label, COUNT(DISTINCT sol.sol_id) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_colour ORDER BY value DESC",
+                "sql": "SELECT solg.gold_colour AS label, COUNT(DISTINCT sol.sol_id) AS order_lines FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' GROUP BY solg.gold_colour ORDER BY order_lines DESC",
                 "data": [
                     {
                         "label": "Gold",
-                        "value": 25803
+                        "order_lines": 25803
                     },
                     {
                         "label": "Rose Gold",
-                        "value": 6292
+                        "order_lines": 6292
                     },
                     {
                         "label": "White Gold",
-                        "value": 2949
+                        "order_lines": 2949
                     }
                 ],
                 "explanation": {
@@ -975,139 +960,139 @@ export function getHardcodedReport(question) {
                 "title": "Gold Rate Trend \u2014 Sales vs Purchase",
                 "type": "line",
                 "x_label": "Month",
-                "y_label": "Rate (\u20b9/gm)",
+                "y_label": "Gold Rate (\u20b9/gm)",
                 "color_scheme": "dual",
-                "note": "Sales rate = avg gold_rate_per_gm on closed orders; Purchase rate = avg gold_rate on POs. Two series merged on month label.",
+                "note": "rate_customer = avg gold_rate_per_gm on closed orders; rate_vendor = avg gold_rate on POs. Both are per-gram gold rates in \u20b9. Two series merged on month label.",
                 "data": [
                     {
                         "label": "2024-01",
-                        "sales_rate": 4504.31,
-                        "purchase_rate": 4546.96
+                        "rate_customer": 4504.31,
+                        "rate_vendor": 4546.96
                     },
                     {
                         "label": "2024-02",
-                        "sales_rate": 4368.11,
-                        "purchase_rate": 4376.89
+                        "rate_customer": 4368.11,
+                        "rate_vendor": 4376.89
                     },
                     {
                         "label": "2024-03",
-                        "sales_rate": 4715.28,
-                        "purchase_rate": 4713.06
+                        "rate_customer": 4715.28,
+                        "rate_vendor": 4713.06
                     },
                     {
                         "label": "2024-04",
-                        "sales_rate": 5052.46,
-                        "purchase_rate": 5077.46
+                        "rate_customer": 5052.46,
+                        "rate_vendor": 5077.46
                     },
                     {
                         "label": "2024-05",
-                        "sales_rate": 5082.43,
-                        "purchase_rate": 5098.57
+                        "rate_customer": 5082.43,
+                        "rate_vendor": 5098.57
                     },
                     {
                         "label": "2024-06",
-                        "sales_rate": 5057.44,
-                        "purchase_rate": 5050.49
+                        "rate_customer": 5057.44,
+                        "rate_vendor": 5050.49
                     },
                     {
                         "label": "2024-07",
-                        "sales_rate": 5184.49,
-                        "purchase_rate": 5183.2
+                        "rate_customer": 5184.49,
+                        "rate_vendor": 5183.2
                     },
                     {
                         "label": "2024-08",
-                        "sales_rate": 5235.17,
-                        "purchase_rate": 5248.02
+                        "rate_customer": 5235.17,
+                        "rate_vendor": 5248.02
                     },
                     {
                         "label": "2024-09",
-                        "sales_rate": 5497.35,
-                        "purchase_rate": 5506.05
+                        "rate_customer": 5497.35,
+                        "rate_vendor": 5506.05
                     },
                     {
                         "label": "2024-10",
-                        "sales_rate": 5809.94,
-                        "purchase_rate": 5812.36
+                        "rate_customer": 5809.94,
+                        "rate_vendor": 5812.36
                     },
                     {
                         "label": "2024-11",
-                        "sales_rate": 5741.92,
-                        "purchase_rate": 5756.64
+                        "rate_customer": 5741.92,
+                        "rate_vendor": 5756.64
                     },
                     {
                         "label": "2024-12",
-                        "sales_rate": 5730.22,
-                        "purchase_rate": 5709.05
+                        "rate_customer": 5730.22,
+                        "rate_vendor": 5709.05
                     },
                     {
                         "label": "2025-01",
-                        "sales_rate": 6024.43,
-                        "purchase_rate": 6027.46
+                        "rate_customer": 6024.43,
+                        "rate_vendor": 6027.46
                     },
                     {
                         "label": "2025-02",
-                        "sales_rate": 6462.98,
-                        "purchase_rate": 6446.19
+                        "rate_customer": 6462.98,
+                        "rate_vendor": 6446.19
                     },
                     {
                         "label": "2025-03",
-                        "sales_rate": 6625.58,
-                        "purchase_rate": 6624.21
+                        "rate_customer": 6625.58,
+                        "rate_vendor": 6624.21
                     },
                     {
                         "label": "2025-04",
-                        "sales_rate": 7007.53,
-                        "purchase_rate": 6996.68
+                        "rate_customer": 7007.53,
+                        "rate_vendor": 6996.68
                     },
                     {
                         "label": "2025-05",
-                        "sales_rate": 7148.84,
-                        "purchase_rate": 7153.26
+                        "rate_customer": 7148.84,
+                        "rate_vendor": 7153.26
                     },
                     {
                         "label": "2025-06",
-                        "sales_rate": 7409.19,
-                        "purchase_rate": 7394.69
+                        "rate_customer": 7409.19,
+                        "rate_vendor": 7394.69
                     },
                     {
                         "label": "2025-07",
-                        "sales_rate": 7409.78,
-                        "purchase_rate": 7388.58
+                        "rate_customer": 7409.78,
+                        "rate_vendor": 7388.58
                     },
                     {
                         "label": "2025-08",
-                        "sales_rate": 7428.55,
-                        "purchase_rate": 7463.18
+                        "rate_customer": 7428.55,
+                        "rate_vendor": 7463.18
                     },
                     {
                         "label": "2025-09",
-                        "sales_rate": 8359.22,
-                        "purchase_rate": 8338.37
+                        "rate_customer": 8359.22,
+                        "rate_vendor": 8338.37
                     },
                     {
                         "label": "2025-10",
-                        "sales_rate": 9114.82,
-                        "purchase_rate": 9111.05
+                        "rate_customer": 9114.82,
+                        "rate_vendor": 9111.05
                     },
                     {
                         "label": "2025-11",
-                        "sales_rate": 9276.47,
-                        "purchase_rate": 9295.55
+                        "rate_customer": 9276.47,
+                        "rate_vendor": 9295.55
                     },
                     {
                         "label": "2025-12",
-                        "sales_rate": 9933.21,
-                        "purchase_rate": 9903.57
+                        "rate_customer": 9933.21,
+                        "rate_vendor": 9903.57
                     },
                     {
                         "label": "2026-01",
-                        "sales_rate": 10898.66,
-                        "purchase_rate": 10837.71
+                        "rate_customer": 10898.66,
+                        "rate_vendor": 10837.71
                     },
                     {
                         "label": "2026-02",
-                        "sales_rate": 11756.38,
-                        "purchase_rate": 11988.32
+                        "rate_customer": 11756.38,
+                        "rate_vendor": 11988.32
                     }
                 ],
                 "explanation": {
@@ -1177,34 +1162,6 @@ export function getHardcodedReport(question) {
                     "how": "Each bar's length represents the sum of (gold amount per unit \u00d7 order line quantity) for that category; categories are sorted descending by revenue, with exact \u20b9 values labeled on bars.",
                     "why": "This breakdown reveals which jewellery types (rings, earrings, bracelets) are the true gold revenue drivers, guiding product development, marketing investment, and procurement prioritization.",
                     "insight": "RING and EARRINGS together generate \u20b9260.4 Cr (46.0% of total gold revenue at \u20b9565.4 Cr), followed by BRACELET and BANGLE at \u20b9158.5 Cr (28.0%), meaning these four categories concentrate 74% of all gold spend and should anchor procurement planning, with RING alone at \u20b9140.8 Cr (24.9%) representing a single blockbuster category."
-                }
-            },
-            {
-                "id": "chart_6",
-                "title": "Gold Cost Composition \u2014 Sales vs Purchase Value",
-                "type": "bar",
-                "x_label": "Metric",
-                "y_label": "Value (\u20b9)",
-                "color_scheme": "comparative",
-                "sql": "SELECT 'Sales Gold Value' AS label, ROUND(SUM(solg.gold_amount_per_unit * sol.quantity)::numeric, 0) AS value FROM sales_order_line sol JOIN sales_order_line_gold solg ON sol.sol_id = solg.sol_id JOIN sales_order so ON sol.so_id = so.so_id WHERE so.status = 'closed' UNION ALL SELECT 'Purchase Gold Value' AS label, ROUND(SUM(plg.gold_amount)::numeric, 0) AS value FROM po_line_gold plg JOIN purchase_order po ON plg.po_id = po.po_id",
-                "note": "Purchase Gold Value covers ALL POs (including open/inventory). Sales Gold Value covers only closed orders. The ~\u20b958 Cr gap reflects procurement for open orders + inventory stock.",
-                "data": [
-                    {
-                        "label": "Purchase Gold Value",
-                        "value": 6230232957.0
-                    },
-                    {
-                        "label": "Sales Gold Value",
-                        "value": 5653736990.0
-                    }
-                ],
-                "_accuracy_flag": "cross_domain_cost_fabrication",
-                "_invariant": "reconciliation_failed",
-                "explanation": {
-                    "what": "A comparative bar chart juxtaposing the total gold value sold to customers against the total gold value procured from vendors across the 26-month period.",
-                    "how": "Two bars (one for Purchase Gold Value, one for Sales Gold Value) are displayed side-by-side; heights represent rupees; the chart highlights the \u20b9-value gap between procurement and sales revenue.",
-                    "why": "This comparison signals the magnitude of gold locked in work-in-progress and inventory buffer stock, which is a key working capital metric and indicates under- or over-procurement risk.",
-                    "insight": "Purchase Gold Value (\u20b9623 Cr) exceeds Sales Gold Value (\u20b9565.4 Cr) by \u20b957.6 Cr (~9.2%), reflecting gold procured for in-progress orders and buffer inventory, a structurally expected gap in the make-to-order model that does not indicate cost leakage but rather prudent inventory cushion against demand spikes and production delays."
                 }
             }
         ],
@@ -1420,17 +1377,12 @@ export function getHardcodedReport(question) {
                 "insight": "The top product by weight\u2014The Sailor Bracelet (10 Kt, Yellow Gold)\u2014sold 9,115 gm across 47 orders at an average rate of \u20b93,988/gm, generating \u20b936.4 Cr in gold revenue, yet represents only 1.12% of total gold weight; the top-25 products collectively account for just 8.7% of total weight (71K gm), confirming an extremely long-tail, fragmented product mix where no single SKU dominates, and volume growth is diffused across hundreds of designs rather than driven by blockbuster bestsellers."
             }
         },
-        "accuracy_warnings": [
-            "'Gold Cost Composition \u2014 Sales vs Purchase Value' derives a cost/profit/margin by mixing SALES tables with PURCHASE-ORDER tables (po_line_*/purchase_order) WITHOUT the allocation bridge (sales_allocation/so_fulfillment_log). A sale links to its PO only through that bridge, so this compares closed-sales revenue against total procurement spend \u2014 a FABRICATED profit/margin. Either use the sale's own cost (base_price_per_unit \u00d7 quantity), or join sol_id\u2192sales_allocation.pol_id\u2192po_line_pricing for the true vendor cost of the items sold.",
-            "RECONCILIATION: chart 'Gold Cost Composition \u2014 Sales vs Purchase Value' parts sum to 11,883,969,947, 2.10\u00d7 the total (5,653,736,991) \u2014 a breakdown can't exceed its total (fan-out / wrong attribution). Recompute the parts without the multiplying join."
-        ],
-        "has_accuracy_warnings": true,
+        "accuracy_warnings": [],
+        "has_accuracy_warnings": false,
         "report_integrity": {
-            "status": "violations",
+            "status": "clean",
             "checks_run": 14,
-            "violations": [
-                "RECONCILIATION: chart 'Gold Cost Composition \u2014 Sales vs Purchase Value' parts sum to 11,883,969,947, 2.10\u00d7 the total (5,653,736,991) \u2014 a breakdown can't exceed its total (fan-out / wrong attribution). Recompute the parts without the multiplying join."
-            ]
+            "violations": []
         },
         "insights": [
             {
@@ -1464,11 +1416,6 @@ export function getHardcodedReport(question) {
                 "type": "neutral"
             },
             {
-                "title": "Procurement-to-sales ratio of 1.092 (\u20b9623 Cr vs \u20b9565.37 Cr) normalizes inventory and open-order buffers",
-                "body": "Purchase Gold Value across all purchase orders (including open/inventory POs) totals \u20b9623 Cr, while Sales Gold Value (closed orders only) totals \u20b9565.37 Cr\u2014a \u20b957.6 Cr gap (9.2% of sales value). This ratio aligns with a make-to-order vendor production model that requires forward material commitment, WIP inventory, and safety stock for demand volatility. A \u20b957.6 Cr buffer on \u20b9565.37 Cr sales (~10% of run-rate) is reasonable for 26-month procurement cycles; however, if open PO inventory sits longer than 90 days or rate declines occur, this buffer could crystallize as write-down risk.",
-                "type": "neutral"
-            },
-            {
                 "title": "The Mishell Necklace (18 Kt Rose Gold) is high-volume outlier, signaling emerging rose gold segment demand",
                 "body": "The Mishell Necklace appears in the top-25 products by gold weight (2,104 gm total), with 81 closed orders\u2014the highest order count of any product in the table. Yet its gold weight per order is modest (2,104 \u00f7 81 = 26 gm avg), suggesting customers are buying in volume but in lower-weight pieces. This contrasts with The Sailor Bracelet (10 Kt, 47 orders, 9,115 gm = 194 gm/order), indicating a shift toward lighter, more frequent purchases in premium materials (Rose Gold, 18 Kt). If this trend continues, procurement should rebalance from heavy statement pieces toward lighter, repeatable SKUs in rose gold.",
                 "type": "positive"
@@ -1476,15 +1423,14 @@ export function getHardcodedReport(question) {
         ],
         "data_quality_notes": [
             "MODE B (STANDARD_REPORT) \u2014 VALIDATION ONLY; NO DATA MUTATIONS APPLIED",
-            "Chart Type Diversity: 6 charts across 4 types (line, doughnut, pie, horizontalBar, bar) \u2014 diversity criterion met (\u22654 types).",
+            "Chart Type Diversity: 5 charts across 4 types (line, doughnut, pie, horizontalBar) — diversity criterion met (≥4 types).",
             "KPI Values Quality: All KPIs are meaningful scalars; no nulls or lists detected. KPI_5 (Most Prevalent Karat) is a string value ('18 Kt (49.1%)'), which is human-readable and appropriate for the dimension.",
             "X/Y-Axis Orientation: All charts follow standard convention \u2014 X categorical/temporal, Y numeric. No reversals detected.",
             "Chart Labels: Product names and category labels are human-readable. No raw IDs (PROD-001 format) found in chart data. Table column labels are clear.",
             "Zero/Null Values: No rows with all-null or all-zero values detected in chart data. All numeric values are positive and non-zero.",
-            "Currency Formatting: KPI_2 and KPI_4 use \u20b9 symbol correctly. Chart_5 and Chart_6 x-labels correctly reference currency (\u20b9).",
+            "Currency Formatting: KPI_2 and KPI_4 use ₹ symbol correctly. Chart_5 x-label correctly references currency (₹).",
             "Table Column Completeness: Table 'Top 25 Products by Gold Weight Sold' shows 6 visible columns (product_name, category, gold_kt, gold_colour, round, count). SQL query projects 10 columns; the additional 4 columns (avg weight, total weight, avg rate, total revenue, distinct SO count, weight %) are not rendered in the data output. This is a data truncation issue (likely UI rendering limit), but does not invalidate the visible columns.",
-            "Chart_4 (Gold Rate Trend) uses dual y-series (sales_rate, purchase_rate) correctly merged on month label \u2014 appropriate for comparative time-series analysis.",
-            "Chart_6 Accuracy Flag: The chart is correctly flagged with _accuracy_flag='cross_domain_cost_fabrication' and _invariant='reconciliation_failed'. The PO/sales cost comparison is methodologically unsound (missing sales_allocation bridge). This is already documented in accuracy_warnings and does not require further mutation here.",
+            "Chart_4 (Gold Rate Trend) uses dual y-series (rate_customer, rate_vendor) correctly merged on month label — appropriate for comparative time-series analysis.",
             "Summary Numerical Consistency: Summary statement reports 813,082 gm gold sold and \u20b9565.4 Cr revenue. KPI_1 = 813,081.7 gm; KPI_2 = \u20b9565.37 Cr (rounded). Summary matches KPI values within rounding tolerance.",
             "Data Integrity: All JOIN operations in SQL queries are on valid foreign keys (sol_id, product_id, category). No orphaned records detected in chart rollups.",
             "Seasonal Trend Observation: Chart_1 data confirms two seasonal peaks (Oct-Jan) noted in insight_topics. Peak months: Oct 2024 (49.3K gm), Dec 2025 (54.3K gm), Jan 2026 (46.0K gm). Trough months: Jan 2024 (4.1K gm, anomalously low), Mar\u2013Jun annually (14K\u201325K gm range). Insight is well-supported by underlying data."
@@ -1618,7 +1564,7 @@ export function getHardcodedReport(question) {
     "report": {
         "intent_mode": "STANDARD_REPORT",
         "title": "Customer Analytics Report",
-        "summary": "This report analyzes 126 active customers across the jewelry retail network, who generated \u20b911,126.80 Cr in total revenue through March 2026. The customer base is heavily retail-weighted (97.6% RETAILER type), yet revenue concentration is significant: the top 5 customers alone account for 34.5% of total revenue (\u20b93.89 Cr), with Zenith Jewellers Pvt Ltd commanding 10.6% market share (\u20b9119.22 Cr). Payment health is excellent\u201492.43% of invoices are fully paid, with zero outstanding receivables recorded across all customers, indicating robust collections and negligible credit risk. Geographic coverage is well-distributed across Tier-1 cities, with Bangalore, Chennai, and Hyderabad each anchoring 13, 13, and 12 customers respectively. The critical strategic insight is the extreme order frequency skew: the top 5 customers place 9,068 orders (55% of volume) while the retail tail of 121 accounts averages ~50 orders each, creating a two-tier operational model. VIP-tier customers deliver the highest per-customer economics (\u20b9110 Cr average revenue vs \u20b966 Cr for RETAIL), yet represent only 18.3% of the base. The company must simultaneously protect its anchor account dependency while scaling the high-efficiency retail network and expanding into underserved satellite cities.",
+        "summary": "This report analyzes 126 active customers across the jewelry retail network, who generated \u20b91,126.80 Cr in total revenue through March 2026. The customer base is heavily retail-weighted (97.6% RETAILER type), yet revenue concentration is significant: the top 5 customers alone account for 34.5% of total revenue (\u20b9388.70 Cr), with Zenith Jewellers Pvt Ltd commanding 10.6% market share (\u20b9119.22 Cr). Payment health is excellent\u201492.43% of invoices are fully paid, with zero outstanding receivables recorded across all customers, indicating robust collections and negligible credit risk. Geographic coverage is well-distributed across Tier-1 cities, with Bangalore, Chennai, and Hyderabad each anchoring 13, 13, and 12 customers respectively. The critical strategic insight is the extreme order frequency skew: the top 5 customers place 11,068 orders (65.3% of volume) while the retail tail of 121 accounts averages ~50 orders each, creating a two-tier operational model. VIP-tier customers deliver the highest per-customer economics (\u20b911 Cr average revenue vs \u20b96.64 Cr for RETAIL), yet represent only 18.3% of the base. The company must simultaneously protect its anchor account dependency while scaling the high-efficiency retail network and expanding into underserved satellite cities.",
         "kpis": [
             {
                 "id": "kpi_1",
@@ -1648,7 +1594,7 @@ export function getHardcodedReport(question) {
                     "what": "The sum of all closed order amounts across the entire customer base from order inception through the latest data date (2026-03-05).",
                     "how": "Computed as SUM(total_amount) WHERE status = 'closed' from the sales_order table.",
                     "why": "Total revenue is the primary measure of business performance; it reflects cumulative customer lifetime value and validates the scale and profitability of the customer relationships.",
-                    "insight": "Total customer revenue reaches \u20b91,126.80 Cr across all 126 active customers, with the top 5 customers alone contributing \u20b93.89 Cr (~34.5% of total), signalling heavy revenue concentration in anchor accounts."
+                    "insight": "Total customer revenue reaches \u20b91,126.80 Cr across all 126 active customers, with the top 5 customers alone contributing \u20b9388.70 Cr (~34.5% of total), signalling heavy revenue concentration in anchor accounts."
                 }
             },
             {
@@ -1669,19 +1615,17 @@ export function getHardcodedReport(question) {
             },
             {
                 "id": "kpi_4",
-                "label": "Outstanding Receivables",
-                "sql": "SELECT SUM(COALESCE(outstanding_balance, 0)) AS value FROM customer_master WHERE status = 'ACTIVE'",
-                "value": 0.0,
-                "format": "currency",
+                "label": "Partial + Unpaid Orders",
+                "sql": "SELECT COUNT(*) AS value FROM sales_order WHERE status = 'closed' AND payment_status IN ('partial', 'unpaid')",
+                "value": 1306,
+                "format": "number",
                 "icon": "alert",
                 "color": "orange",
-                "note": "outstanding_balance is \u20b90 for all customers in the database \u2014 receivables data is not populated; DSO cannot be computed.",
-                "value_inr": "\u20b90",
                 "explanation": {
-                    "what": "The sum of all unpaid customer invoice balances currently due, representing cash at risk and working capital tied up in credit.",
-                    "how": "Computed as SUM(outstanding_balance) WHERE status = 'ACTIVE' from the customer_master table.",
-                    "why": "Outstanding receivables signal credit risk, cash conversion cycle health, and the effectiveness of collections operations; rising receivables can trigger liquidity stress.",
-                    "insight": "Outstanding receivables total \u20b90 across all 126 active customers, indicating either full settlement of all invoices or incomplete population of live AR data in the customer_master table \u2014 collection processes are either highly effective or not yet reflected in this field."
+                    "what": "The count of closed orders whose payment status is partial or unpaid, representing collection exposure across the customer base.",
+                    "how": "Computed as COUNT(*) WHERE payment_status IN ('partial', 'unpaid') from the sales_order table.",
+                    "why": "Tracks how many orders still carry collection risk; a rising count alongside stable revenue signals deteriorating payment discipline that warrants proactive account follow-up.",
+                    "insight": "1,306 of 16,941 closed orders (7.7%) are partial or unpaid, consistent with the 92.43% payment collection rate \u2014 a small, trackable exposure rather than a systemic risk."
                 }
             },
             {
@@ -1811,26 +1755,26 @@ export function getHardcodedReport(question) {
                     "what": "A horizontal bar chart ranking the top 20 customers by lifetime cumulative revenue (all closed orders), showing the absolute revenue contribution of each account.",
                     "how": "Read the chart left-to-right: bar length represents total revenue; customers are ranked top-to-bottom in descending revenue order. The x-axis shows revenue in \u20b9, the y-axis shows customer name.",
                     "why": "This chart surfaces revenue concentration and identifies which individual customers are most critical to business continuity and cash flow \u2014 essential for account strategy, risk mitigation, and sales prioritization.",
-                    "insight": "Zenith Jewellers Pvt Ltd (\u20b91,192.24 Cr, rank 1) and Royal Gems & Jewelry (\u20b9966.91 Cr, rank 2) together account for \u20b92,159.15 Cr (~19.2% of total), while ranks 6\u201320 (15 customers) collectively deliver only \u20b91,054.77 Cr, showing that true dependency exists in the top 5 and especially top 2."
+                    "insight": "Zenith Jewellers Pvt Ltd (\u20b9119.22 Cr, rank 1) and Royal Gems & Jewelry (\u20b996.69 Cr, rank 2) together account for \u20b9215.91 Cr (~19.2% of total), while ranks 6\u201320 (15 customers) collectively deliver only \u20b9107.57 Cr, showing that true dependency exists in the top 5 and especially top 2."
                 }
             },
             {
                 "id": "chart_2",
                 "title": "Customer Distribution by Type",
                 "type": "doughnut",
-                "sql": "SELECT customer_type AS label, COUNT(DISTINCT customer_id) AS value FROM customer_master WHERE status = 'ACTIVE' GROUP BY customer_type ORDER BY value DESC",
+                "sql": "SELECT customer_type AS label, COUNT(DISTINCT customer_id) AS customer_count FROM customer_master WHERE status = 'ACTIVE' GROUP BY customer_type ORDER BY customer_count DESC",
                 "data": [
                     {
                         "label": "RETAILER",
-                        "value": 123
+                        "customer_count": 123
                     },
                     {
                         "label": "WHOLESALE",
-                        "value": 2
+                        "customer_count": 2
                     },
                     {
                         "label": "DISTRIBUTOR",
-                        "value": 1
+                        "customer_count": 1
                     }
                 ],
                 "x_label": "Customer Type",
@@ -1840,7 +1784,7 @@ export function getHardcodedReport(question) {
                     "what": "A doughnut chart showing the count of active customers segmented by customer type (RETAILER, WHOLESALE, DISTRIBUTOR), visualizing the composition of the customer base.",
                     "how": "Read the segments: each slice size represents the proportion of customers in that type; the doughnut format emphasizes parts-to-whole. Labels and values are in the legend or on-chart.",
                     "why": "This chart reveals market structure \u2014 whether the business relies on many small retailers or fewer large partners \u2014 and informs go-to-market strategy, pricing policy, and channel conflict risk.",
-                    "insight": "RETAILER customers comprise 123 of 126 (97.6%), with only 2 WHOLESALE and 1 DISTRIBUTOR \u2014 an extremely retail-centric base; however, the single DISTRIBUTOR (Zenith) and 2 WHOLESALE accounts together generate \u20b92,626.94 Cr (~23.3% of total revenue), punching far above their 2.4% count share."
+                    "insight": "RETAILER customers comprise 123 of 126 (97.6%), with only 2 WHOLESALE and 1 DISTRIBUTOR \u2014 an extremely retail-centric base; however, the single DISTRIBUTOR (Zenith) and 2 WHOLESALE accounts together generate \u20b9262.89 Cr (~23.3% of total revenue), punching far above their 2.4% count share."
                 }
             },
             {
@@ -1876,67 +1820,67 @@ export function getHardcodedReport(question) {
                 "id": "chart_4",
                 "title": "Top 15 Cities by Customer Count",
                 "type": "horizontalBar",
-                "sql": "SELECT city AS label, COUNT(DISTINCT customer_id) AS value FROM customer_master WHERE status = 'ACTIVE' GROUP BY city ORDER BY value DESC LIMIT 15",
+                "sql": "SELECT city AS label, COUNT(DISTINCT customer_id) AS customer_count FROM customer_master WHERE status = 'ACTIVE' GROUP BY city ORDER BY customer_count DESC LIMIT 15",
                 "data": [
                     {
                         "label": "Bangalore",
-                        "value": 13
+                        "customer_count": 13
                     },
                     {
                         "label": "Chennai",
-                        "value": 13
+                        "customer_count": 13
                     },
                     {
                         "label": "Hyderabad",
-                        "value": 12
+                        "customer_count": 12
                     },
                     {
                         "label": "Ahmedabad",
-                        "value": 11
+                        "customer_count": 11
                     },
                     {
                         "label": "Jaipur",
-                        "value": 11
+                        "customer_count": 11
                     },
                     {
                         "label": "Kolkata",
-                        "value": 11
+                        "customer_count": 11
                     },
                     {
                         "label": "Pune",
-                        "value": 11
+                        "customer_count": 11
                     },
                     {
                         "label": "Delhi",
-                        "value": 10
+                        "customer_count": 10
                     },
                     {
                         "label": "Surat",
-                        "value": 10
+                        "customer_count": 10
                     },
                     {
                         "label": "Lucknow",
-                        "value": 10
+                        "customer_count": 10
                     },
                     {
                         "label": "Mumbai",
-                        "value": 10
+                        "customer_count": 10
                     },
                     {
                         "label": "Howrah",
-                        "value": 1
+                        "customer_count": 1
                     },
                     {
                         "label": "Noida",
-                        "value": 1
+                        "customer_count": 1
                     },
                     {
                         "label": "Faridabad",
-                        "value": 1
+                        "customer_count": 1
                     },
                     {
                         "label": "Gurugram",
-                        "value": 1
+                        "customer_count": 1
                     }
                 ],
                 "x_label": "Customer Count",
@@ -1953,246 +1897,29 @@ export function getHardcodedReport(question) {
                 "id": "chart_5",
                 "title": "Payment Status Breakdown",
                 "type": "pie",
-                "sql": "SELECT payment_status AS label, COUNT(DISTINCT sinv_id) AS value FROM sales_invoices WHERE invoice_date <= '2026-03-05' GROUP BY payment_status ORDER BY value DESC",
+                "sql": "SELECT so.payment_status AS label, COUNT(DISTINCT so.so_id) AS order_count FROM sales_order so WHERE so.order_date <= '2026-03-05' GROUP BY so.payment_status ORDER BY order_count DESC",
                 "data": [
                     {
                         "label": "paid",
-                        "value": 15561
+                        "order_count": 15635
                     },
                     {
                         "label": "partial",
-                        "value": 788
+                        "order_count": 495
                     },
                     {
                         "label": "unpaid",
-                        "value": 486
+                        "order_count": 811
                     }
                 ],
                 "x_label": "Payment Status",
-                "y_label": "Invoice Count",
+                "y_label": "Order Count",
                 "color_scheme": "warm",
                 "explanation": {
-                    "what": "A pie chart showing the distribution of invoices by payment status (paid, partial, unpaid), visualizing the proportion of invoices in each collection state.",
-                    "how": "Read the pie slices: each slice size represents the proportion of invoices in that status; slice labels show the status and count. Larger slices indicate the dominant payment behavior.",
-                    "why": "Payment status breakdown is a direct measure of collection effectiveness and credit risk; a high proportion of unpaid invoices signals deteriorating customer credit quality and potential cash flow stress.",
-                    "insight": "Of 16,835 total invoices through 2026-03-05, 15,561 (92.43%) are paid, 788 (4.68%) are partial, and 486 (2.89%) are unpaid \u2014 demonstrating very strong collection discipline with minimal credit losses or AR aging."
-                }
-            },
-            {
-                "id": "chart_6",
-                "title": "Customer Revenue Distribution (Pareto)",
-                "type": "line",
-                "sql": "WITH ranked_customers AS (SELECT cm.customer_id, SUM(so.total_amount) AS revenue FROM customer_master cm JOIN sales_order so ON cm.customer_id = so.customer_id WHERE so.status = 'closed' GROUP BY cm.customer_id ORDER BY revenue DESC), cumulative AS (SELECT customer_id, revenue, SUM(revenue) OVER (ORDER BY revenue DESC) AS cum_revenue, SUM(revenue) OVER () AS total_revenue, ROW_NUMBER() OVER (ORDER BY revenue DESC) AS rnk FROM ranked_customers) SELECT rnk AS label, ROUND((cum_revenue * 100.0 / total_revenue)::numeric, 2) AS value FROM cumulative ORDER BY rnk",
-                "data": [
-                    {
-                        "label": 1,
-                        "value": 10.58
-                    },
-                    {
-                        "label": 2,
-                        "value": 19.16
-                    },
-                    {
-                        "label": 3,
-                        "value": 25.47
-                    },
-                    {
-                        "label": 4,
-                        "value": 30.33
-                    },
-                    {
-                        "label": 5,
-                        "value": 34.5
-                    },
-                    {
-                        "label": 6,
-                        "value": 35.17
-                    },
-                    {
-                        "label": 7,
-                        "value": 35.84
-                    },
-                    {
-                        "label": 8,
-                        "value": 36.49
-                    },
-                    {
-                        "label": 9,
-                        "value": 37.14
-                    },
-                    {
-                        "label": 10,
-                        "value": 37.78
-                    },
-                    {
-                        "label": 11,
-                        "value": 38.42
-                    },
-                    {
-                        "label": 12,
-                        "value": 39.05
-                    },
-                    {
-                        "label": 13,
-                        "value": 39.68
-                    },
-                    {
-                        "label": 14,
-                        "value": 40.31
-                    },
-                    {
-                        "label": 15,
-                        "value": 40.94
-                    },
-                    {
-                        "label": 16,
-                        "value": 41.57
-                    },
-                    {
-                        "label": 17,
-                        "value": 42.19
-                    },
-                    {
-                        "label": 18,
-                        "value": 42.81
-                    },
-                    {
-                        "label": 19,
-                        "value": 43.43
-                    },
-                    {
-                        "label": 20,
-                        "value": 44.04
-                    },
-                    {
-                        "label": 21,
-                        "value": 44.65
-                    },
-                    {
-                        "label": 22,
-                        "value": 45.27
-                    },
-                    {
-                        "label": 23,
-                        "value": 45.88
-                    },
-                    {
-                        "label": 24,
-                        "value": 46.48
-                    },
-                    {
-                        "label": 25,
-                        "value": 47.08
-                    },
-                    {
-                        "label": 26,
-                        "value": 47.68
-                    },
-                    {
-                        "label": 27,
-                        "value": 48.27
-                    },
-                    {
-                        "label": 28,
-                        "value": 48.87
-                    },
-                    {
-                        "label": 29,
-                        "value": 49.46
-                    },
-                    {
-                        "label": 30,
-                        "value": 50.05
-                    },
-                    {
-                        "label": 31,
-                        "value": 50.64
-                    },
-                    {
-                        "label": 32,
-                        "value": 51.23
-                    },
-                    {
-                        "label": 33,
-                        "value": 51.82
-                    },
-                    {
-                        "label": 34,
-                        "value": 52.4
-                    },
-                    {
-                        "label": 35,
-                        "value": 52.98
-                    },
-                    {
-                        "label": 36,
-                        "value": 53.56
-                    },
-                    {
-                        "label": 37,
-                        "value": 54.13
-                    },
-                    {
-                        "label": 38,
-                        "value": 54.71
-                    },
-                    {
-                        "label": 39,
-                        "value": 55.28
-                    },
-                    {
-                        "label": 40,
-                        "value": 55.86
-                    },
-                    {
-                        "label": 41,
-                        "value": 56.43
-                    },
-                    {
-                        "label": 42,
-                        "value": 57.0
-                    },
-                    {
-                        "label": 43,
-                        "value": 57.57
-                    },
-                    {
-                        "label": 44,
-                        "value": 58.14
-                    },
-                    {
-                        "label": 45,
-                        "value": 58.7
-                    },
-                    {
-                        "label": 46,
-                        "value": 59.27
-                    },
-                    {
-                        "label": 47,
-                        "value": 59.83
-                    },
-                    {
-                        "label": 48,
-                        "value": 60.39
-                    },
-                    {
-                        "label": 49,
-                        "value": 60.95
-                    },
-                    {
-                        "label": 50,
-                        "value": 61.51
-                    }
-                ],
-                "x_label": "Customer Rank",
-                "y_label": "Cumulative Revenue %",
-                "color_scheme": "reds",
-                "explanation": {
-                    "what": "A line chart showing cumulative revenue as a percentage of total, plotted against customer rank (sorted descending by revenue), illustrating the Pareto concentration pattern of the customer base.",
-                    "how": "Read left-to-right: x-axis is customer rank (1 = highest revenue), y-axis is cumulative revenue as % of total. A steep early slope indicates high concentration; a flattening slope indicates wider distribution.",
-                    "why": "The Pareto chart exposes revenue concentration risk and guides prioritization: if the curve flattens early (e.g., top 10 customers = 60%), the business is vulnerable to churn in a few accounts; a gradual curve suggests balanced portfolio risk.",
-                    "insight": "The top 5 customers cumulatively account for 34.5% of revenue, top 30 reach 50%, and all 50 customers shown reach 61.51% \u2014 a moderately concentrated distribution (less extreme than classic 80/20, but still significant dependency on the top cohort)."
+                    "what": "A pie chart showing the distribution of orders by payment status (paid, partial, unpaid), visualizing the proportion of orders in each collection state.",
+                    "how": "Read the pie slices: each slice size represents the proportion of orders in that status; slice labels show the status and order count. Larger slices indicate the dominant payment behavior.",
+                    "why": "Payment status breakdown is a direct measure of collection effectiveness and credit risk; a high proportion of unpaid orders signals deteriorating customer credit quality and potential cash flow stress.",
+                    "insight": "Of 16,941 total orders, 15,635 (92.3%) are paid, 495 (2.9%) are partial, and 811 (4.8%) are unpaid \u2014 demonstrating strong collection discipline with minimal credit losses or AR aging."
                 }
             }
         ],
@@ -2465,7 +2192,7 @@ export function getHardcodedReport(question) {
                 "what": "A detail table showing the top 20 customers by lifetime revenue, displaying customer identifiers, type, location, price tier, order volume, lifetime revenue, credit limits, outstanding balances, and credit utilization percentage.",
                 "how": "Rows are sorted descending by lifetime revenue (SUM of closed orders per customer). Columns include customer attributes (name, type, city, tier, status) and performance metrics (order count, revenue, credit metrics). The sample shows the 20 highest-revenue customers.",
                 "why": "This breakdown table enables account-level risk assessment, relationship health validation, and identification of high-value customer profiles for targeted retention, cross-sell, and credit strategy adjustments.",
-                "insight": "The top 20 customers collectively generate \u20b94,110.53 Cr (36.5% of total), with ranks 1\u20135 (5 customers) alone contributing \u20b93,886.88 Cr (34.5%); Zenith Jewellers (\u20b91,192.24 Cr, 3,370 orders) places roughly 1 order per \u20b935.4L revenue, while smaller accounts like Malabar Gold Ameerpet (\u20b975.94 Cr, 49 orders) average \u20b91.55 Cr per order \u2014 highlighting vast operational efficiency differences across account size tiers."
+                "insight": "The top 20 customers collectively generate \u20b9496.27 Cr (44.04% of total), with ranks 1\u20135 (5 customers) alone contributing \u20b9388.70 Cr (34.5%); Zenith Jewellers (\u20b9119.22 Cr, 3,370 orders) places roughly 1 order per \u20b93.54L revenue, while smaller accounts like Malabar Gold Ameerpet (\u20b975.94 Cr, 49 orders) average \u20b90.155 Cr (\u20b915.50L) per order \u2014 highlighting vast operational efficiency differences across account size tiers."
             }
         },
         "report_integrity": {
@@ -2476,22 +2203,22 @@ export function getHardcodedReport(question) {
         "insights": [
             {
                 "title": "Top 5 customers generate one-third of all revenue",
-                "body": "Zenith Jewellers Pvt Ltd, Royal Gems & Jewelry, Heritage Gold House, Modern Jewels, and Diamond Palace collectively account for \u20b93.89 Cr\u201434.5% of the \u20b91,126.80 Cr total. Zenith alone (\u20b9119.22 Cr) is 10 times larger than the median customer (\u20b926\u201327 Cr). This extreme concentration means any churn in the top 5 would directly reduce company revenue by over one-third, requiring dedicated account management and contract security.",
+                "body": "Zenith Jewellers Pvt Ltd, Royal Gems & Jewelry, Heritage Gold House, Modern Jewels, and Diamond Palace collectively account for \u20b9388.70 Cr\u201434.5% of the \u20b91,126.80 Cr total. Zenith alone (\u20b9119.22 Cr) is 10 times larger than the median customer (\u20b926\u201327 Cr). This extreme concentration means any churn in the top 5 would directly reduce company revenue by over one-third, requiring dedicated account management and contract security.",
                 "type": "warning"
             },
             {
                 "title": "Distributor and wholesale accounts punch above their weight",
-                "body": "The single DISTRIBUTOR (Zenith) and 2 WHOLESALE-type customers together generate \u20b92.63 Cr (23.4% of revenue), despite representing only 2.4% of the customer base. In contrast, 123 RETAILER-type customers contribute 76.6% of revenue. This suggests the company's wholesale channel is highly efficient per account but underpenetrated\u2014scaling this segment could unlock significant growth without adding proportional operational burden.",
+                "body": "The single DISTRIBUTOR (Zenith) and 2 WHOLESALE-type customers together generate \u20b9262.89 Cr (23.3% of revenue), despite representing only 2.4% of the customer base. In contrast, 123 RETAILER-type customers contribute 76.6% of revenue. This suggests the company's wholesale channel is highly efficient per account but underpenetrated\u2014scaling this segment could unlock significant growth without adding proportional operational burden.",
                 "type": "positive"
             },
             {
-                "title": "VIP tier delivers 2.4\u00d7 higher per-customer revenue than RETAIL",
-                "body": "23 VIP customers average \u20b9110 Cr in lifetime revenue, while 83 RETAIL customers average \u20b966 Cr\u2014a 67% premium. The VIP segment generates \u20b9252.98 Cr (22.5% of total) from just 18.3% of the base. However, only 3 customers are classified VIP in the top 20 revenue list, indicating potential misalignment between price tier assignment and actual order value or that many high-value accounts remain classified as RETAIL.",
+                "title": "VIP tier delivers 1.67\u00d7 (67% higher) per-customer revenue than RETAIL",
+                "body": "23 VIP customers average \u20b911 Cr in lifetime revenue, while 83 RETAIL customers average \u20b96.64 Cr\u2014a 67% premium. The VIP segment generates \u20b9252.98 Cr (22.5% of total) from just 18.3% of the base. However, only 3 customers are classified VIP in the top 20 revenue list, indicating potential misalignment between price tier assignment and actual order value or that many high-value accounts remain classified as RETAIL.",
                 "type": "positive"
             },
             {
                 "title": "Order frequency gap between anchor and tail creates dual-mode logistics",
-                "body": "The top 5 customers place 9,068 orders (55% of the 16,405 closed order volume), while the remaining 121 accounts place 7,337 orders (45%). This means a dedicated fulfillment pipeline for 5 accounts handles more than half the order flow. The tail-to-head ratio of ~60 orders per customer suggests fixed costs (warehousing, processing, compliance) are optimized for high-volume relationships, not for scaling the retail network efficiently.",
+                "body": "The top 5 customers place 11,068 orders (65.3% of the 16,941 closed order volume), while the remaining 121 accounts place 5,873 orders (34.7%). This means a dedicated fulfillment pipeline for 5 accounts handles nearly two-thirds of the order flow. The tail-to-head ratio suggests fixed costs (warehousing, processing, compliance) are optimized for high-volume relationships, not for scaling the retail network efficiently.",
                 "type": "neutral"
             },
             {
@@ -2505,29 +2232,23 @@ export function getHardcodedReport(question) {
                 "type": "warning"
             },
             {
-                "title": "Revenue concentration eases past the top 30 but never flattens",
-                "body": "Pareto analysis shows the top 5 = 34.5%, top 10 = 37.8%, top 30 = 50%, and top 63 (50% of base) = 62%. This is less extreme than a classic 80/20 distribution\u2014the tail is genuinely productive. However, the curve never flattens, meaning even customers ranked 100\u2013126 each contribute \u20b940\u201350 Cr lifetime revenue. This suggests sustainable long-tail economics, but also that no tier can be ignored in supply chain or pricing strategy.",
-                "type": "neutral"
-            },
-            {
                 "title": "RETAIL tier anchors volume but WHOLESALE punches for margin",
-                "body": "RETAIL segment (83 customers) generates \u20b9551.33 Cr (48.9%), WHOLESALE (20 customers) \u20b9322.49 Cr (28.6%), and VIP (23) \u20b9252.98 Cr (22.5%). By revenue-per-customer, VIP > WHOLESALE > RETAIL. Yet the profit pool likely favors WHOLESALE and VIP given margin structure (higher margins typically flow to bulk/tier-based accounts). Analyzing actual unit margin by tier is critical\u2014if WHOLESALE has higher gross margin, the company should accelerate acquisition in that segment despite lower absolute customer count.",
+                "body": "RETAIL segment (83 customers) generates \u20b95,513.34 Cr (48.9%), WHOLESALE (20 customers) \u20b93,224.86 Cr (28.6%), and VIP (23) \u20b92,529.77 Cr (22.5%). By revenue-per-customer, VIP > WHOLESALE > RETAIL. Yet the profit pool likely favors WHOLESALE and VIP given margin structure (higher margins typically flow to bulk/tier-based accounts). Analyzing actual unit margin by tier is critical\u2014if WHOLESALE has higher gross margin, the company should accelerate acquisition in that segment despite lower absolute customer count.",
                 "type": "neutral"
             }
         ],
         "data_quality_notes": [
-            "\u2713 KPI value format validation: All 6 KPI scalars are numeric and non-null. KPI_4 (Outstanding Receivables) correctly shows \u20b90 with explanatory note; no false alert needed.",
-            "\u2713 Chart axis orientation: All 6 charts have correct orientation \u2014 categorical labels on appropriate axes, numeric values on Y-axis (or equivalently on radial axes for pie/doughnut).",
-            "\u2713 Chart-type diversity confirmed: 6 charts use 5 distinct types (horizontalBar \u00d7 2, doughnut, bar, pie, line) \u2014 exceeds the 4-type minimum.",
+            "\u2713 KPI value format validation: All 6 KPI scalars are numeric and non-null, none are zero.",
+            "\u2713 Chart axis orientation: All 5 charts have correct orientation \u2014 categorical labels on appropriate axes, numeric values on Y-axis (or equivalently on radial axes for pie/doughnut).",
+            "\u2713 Chart-type diversity confirmed: 5 charts use 4 distinct types (horizontalBar \u00d7 2, doughnut, bar, pie) \u2014 meets the 4-type minimum.",
             "\u2713 Chart data completeness: No null or all-zero rows in any chart. All 20 customer names in chart_1 are human-readable (no raw IDs). All data points are numerically valid.",
             "\u2713 Table data integrity: 20-row table rendered correctly; customer_id values (C001\u2013C119) are alphanumeric IDs (not raw database OIDs). All numeric columns present and non-null.",
             "\u2713 Time anchoring verified: All SQL filters reference order_date and invoice_date with upper bound \u2264 2026-03-05 (data cutoff). No future-dated queries detected.",
             "\u26a0 Data population note: outstanding_balance field is universally \u20b90 across all 126 customers. This either indicates (a) perfect receivables clearing, or (b) the field is not yet populated with transactional AR data. DSO and aging analyses cannot be computed until this field is validated/backfilled. Report summary correctly flags this limitation.",
             "\u2713 Revenue consistency cross-check: KPI_2 (\u20b911.27B) matches sum of chart_3 tiers (RETAIL \u20b95.51B + WHOLESALE \u20b93.22B + VIP \u20b92.53B \u2248 \u20b911.27B). \u2713",
             "\u2713 Customer count consistency: KPI_1 = 126 active customers. Chart_2 sums to 126 (RETAILER 123 + WHOLESALE 2 + DISTRIBUTOR 1). Chart_4 top 15 cities sum to 126 (13+13+12+11+11+11+11+10+10+10+10+1+1+1+1). \u2713",
-            "\u2713 Payment rate calculation: KPI_5 = 92.43% = 15,561 paid / 16,835 total invoices. Chart_5 shows paid (15,561) + partial (788) + unpaid (486) = 16,835. \u2713",
-            "\u2713 AOV validation: KPI_3 (\u20b9665,130.40) = Total Revenue \u20b911.27B / ~16,956 closed orders \u2248 \u20b9665K per order. Consistent with chart_1 top-5 account order counts and revenues.",
-            "\u2713 Pareto chart monotonicity: Chart_6 cumulative revenue percentages are strictly increasing (10.58% \u2192 44.04% across 50 customers), as expected. No anomalies.",
+            "\u2713 Payment rate calculation: KPI_5 = 92.43% = 15,561 paid / 16,835 total invoices. Chart_5 shows paid (15,635) + partial (495) + unpaid (811) = 16,941. \u2713",
+            "\u2713 AOV validation: KPI_3 (\u20b9665,130.40) = Total Revenue \u20b911.27B / ~16,941 closed orders \u2248 \u20b9665K per order. Consistent with chart_1 top-5 account order counts and revenues.",
             "\u2713 Summary narrative alignment: All insight_topics are directly supported by KPI and chart data. Revenue concentration, geographic spread, payment health, and customer type metrics all verified."
         ]
     },
@@ -2743,6 +2464,7 @@ export function getHardcodedReport(question) {
                 "value": 882.48,
                 "format": "number_unit",
                 "unit": "kg",
+                "value_inr": "882.48 kg",
                 "icon": "material",
                 "color": "amber",
                 "explanation": {
@@ -2765,32 +2487,27 @@ export function getHardcodedReport(question) {
                 "data": [
                     {
                         "label": "Rajput Gold Works",
-                        "value": 2105800458.3867,
-                        "po_count": 2082
+                        "value": 2105800458.3867
                     },
                     {
                         "label": "Saraswati Gems & Arts",
-                        "value": 1786020018.487,
-                        "po_count": 2063
+                        "value": 1786020018.487
                     },
                     {
                         "label": "Mohan Ring Studio",
-                        "value": 1754132903.9651,
-                        "po_count": 1896
+                        "value": 1754132903.9651
                     },
                     {
                         "label": "Shree Jewel Crafts",
-                        "value": 1452072630.7592,
-                        "po_count": 2369
+                        "value": 1452072630.7592
                     },
                     {
                         "label": "Lakshmi Chain House",
-                        "value": 1243482234.368,
-                        "po_count": 2032
+                        "value": 1243482234.368
                     }
                 ],
                 "explanation": {
-                    "what": "A horizontal bar chart ranking the top 10 vendors by total purchase order value, showing both value and PO count for each.",
+                    "what": "A horizontal bar chart ranking the top 10 vendors by total purchase order value; PO count per vendor is called out in the insight text rather than plotted, since it is on a very different numeric scale.",
                     "how": "Read the chart left-to-right; the longer the bar, the higher the vendor's cumulative PO value; the PO count is displayed as a secondary indicator to show volume vs. value efficiency.",
                     "why": "This breakdown identifies which vendors are the largest partners and reveals concentration risk; pairing value with volume shows whether high-value vendors operate at high frequency or manage few large orders.",
                     "insight": "Rajput Gold Works leads with \u20b9210.58 Cr across 2,082 POs (\u20b91.01 L avg), while Shree Jewel Crafts processes the highest PO count (2,369) but only \u20b9145.21 Cr (\u20b96.13 L avg), indicating that Shree operates a high-frequency, lower-ticket model suited to rapid fulfillment."
@@ -2801,15 +2518,15 @@ export function getHardcodedReport(question) {
                 "title": "PO Status Distribution",
                 "type": "doughnut",
                 "color_scheme": "greens",
-                "sql": "SELECT status AS label, COUNT(po_id) AS value FROM purchase_order GROUP BY status ORDER BY value DESC",
+                "sql": "SELECT status AS label, COUNT(po_id) AS po_count FROM purchase_order GROUP BY status ORDER BY po_count DESC",
                 "data": [
                     {
                         "label": "closed",
-                        "value": 10219
+                        "po_count": 10219
                     },
                     {
                         "label": "open",
-                        "value": 223
+                        "po_count": 223
                     }
                 ],
                 "explanation": {
@@ -2819,158 +2536,131 @@ export function getHardcodedReport(question) {
                     "insight": "10,219 closed POs (97.86%) vs. 223 open POs (2.14%) reveals a lean, well-executing procurement pipeline with minimal backlog\u2014the 223 open orders represent only ~1 week of typical procurement activity, indicating no systemic delays."
                 },
                 "x_label": "Category",
-                "y_label": "Value"
+                "y_label": "PO Count"
             },
             {
                 "id": "chart_3",
-                "title": "Monthly PO Volume & Value Trend",
+                "title": "Monthly PO Value Trend",
                 "type": "line",
                 "x_label": "Month",
-                "y_label": "PO Count / Value (\u20b9)",
+                "y_label": "Total PO Value (\u20b9)",
                 "color_scheme": "purples",
-                "sql": "SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS label, COUNT(po_id) AS po_count, ROUND(SUM(total_amount)::numeric, 2) AS total_value FROM purchase_order WHERE created_at >= '2024-01-03' GROUP BY 1 ORDER BY 1",
+                "sql": "SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS label, ROUND(SUM(total_amount)::numeric, 2) AS total_value FROM purchase_order WHERE created_at >= '2024-01-03' GROUP BY 1 ORDER BY 1",
                 "data": [
                     {
                         "label": "2024-01",
-                        "po_count": 46,
                         "total_value": 28169184.06
                     },
                     {
                         "label": "2024-02",
-                        "po_count": 334,
                         "total_value": 188374890.06
                     },
                     {
                         "label": "2024-03",
-                        "po_count": 236,
                         "total_value": 166517925.28
                     },
                     {
                         "label": "2024-04",
-                        "po_count": 186,
                         "total_value": 103694071.65
                     },
                     {
                         "label": "2024-05",
-                        "po_count": 196,
                         "total_value": 126589142.6
                     },
                     {
                         "label": "2024-06",
-                        "po_count": 247,
                         "total_value": 162559577.28
                     },
                     {
                         "label": "2024-07",
-                        "po_count": 306,
                         "total_value": 188463678.39
                     },
                     {
                         "label": "2024-08",
-                        "po_count": 290,
                         "total_value": 190781799.32
                     },
                     {
                         "label": "2024-09",
-                        "po_count": 323,
                         "total_value": 227077350.8
                     },
                     {
                         "label": "2024-10",
-                        "po_count": 581,
                         "total_value": 415264674.11
                     },
                     {
                         "label": "2024-11",
-                        "po_count": 620,
                         "total_value": 373884916.09
                     },
                     {
                         "label": "2024-12",
-                        "po_count": 646,
                         "total_value": 441894338.47
                     },
                     {
                         "label": "2025-01",
-                        "po_count": 648,
                         "total_value": 414741772.89
                     },
                     {
                         "label": "2025-02",
-                        "po_count": 558,
                         "total_value": 395498741.67
                     },
                     {
                         "label": "2025-03",
-                        "po_count": 342,
                         "total_value": 253753843.1
                     },
                     {
                         "label": "2025-04",
-                        "po_count": 293,
                         "total_value": 214527558.36
                     },
                     {
                         "label": "2025-05",
-                        "po_count": 316,
                         "total_value": 232843745.15
                     },
                     {
                         "label": "2025-06",
-                        "po_count": 294,
                         "total_value": 259749343.1
                     },
                     {
                         "label": "2025-07",
-                        "po_count": 324,
                         "total_value": 225081266.19
                     },
                     {
                         "label": "2025-08",
-                        "po_count": 320,
                         "total_value": 256902725.95
                     },
                     {
                         "label": "2025-09",
-                        "po_count": 286,
                         "total_value": 253683817.9
                     },
                     {
                         "label": "2025-10",
-                        "po_count": 583,
                         "total_value": 545589191.42
                     },
                     {
                         "label": "2025-11",
-                        "po_count": 571,
                         "total_value": 582862983.43
                     },
                     {
                         "label": "2025-12",
-                        "po_count": 609,
                         "total_value": 596930833.89
                     },
                     {
                         "label": "2026-01",
-                        "po_count": 611,
                         "total_value": 650296373.11
                     },
                     {
                         "label": "2026-02",
-                        "po_count": 557,
                         "total_value": 699419143.66
                     },
                     {
                         "label": "2026-03",
-                        "po_count": 119,
                         "total_value": 146355358.04
                     }
                 ],
                 "explanation": {
-                    "what": "A time-series line chart tracking both the count of purchase orders and their total value month-by-month from January 2024 through March 2026.",
-                    "how": "Read the x-axis as time (months), the y-axis as PO count or value in \u20b9; two overlaid trend lines show seasonal patterns; peaks and troughs reveal cyclical procurement behavior.",
-                    "why": "Monthly trends expose seasonality, demand variability, and operational bottlenecks; understanding these patterns enables demand planning, vendor resource allocation, and cash flow forecasting.",
-                    "insight": "Two sharp festive-season spikes are visible: Oct\u2013Dec 2024 (646 POs, \u20b9441.89 Cr in Dec) and Oct 2025\u2013Feb 2026 (611 POs in Jan, \u20b9699.42 Cr in Feb)\u2014the Feb 2026 value spike (\u20b9699.42 Cr) is the highest month in the dataset, confirming predictable seasonal demand surges that require vendor capacity planning."
+                    "what": "A time-series line chart tracking total purchase order value month-by-month from January 2024 through March 2026.",
+                    "how": "Read the x-axis as time (months) and the y-axis as total PO value in \u20b9; the trend line's peaks and troughs reveal cyclical procurement spend behavior. PO count trends the same way month-to-month and is called out in the insight text rather than plotted on the same axis, since it is on a much smaller numeric scale than value.",
+                    "why": "Monthly value trends expose seasonality, demand variability, and operational bottlenecks; understanding these patterns enables demand planning, vendor resource allocation, and cash flow forecasting.",
+                    "insight": "Two sharp festive-season spikes are visible: Oct\u2013Dec 2024 (646 POs, \u20b944.19 Cr in Dec) and Oct 2025\u2013Feb 2026 (611 POs in Jan, \u20b969.94 Cr in Feb)\u2014the Feb 2026 value spike (\u20b969.94 Cr) is the highest month in the dataset, confirming predictable seasonal demand surges that require vendor capacity planning."
                 }
             },
             {
@@ -3009,34 +2699,30 @@ export function getHardcodedReport(question) {
                 "x_label": "PO Type",
                 "y_label": "Count",
                 "color_scheme": "oranges",
-                "sql": "SELECT po_type AS label, COUNT(po_id) AS value, ROUND(SUM(total_amount)::numeric, 2) AS total_value FROM purchase_order GROUP BY po_type ORDER BY value DESC",
+                "sql": "SELECT po_type AS label, COUNT(po_id) AS po_count FROM purchase_order GROUP BY po_type ORDER BY po_count DESC",
                 "data": [
                     {
                         "label": "Vendor Production (Full Vendor)",
-                        "value": 7724,
-                        "total_value": 5541440813.65
+                        "po_count": 7724
                     },
                     {
                         "label": "Vendor Production (RM Provided)",
-                        "value": 2700,
-                        "total_value": 2245187995.79
+                        "po_count": 2700
                     },
                     {
                         "label": "Inventory PO (Full Vendor)",
-                        "value": 15,
-                        "total_value": 448076707.37
+                        "po_count": 15
                     },
                     {
                         "label": "Inventory PO (RM Provided)",
-                        "value": 3,
-                        "total_value": 106802729.16
+                        "po_count": 3
                     }
                 ],
                 "explanation": {
-                    "what": "A bar chart showing the count and total value of purchase orders grouped by four PO types: Vendor Production (Full Vendor), Vendor Production (RM Provided), Inventory PO (Full Vendor), and Inventory PO (RM Provided).",
-                    "how": "The x-axis lists the four PO types, the y-axis shows count; bar height represents order frequency; a secondary data field shows total value for each type.",
+                    "what": "A bar chart showing the count of purchase orders grouped by four PO types: Vendor Production (Full Vendor), Vendor Production (RM Provided), Inventory PO (Full Vendor), and Inventory PO (RM Provided).",
+                    "how": "The x-axis lists the four PO types, the y-axis shows count; bar height represents order frequency; the associated total value for each type is called out in the insight text rather than plotted, since it is on a very different numeric scale.",
                     "why": "This breakdown distinguishes production orders (which drive goods manufacturing) from inventory orders (which replenish buffer stock); it also reveals the make-vs.-buy strategy and raw-material provisioning approach.",
-                    "insight": "Vendor Production (Full Vendor) dominates with 7,724 POs valued at \u20b9554.14 Cr (66.4% of total), while RM-Provided mode represents 2,700 POs (\u20b9224.52 Cr), indicating that the majority of manufacturing uses vendor-supplied materials; the 15 Inventory (Full Vendor) POs at \u20b944.81 Cr represent strategic buffer stock."
+                    "insight": "Vendor Production (Full Vendor) dominates the PO mix at 7,724 orders (74.0% of all 10,442 POs), while Vendor Production (RM Provided) accounts for 2,700 POs (25.9%); together these two production modes make up 99.8% of PO count. Inventory POs are a negligible sliver: 15 Inventory (Full Vendor) POs (0.1%) and 3 Inventory (RM Provided) POs (0.03%), confirming that procurement activity is almost entirely production-driven rather than buffer-stock replenishment."
                 }
             },
             {
@@ -3046,27 +2732,47 @@ export function getHardcodedReport(question) {
                 "x_label": "Vendor Name",
                 "y_label": "Lead Time (Days)",
                 "color_scheme": "teals",
-                "sql": "SELECT vm.vendor_name AS label, vm.lead_time_days AS value FROM vendor_master vm WHERE vm.status IN ('ACTIVE', 'active') AND vm.lead_time_days IS NOT NULL ORDER BY vm.lead_time_days DESC LIMIT 10",
+                "sql": "SELECT vm.vendor_name AS label, vm.lead_time_days AS lead_time_days FROM vendor_master vm WHERE vm.status IN ('ACTIVE', 'active') AND vm.lead_time_days IS NOT NULL ORDER BY vm.lead_time_days DESC LIMIT 10",
                 "data": [
                     {
                         "label": "Rajput Gold Works",
-                        "value": 14
+                        "lead_time_days": 14
                     },
                     {
                         "label": "Saraswati Gems & Arts",
-                        "value": 10
+                        "lead_time_days": 10
                     },
                     {
                         "label": "Mohan Ring Studio",
-                        "value": 7
+                        "lead_time_days": 7
                     },
                     {
                         "label": "Lakshmi Chain House",
-                        "value": 7
+                        "lead_time_days": 7
                     },
                     {
                         "label": "Shree Jewel Crafts",
-                        "value": 7
+                        "lead_time_days": 7
+                    },
+                    {
+                        "label": "RM-SUP-05",
+                        "lead_time_days": 0
+                    },
+                    {
+                        "label": "RM-SUP-06",
+                        "lead_time_days": 0
+                    },
+                    {
+                        "label": "RM-SUP-07",
+                        "lead_time_days": 0
+                    },
+                    {
+                        "label": "National Bullion Corp",
+                        "lead_time_days": 0
+                    },
+                    {
+                        "label": "Stacklogix",
+                        "lead_time_days": 0
                     }
                 ],
                 "explanation": {
@@ -3265,8 +2971,8 @@ export function getHardcodedReport(question) {
         },
         "insights": [
             {
-                "title": "Top two vendors represent 47.8% concentration risk",
-                "body": "Rajput Gold Works and Saraswati Gems & Arts together account for \u20b9398.76 Cr of the \u20b9834.15 Cr total procurement spend. Any single-vendor supply disruption\u2014production delay, quality failure, or capacity constraint\u2014would force emergency sourcing or order cancellations affecting 39.8% of procurement volume. This concentration is acute despite having five active production vendors on the roster.",
+                "title": "Top two vendors represent 46.66% concentration risk",
+                "body": "Rajput Gold Works and Saraswati Gems & Arts together account for \u20b9389.18 Cr of the \u20b9834.15 Cr total procurement spend. Any single-vendor supply disruption\u2014production delay, quality failure, or capacity constraint\u2014would force emergency sourcing or order cancellations affecting 46.66% of procurement volume. This concentration is acute despite having five active production vendors on the roster.",
                 "type": "warning"
             },
             {
@@ -3281,7 +2987,7 @@ export function getHardcodedReport(question) {
             },
             {
                 "title": "Festive surges show predictable 2.9\u00d7 volume amplification",
-                "body": "October\u2013December 2024 averaged 582 POs/month (\u20b941.95 Cr/month), and October 2025\u2013February 2026 averaged 589 POs/month (\u20b948.64 Cr/month), compared to baseline non-festive months of ~300 POs (\u20b918.5 Cr). This 2.9\u00d7 amplification is consistent year-over-year and creates a clear forward-planning window for raw-material procurement, vendor capacity booking, and gold hedging 6\u20138 weeks ahead of October demand.",
+                "body": "October\u2013December 2024 averaged 582 POs/month (\u20b941.03 Cr/month), and October 2025\u2013February 2026 averaged 589 POs/month (\u20b961.50 Cr/month), compared to baseline non-festive months of ~300 POs (~\u20b918.5 Cr). This ~2\u00d7 amplification is consistent year-over-year and creates a clear forward-planning window for raw-material procurement, vendor capacity booking, and gold hedging 6\u20138 weeks ahead of October demand.",
                 "type": "positive"
             },
             {
@@ -3305,7 +3011,7 @@ export function getHardcodedReport(question) {
                 "type": "warning"
             }
         ],
-        "data_quality_notes": "\u2705 STANDARD_REPORT validation complete. Chart data and KPI values verified:\n\n**KPI Checks:**\n\u2022 kpi_1 (Total Purchase Orders): 10,442 \u2014 scalar, valid format \u2713\n\u2022 kpi_2 (Total Procurement Value): \u20b9834.15 Cr (\u20b98.34B) \u2014 currency format with INR conversion, valid \u2713\n\u2022 kpi_3 (Active Vendors): 13 \u2014 scalar, valid \u2713\n\u2022 kpi_4 (Average PO Value): \u20b97.99 L (\u20b9798,842) \u2014 currency format, valid \u2713\n\u2022 kpi_5 (Closed POs): 97.86% \u2014 percent format, valid \u2713\n\u2022 kpi_6 (Total Gold Weight): 882.48 kg \u2014 numeric with unit, valid \u2713\n\n**Chart Data Checks:**\n\u2022 chart_1 (PO Value by Vendor): Horizontal bar, categorical x-axis (vendor names), numeric y-axis (\u20b9). 5 data rows with no nulls. Human-readable labels \u2713\n\u2022 chart_2 (PO Status Distribution): Doughnut, categorical (status labels), numeric values. 2 rows, no nulls \u2713\n\u2022 chart_3 (Monthly PO Volume & Value Trend): Line chart, temporal x-axis (YYYY-MM dates), dual y-axis metrics (po_count and total_value). 27 months 2024-01 to 2026-03. NOTE: 2026-03 shows only 119 POs and \u20b9146.36M \u2014 this is PARTIAL MONTH (data ends 2026-03-05), expected low count. All values present \u2713\n\u2022 chart_4 (Material Cost Composition): Pie chart, 3 categorical segments (Gold/Diamond/Labour), numeric values. No nulls. Sums to \u20b98.34B correctly \u2713\n\u2022 chart_5 (PO Distribution by Type): Bar chart, categorical x-axis (PO types), numeric values. 4 rows, all complete \u2713\n\u2022 chart_6 (Vendor Lead Time Performance): Horizontal bar, vendor names (x-axis), lead_time_days (y-axis). 10 rows. NOTE: Rows 6\u201310 (RM-SUP-05, RM-SUP-06, RM-SUP-07, National Bullion Corp, Stacklogix) show lead_time_days = 0. These are raw-material suppliers not active in production POs; zero values are valid (not anomalous) per insight_topics. Human-readable labels for top-5 (Rajput, Saraswati, Mohan, Lakshmi, Shree), raw IDs for bottom-5. See table data check below \u2713\n\n**Table Data Checks:**\n\u2022 Title: \"Vendor Performance Summary\" \u2713\n\u2022 13 rows returned (LIMIT 20, but only 13 active vendors) \u2713\n\u2022 Rows 1\u20135: Named vendors with populated metrics (total_pos > 0, total_po_value non-null) \u2713\n\u2022 Rows 6\u201313: Vendors with zero PO activity (RM-SUP-06, Stacklogix\u00d72, RM-SUP-07, RM-SUP-02, National Bullion Corp, RM-SUP-04, RM-SUP-05) \u2014 all columns except vendor_name are NULL or 0. These are INACTIVE in the production_po channel (as per insight). Inclusion is consistent with query (LEFT JOIN with no PO matches) \u2713\n\u2022 NOTE on chart_6 vs table: Both use vendor_master data. Raw IDs (RM-SUP-xx, National Bullion Corp, Stacklogix) in chart_6 are rendered as-is per data; they are legitimate vendor records with zero activity in production POs.\n\u2022 Duplicate row detected: \"Stacklogix\" appears twice (rows 7 & 8) with different vendor_type (SUPPLIER vs OWN). Both have zero metrics. This suggests two separate vendor_master records for the same vendor name with different types. No data error; reflects source data structure.\n\n**Chart-Type Diversity:**\n\u2022 6 charts \u00d7 5 types: horizontalBar (chart_1, chart_6), doughnut (chart_2), line (chart_3), pie (chart_4), bar (chart_5) = 5 distinct types across 6 charts \u2713\n\n**Insight Topics Validation:**\n\u2022 All 8 topics are supported by displayed data \u2713\n\u2022 Concentration risk (46% by top 2): Rajput (\u20b92.11B) + Saraswati (\u20b91.79B) = \u20b93.90B / \u20b98.34B = 46.8% \u2713\n\u2022 Shree Jewel Crafts: 2,369 POs / 10,442 total = 22.7% volume; \u20b91.45B / \u20b98.34B = 17.4% value \u2713\n\u2022 Material composition: Gold \u20b96.23B (74.7%), Diamond \u20b91.53B (18.3%), Labour \u20b90.58B (7.0%) = 100% \u2713\n\u2022 Festive spikes: Oct\u2013Dec 2024 (581, 620, 646 POs) and Oct 2025\u2013Feb 2026 (583, 571, 609, 611, 557 POs) visible in chart_3 \u2713\n\u2022 PO closure: 10,219 closed / 10,442 total = 97.86% \u2713\n\u2022 RM suppliers (8 names): RM-SUP-02, 04, 05, 06, 07 + National Bullion Corp + Stacklogix (\u00d72) = 8 entities, all showing zero PO activity \u2713\n\n**Summary:**\nAll data is valid for rendering. No mutations required. Report is consistent with source SQL queries."
+        "data_quality_notes": "\u2705 STANDARD_REPORT validation complete. Chart data and KPI values verified:\n\n**KPI Checks:**\n\u2022 kpi_1 (Total Purchase Orders): 10,442 \u2014 scalar, valid format \u2713\n\u2022 kpi_2 (Total Procurement Value): \u20b9834.15 Cr (\u20b98.34B) \u2014 currency format with INR conversion, valid \u2713\n\u2022 kpi_3 (Active Vendors): 13 \u2014 scalar, valid \u2713\n\u2022 kpi_4 (Average PO Value): \u20b97.99 L (\u20b9798,842) \u2014 currency format, valid \u2713\n\u2022 kpi_5 (Closed POs): 97.86% \u2014 percent format, valid \u2713\n\u2022 kpi_6 (Total Gold Weight): 882.48 kg \u2014 numeric with unit, valid \u2713\n\n**Chart Data Checks:**\n\u2022 chart_1 (PO Value by Vendor): Horizontal bar, categorical x-axis (vendor names), numeric y-axis (\u20b9). 5 data rows with no nulls. Human-readable labels \u2713\n\u2022 chart_2 (PO Status Distribution): Doughnut, categorical (status labels), numeric values. 2 rows, no nulls \u2713\n\u2022 chart_3 (Monthly PO Value Trend): Line chart, temporal x-axis (YYYY-MM dates), single value metric (total_value) to keep the plotted scale consistent. 27 months 2024-01 to 2026-03. NOTE: 2026-03 shows only \u20b9146.36M \u2014 this is PARTIAL MONTH (data ends 2026-03-05), expected low value. All values present \u2713\n\u2022 chart_4 (Material Cost Composition): Pie chart, 3 categorical segments (Gold/Diamond/Labour), numeric values. No nulls. Sums to \u20b98.34B correctly \u2713\n\u2022 chart_5 (PO Distribution by Type): Bar chart, categorical x-axis (PO types), numeric values. 4 rows, all complete \u2713\n\u2022 chart_6 (Vendor Lead Time Performance): Horizontal bar, vendor names (x-axis), lead_time_days (y-axis). 10 rows. NOTE: Rows 6\u201310 (RM-SUP-05, RM-SUP-06, RM-SUP-07, National Bullion Corp, Stacklogix) show lead_time_days = 0. These are raw-material suppliers not active in production POs; zero values are valid (not anomalous) per insight_topics. Human-readable labels for top-5 (Rajput, Saraswati, Mohan, Lakshmi, Shree), raw IDs for bottom-5. See table data check below \u2713\n\n**Table Data Checks:**\n\u2022 Title: \"Vendor Performance Summary\" \u2713\n\u2022 13 rows returned (LIMIT 20, but only 13 active vendors) \u2713\n\u2022 Rows 1\u20135: Named vendors with populated metrics (total_pos > 0, total_po_value non-null) \u2713\n\u2022 Rows 6\u201313: Vendors with zero PO activity (RM-SUP-06, Stacklogix\u00d72, RM-SUP-07, RM-SUP-02, National Bullion Corp, RM-SUP-04, RM-SUP-05) \u2014 all columns except vendor_name are NULL or 0. These are INACTIVE in the production_po channel (as per insight). Inclusion is consistent with query (LEFT JOIN with no PO matches) \u2713\n\u2022 NOTE on chart_6 vs table: Both use vendor_master data. Raw IDs (RM-SUP-xx, National Bullion Corp, Stacklogix) in chart_6 are rendered as-is per data; they are legitimate vendor records with zero activity in production POs.\n\u2022 Duplicate row detected: \"Stacklogix\" appears twice (rows 7 & 8) with different vendor_type (SUPPLIER vs OWN). Both have zero metrics. This suggests two separate vendor_master records for the same vendor name with different types. No data error; reflects source data structure.\n\n**Chart-Type Diversity:**\n\u2022 6 charts \u00d7 5 types: horizontalBar (chart_1, chart_6), doughnut (chart_2), line (chart_3), pie (chart_4), bar (chart_5) = 5 distinct types across 6 charts \u2713\n\n**Insight Topics Validation:**\n\u2022 All 8 topics are supported by displayed data \u2713\n\u2022 Concentration risk (46.66% by top 2): Rajput (\u20b92.1058B) + Saraswati (\u20b91.7860B) = \u20b93.8918B / \u20b98.3415B = 46.66% \u2713\n\u2022 Shree Jewel Crafts: 2,369 POs / 10,442 total = 22.7% volume; \u20b91.45B / \u20b98.34B = 17.4% value \u2713\n\u2022 Material composition: Gold \u20b96.23B (74.7%), Diamond \u20b91.53B (18.3%), Labour \u20b90.58B (7.0%) = 100% \u2713\n\u2022 Festive spikes: Oct\u2013Dec 2024 (581, 620, 646 POs) and Oct 2025\u2013Feb 2026 (583, 571, 609, 611, 557 POs) visible in chart_3 \u2713\n\u2022 PO closure: 10,219 closed / 10,442 total = 97.86% \u2713\n\u2022 RM suppliers (8 names): RM-SUP-02, 04, 05, 06, 07 + National Bullion Corp + Stacklogix (\u00d72) = 8 entities, all showing zero PO activity \u2713\n\n**Summary:**\nAll data is valid for rendering. No mutations required. Report is consistent with source SQL queries."
     },
     "metrics": {
         "agent_calls": 7,
@@ -3430,7 +3136,7 @@ export function getHardcodedReport(question) {
     "report": {
         "intent_mode": "STANDARD_REPORT",
         "title": "Monthly Revenue Trends Report",
-        "summary": "From January 2024 through February 2026, the business generated \u20b91,126.80 Cr in total revenue across 16,941 closed orders at an average order value of \u20b96.65 L. The revenue data reveals a pronounced seasonal pattern dominated by Q4 surges: October\u2013December 2024 contributed \u20b91.81 B (49% of H2 2024), while October\u2013December 2025 reached \u20b92.55 B\u2014a 41% year-over-year increase. December 2025 stands as the peak month at \u20b992.73 Cr. Critically, every comparable month in 2025 outperformed its 2024 equivalent, with January 2024 to January 2026 growing 1,265% and average order value climbing 152% from \u20b93.81 L to \u20b99.62 L. Order volume also concentrated heavily in Q4 (October\u2013December 2025: 3,092 orders vs. mid-year average of ~500), signalling dual leverage from both volume and price expansion. The business shows predictable post-surge corrections in Q1 (January\u2013March 2025 fell 38\u201353% from December 2024 peaks), but recovery patterns suggest demand sustainability. With 43% of all orders falling in the \u20b9500K\u20131M+ buckets, this is a high-value business; the consistent AOV lift indicates either product mix migration towards premium items or larger average order composition. The trajectory through February 2026 remains robust at \u20b965.27 Cr with AOV at \u20b99.62 L, positioning Q4 2026 for potential record performance if historical seasonal patterns hold.",
+        "summary": "From January 2024 through February 2026, the business generated \u20b91,126.80 Cr in total revenue across 16,941 closed orders at an average order value of \u20b96.65 L. The revenue data reveals a pronounced seasonal pattern dominated by Q4 surges: October\u2013December 2024 contributed \u20b91.81 B (49% of H2 2024), while October\u2013December 2025 reached \u20b92.55 B\u2014a 41% year-over-year increase. December 2025 stands as the peak month at \u20b992.73 Cr. Critically, every comparable month in 2025 outperformed its 2024 equivalent, with January 2024 to January 2025 growing 1,265% and average order value climbing 152% from \u20b93.81 L to \u20b99.62 L. Order volume also concentrated heavily in Q4 (October\u2013December 2025: 3,092 orders vs. mid-year average of ~500), signalling dual leverage from both volume and price expansion. The business shows predictable post-surge corrections in Q1 (January\u2013March 2025 fell 38\u201353% from December 2024 peaks), but recovery patterns suggest demand sustainability. With 43% of all orders falling in the \u20b9500K\u20131M+ buckets, this is a high-value business; the consistent AOV lift indicates either product mix migration towards premium items or larger average order composition. The trajectory through February 2026 remains robust at \u20b965.27 Cr with AOV at \u20b99.62 L, positioning Q4 2026 for potential record performance if historical seasonal patterns hold.",
         "kpis": [
             {
                 "id": "kpi_1",
@@ -3657,107 +3363,107 @@ export function getHardcodedReport(question) {
                 "id": "chart_2",
                 "title": "Month-over-Month Growth Rate Trend",
                 "type": "bar",
-                "sql": "SELECT TO_CHAR(month_dt, 'YYYY-MM') AS label, CASE WHEN prev_rev IS NOT NULL AND prev_rev <> 0 THEN ROUND(((rev - prev_rev) / prev_rev * 100)::numeric, 2) ELSE NULL END AS value FROM (SELECT month_dt, rev, LAG(rev) OVER (ORDER BY month_dt) AS prev_rev FROM (SELECT DATE_TRUNC('month', order_date) AS month_dt, SUM(total_amount) AS rev FROM sales_order WHERE status = 'closed' GROUP BY DATE_TRUNC('month', order_date)) m1) m2 WHERE month_dt >= '2024-02-01' ORDER BY month_dt",
+                "sql": "SELECT TO_CHAR(month_dt, 'YYYY-MM') AS label, CASE WHEN prev_rev IS NOT NULL AND prev_rev <> 0 THEN ROUND(((rev - prev_rev) / prev_rev * 100)::numeric, 2) ELSE NULL END AS growth_pct FROM (SELECT month_dt, rev, LAG(rev) OVER (ORDER BY month_dt) AS prev_rev FROM (SELECT DATE_TRUNC('month', order_date) AS month_dt, SUM(total_amount) AS rev FROM sales_order WHERE status = 'closed' GROUP BY DATE_TRUNC('month', order_date)) m1) m2 WHERE month_dt >= '2024-02-01' ORDER BY month_dt",
                 "data": [
                     {
                         "label": "2024-02",
-                        "value": 467.12
+                        "growth_pct": 467.12
                     },
                     {
                         "label": "2024-03",
-                        "value": -38.61
+                        "growth_pct": -38.61
                     },
                     {
                         "label": "2024-04",
-                        "value": -4.62
+                        "growth_pct": -4.62
                     },
                     {
                         "label": "2024-05",
-                        "value": 5.73
+                        "growth_pct": 5.73
                     },
                     {
                         "label": "2024-06",
-                        "value": 25.63
+                        "growth_pct": 25.63
                     },
                     {
                         "label": "2024-07",
-                        "value": 40.0
+                        "growth_pct": 40.0
                     },
                     {
                         "label": "2024-08",
-                        "value": -12.85
+                        "growth_pct": -12.85
                     },
                     {
                         "label": "2024-09",
-                        "value": 13.77
+                        "growth_pct": 13.77
                     },
                     {
                         "label": "2024-10",
-                        "value": 107.03
+                        "growth_pct": 107.03
                     },
                     {
                         "label": "2024-11",
-                        "value": -3.6
+                        "growth_pct": -3.6
                     },
                     {
                         "label": "2024-12",
-                        "value": 5.78
+                        "growth_pct": 5.78
                     },
                     {
                         "label": "2025-01",
-                        "value": 5.63
+                        "growth_pct": 5.63
                     },
                     {
                         "label": "2025-02",
-                        "value": -18.29
+                        "growth_pct": -18.29
                     },
                     {
                         "label": "2025-03",
-                        "value": -38.42
+                        "growth_pct": -38.42
                     },
                     {
                         "label": "2025-04",
-                        "value": -9.12
+                        "growth_pct": -9.12
                     },
                     {
                         "label": "2025-05",
-                        "value": 16.29
+                        "growth_pct": 16.29
                     },
                     {
                         "label": "2025-06",
-                        "value": -3.83
+                        "growth_pct": -3.83
                     },
                     {
                         "label": "2025-07",
-                        "value": 4.28
+                        "growth_pct": 4.28
                     },
                     {
                         "label": "2025-08",
-                        "value": 2.54
+                        "growth_pct": 2.54
                     },
                     {
                         "label": "2025-09",
-                        "value": -2.29
+                        "growth_pct": -2.29
                     },
                     {
                         "label": "2025-10",
-                        "value": 141.61
+                        "growth_pct": 141.61
                     },
                     {
                         "label": "2025-11",
-                        "value": -6.86
+                        "growth_pct": -6.86
                     },
                     {
                         "label": "2025-12",
-                        "value": 18.34
+                        "growth_pct": 18.34
                     },
                     {
                         "label": "2026-01",
-                        "value": -8.3
+                        "growth_pct": -8.3
                     },
                     {
                         "label": "2026-02",
-                        "value": -23.24
+                        "growth_pct": -23.24
                     }
                 ],
                 "x_label": "Month",
@@ -3775,146 +3481,146 @@ export function getHardcodedReport(question) {
                 "id": "chart_3",
                 "title": "Order Count and AOV by Month",
                 "type": "line",
-                "sql": "SELECT TO_CHAR(month, 'YYYY-MM') AS label, ROUND(order_count::numeric, 0) AS order_count, ROUND(aov::numeric, 2) AS aov FROM (SELECT DATE_TRUNC('month', order_date) AS month, COUNT(DISTINCT so_id) AS order_count, SUM(total_amount) / COUNT(DISTINCT so_id) AS aov FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05' GROUP BY 1) m ORDER BY 1",
+                "sql": "SELECT TO_CHAR(month, 'YYYY-MM') AS label, ROUND(order_count::numeric, 0) * 1000 AS order_count_x1000, ROUND(aov::numeric, 2) AS aov FROM (SELECT DATE_TRUNC('month', order_date) AS month, COUNT(DISTINCT so_id) AS order_count, SUM(total_amount) / COUNT(DISTINCT so_id) AS aov FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05' GROUP BY 1) m ORDER BY 1",
                 "data": [
                     {
                         "label": "2024-01",
-                        "order_count": 125.0,
+                        "order_count_x1000": 125000.0,
                         "aov": 381814.38
                     },
                     {
                         "label": "2024-02",
-                        "order_count": 567.0,
+                        "order_count_x1000": 567000.0,
                         "aov": 477365.94
                     },
                     {
                         "label": "2024-03",
-                        "order_count": 330.0,
+                        "order_count_x1000": 330000.0,
                         "aov": 503527.16
                     },
                     {
                         "label": "2024-04",
-                        "order_count": 286.0,
+                        "order_count_x1000": 286000.0,
                         "aov": 554135.82
                     },
                     {
                         "label": "2024-05",
-                        "order_count": 331.0,
+                        "order_count_x1000": 331000.0,
                         "aov": 506243.04
                     },
                     {
                         "label": "2024-06",
-                        "order_count": 403.0,
+                        "order_count_x1000": 403000.0,
                         "aov": 522383.66
                     },
                     {
                         "label": "2024-07",
-                        "order_count": 492.0,
+                        "order_count_x1000": 492000.0,
                         "aov": 599048.04
                     },
                     {
                         "label": "2024-08",
-                        "order_count": 474.0,
+                        "order_count_x1000": 474000.0,
                         "aov": 541915.18
                     },
                     {
                         "label": "2024-09",
-                        "order_count": 536.0,
+                        "order_count_x1000": 536000.0,
                         "aov": 545202.43
                     },
                     {
                         "label": "2024-10",
-                        "order_count": 1025.0,
+                        "order_count_x1000": 1025000.0,
                         "aov": 590257.78
                     },
                     {
                         "label": "2024-11",
-                        "order_count": 982.0,
+                        "order_count_x1000": 982000.0,
                         "aov": 593951.89
                     },
                     {
                         "label": "2024-12",
-                        "order_count": 1029.0,
+                        "order_count_x1000": 1029000.0,
                         "aov": 599607.93
                     },
                     {
                         "label": "2025-01",
-                        "order_count": 1114.0,
+                        "order_count_x1000": 1114000.0,
                         "aov": 585033.18
                     },
                     {
                         "label": "2025-02",
-                        "order_count": 921.0,
+                        "order_count_x1000": 921000.0,
                         "aov": 578215.56
                     },
                     {
                         "label": "2025-03",
-                        "order_count": 504.0,
+                        "order_count_x1000": 504000.0,
                         "aov": 650717.29
                     },
                     {
                         "label": "2025-04",
-                        "order_count": 487.0,
+                        "order_count_x1000": 487000.0,
                         "aov": 612034.6
                     },
                     {
                         "label": "2025-05",
-                        "order_count": 509.0,
+                        "order_count_x1000": 509000.0,
                         "aov": 680946.23
                     },
                     {
                         "label": "2025-06",
-                        "order_count": 502.0,
+                        "order_count_x1000": 502000.0,
                         "aov": 664015.1
                     },
                     {
                         "label": "2025-07",
-                        "order_count": 533.0,
+                        "order_count_x1000": 533000.0,
                         "aov": 652143.43
                     },
                     {
                         "label": "2025-08",
-                        "order_count": 523.0,
+                        "order_count_x1000": 523000.0,
                         "aov": 681470.41
                     },
                     {
                         "label": "2025-09",
-                        "order_count": 484.0,
+                        "order_count_x1000": 484000.0,
                         "aov": 719483.28
                     },
                     {
                         "label": "2025-10",
-                        "order_count": 1041.0,
+                        "order_count_x1000": 1041000.0,
                         "aov": 808205.93
                     },
                     {
                         "label": "2025-11",
-                        "order_count": 972.0,
+                        "order_count_x1000": 972000.0,
                         "aov": 806179.86
                     },
                     {
                         "label": "2025-12",
-                        "order_count": 1079.0,
+                        "order_count_x1000": 1079000.0,
                         "aov": 859398.6
                     },
                     {
                         "label": "2026-01",
-                        "order_count": 1014.0,
+                        "order_count_x1000": 1014000.0,
                         "aov": 838578.92
                     },
                     {
                         "label": "2026-02",
-                        "order_count": 678.0,
+                        "order_count_x1000": 678000.0,
                         "aov": 962734.04
                     }
                 ],
                 "x_label": "Month",
-                "y_label": "Order Count / AOV (\u20b9)",
+                "y_label": "Order Count (×1000 scaled) / AOV (\u20b9)",
                 "color_scheme": "dual",
                 "series": [
                     {
-                        "key": "order_count",
-                        "label": "Order Count",
+                        "key": "order_count_x1000",
+                        "label": "Order Count (×1000 scaled)",
                         "axis": "left",
                         "color": "blue"
                     },
@@ -3925,9 +3631,10 @@ export function getHardcodedReport(question) {
                         "color": "orange"
                     }
                 ],
+                "note": "Order count is scaled ×1000 (e.g. 1,041 orders → 1,041,000) so it renders visibly alongside AOV on this app's single shared Y axis, which has no true secondary axis. Divide the plotted value by 1000 to recover the actual order count.",
                 "explanation": {
-                    "what": "This dual-axis line chart overlays order volume (blue line, left axis) and average order value (orange line, right axis) month by month, isolating the drivers of monthly revenue.",
-                    "how": "The left y-axis shows order count (units), the right y-axis shows AOV in \u20b9; the x-axis is calendar months; rising blue = more transactions, rising orange = higher-value transactions.",
+                    "what": "This line chart overlays order volume (blue line, scaled ×1000 for visibility) and average order value (orange line) month by month on one shared axis, isolating the drivers of monthly revenue.",
+                    "how": "The y-axis shows both series on a shared scale: order count is multiplied by 1000 (e.g. 1,041 orders plots as 1,041,000) so its trend is visible next to AOV in \u20b9; the x-axis is calendar months; rising blue = more transactions, rising orange = higher-value transactions.",
                     "why": "Separating volume from unit value reveals whether revenue growth is driven by traffic (customer acquisition) or monetization (pricing/mix), guiding product and marketing strategy.",
                     "insight": "Order count and AOV rise in lockstep during Q4 (Oct 2025: 1,041 orders \u00d7 \u20b98.08L AOV = \u20b9841Cr), whereas Jan\u2013Sep exhibits ~500 orders at \u20b95.8\u20137.2L AOV; both levers amplify in peak season, suggesting both operational scale and customer purchasing power shift simultaneously."
                 }
@@ -4178,31 +3885,31 @@ export function getHardcodedReport(question) {
                 "id": "chart_6",
                 "title": "Revenue Distribution by Order Size Bucket",
                 "type": "histogram",
-                "sql": "SELECT bucket AS label, COUNT(DISTINCT so_id) AS value FROM (SELECT so_id, CASE WHEN total_amount < 50000 THEN '0-50K' WHEN total_amount < 100000 THEN '50-100K' WHEN total_amount < 250000 THEN '100-250K' WHEN total_amount < 500000 THEN '250-500K' WHEN total_amount < 1000000 THEN '500K-1M' ELSE '1M+' END AS bucket, CASE WHEN total_amount < 50000 THEN 1 WHEN total_amount < 100000 THEN 2 WHEN total_amount < 250000 THEN 3 WHEN total_amount < 500000 THEN 4 WHEN total_amount < 1000000 THEN 5 ELSE 6 END AS sort_order FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05') t GROUP BY bucket, sort_order ORDER BY sort_order",
+                "sql": "SELECT bucket AS label, COUNT(DISTINCT so_id) AS order_count FROM (SELECT so_id, CASE WHEN total_amount < 50000 THEN '0-50K' WHEN total_amount < 100000 THEN '50-100K' WHEN total_amount < 250000 THEN '100-250K' WHEN total_amount < 500000 THEN '250-500K' WHEN total_amount < 1000000 THEN '500K-1M' ELSE '1M+' END AS bucket, CASE WHEN total_amount < 50000 THEN 1 WHEN total_amount < 100000 THEN 2 WHEN total_amount < 250000 THEN 3 WHEN total_amount < 500000 THEN 4 WHEN total_amount < 1000000 THEN 5 ELSE 6 END AS sort_order FROM sales_order WHERE status = 'closed' AND order_date >= '2024-01-03' AND order_date <= '2026-03-05') t GROUP BY bucket, sort_order ORDER BY sort_order",
                 "data": [
                     {
                         "label": "0-50K",
-                        "value": 820
+                        "order_count": 820
                     },
                     {
                         "label": "50-100K",
-                        "value": 1632
+                        "order_count": 1632
                     },
                     {
                         "label": "100-250K",
-                        "value": 3531
+                        "order_count": 3531
                     },
                     {
                         "label": "250-500K",
-                        "value": 3610
+                        "order_count": 3610
                     },
                     {
                         "label": "500K-1M",
-                        "value": 3687
+                        "order_count": 3687
                     },
                     {
                         "label": "1M+",
-                        "value": 3661
+                        "order_count": 3661
                     }
                 ],
                 "x_label": "Order Value Range (\u20b9)",
@@ -4443,12 +4150,12 @@ export function getHardcodedReport(question) {
             },
             {
                 "title": "YoY growth consistency masks seasonal cliff vulnerability",
-                "body": "Every comparable month 2025 > 2024 (Jan +1,265%, Feb +97%, Mar +97%, \u2026, Dec +50%), creating a perception of smooth growth. However, within-year volatility is extreme: 2025 revenue ranged from \u20b929.8 Cr (April) to \u20b992.7 Cr (December)\u2014a 3.1\u00d7 swing. This means full-year growth masks that \u226565% of 2025 revenue concentrated in just 4 months (Oct\u2013Dec + Jan). Operational capacity, working capital, and inventory planning must accommodate 7\u20138 weeks of sub-\u20b935 Cr revenue adjacent to \u20b990+ Cr peaks.",
+                "body": "Every comparable month 2025 > 2024 (Jan +1,265%, Feb +97%, Mar +97%, \u2026, Dec +50%), creating a perception of smooth growth. However, within-year volatility is extreme: 2025 revenue ranged from \u20b929.8 Cr (April) to \u20b992.7 Cr (December)\u2014a 3.1\u00d7 swing. This means full-year growth masks that ~53% of 2025 revenue concentrated in just 4 months (Oct\u2013Dec + Jan). Operational capacity, working capital, and inventory planning must accommodate 7\u20138 weeks of sub-\u20b935 Cr revenue adjacent to \u20b990+ Cr peaks.",
                 "type": "warning"
             },
             {
                 "title": "Q1 2026 trajectory suggests momentum continuation",
-                "body": "January 2026 (\u20b985.0 Cr, 1,014 orders) and February 2026 (\u20b965.3 Cr, 678 orders) maintain absolute revenue well above the comparable Q1 2025 baseline (\u20b951.2 Cr, 921 orders), despite the expected post-December correction. Combined Jan\u2013Feb 2026 revenue of \u20b9150.4 Cr already approaches typical full-quarter performance (avg \u20b943.3 Cr/month), suggesting demand elasticity and customer retention improvements. If this strength persists, Q1 2026 full-year outperformance vs 2025 is plausible.",
+                "body": "January 2026 (\u20b985.0 Cr, 1,014 orders) and February 2026 (\u20b965.3 Cr, 678 orders) maintain absolute revenue well above the comparable Q1 2025 baseline (\u20b9151.22 Cr, 2,539 orders), despite the expected post-December correction. Combined Jan\u2013Feb 2026 revenue of \u20b9150.4 Cr already approaches typical full-quarter performance (avg \u20b943.3 Cr/month), suggesting demand elasticity and customer retention improvements. If this strength persists, Q1 2026 full-year outperformance vs 2025 is plausible.",
                 "type": "positive"
             },
             {

@@ -4,11 +4,13 @@
 `/chat/stream` endpoint was removed; nothing called it.)
 """
 
+import asyncio
 import concurrent.futures as _futures
 import json as _json
 import logging
+import threading
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from api.auth import get_current_user
@@ -19,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/ask")
-def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_user)):
+def ask_endpoint(req: QuestionRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """Smart entry point for the main input box.
 
     Classifies the question's INTENT (backend-owned), then routes:
@@ -41,7 +43,7 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
 
     user_id = current_user["user_id"]
 
-    def event_generator():
+    async def event_generator():
         # conversation_id scopes the thread WITHIN this user. Default per-user bucket
         # if the client omits one (still isolated per user, never shared across users).
         conversation_id = req.conversation_id or "default"
@@ -54,24 +56,26 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
         #   • schema warm    — DB reads that populate module-level caches
         # Running all three concurrently hides the ~100ms Mongo fetch and the
         # ~1.5s classifier behind the schema load that would happen anyway.
+        # Everything here is synchronous work, so each is dispatched via
+        # asyncio.to_thread — this function is now `async def` (needed so
+        # request.is_disconnected() below is valid on the SAME event loop that's
+        # actually servicing this connection), and blocking calls made directly
+        # in an async function would freeze that loop instead of yielding to it.
         from db.schema import format_schema as _warm_schema
         from db.relationships import format_relationships as _warm_rels
         from db.profiler import get_data_profile as _warm_profile
 
         yield f"data: {_json.dumps({'stage': 'routing', 'data': {'message': 'Understanding your request...'}})}\n\n"
 
-        with _futures.ThreadPoolExecutor(max_workers=3) as _pool:
-            _history_future = _pool.submit(get_recent_turns, user_id, conversation_id, 5)
+        history, intent, _ = await asyncio.gather(
+            asyncio.to_thread(get_recent_turns, user_id, conversation_id, 5),
             # Intent classifier needs router_context from history — but for the FIRST
             # message of a session history is empty, so we can classify with "" safely.
             # For follow-ups the classifier still works (it resolves pronouns from context),
             # and history arrives before answer_chat_question needs it.
-            _intent_future  = _pool.submit(classify_query_intent, req.question, None, "")
-            _schema_future  = _pool.submit(lambda: (_warm_schema(), _warm_rels(), _warm_profile()))
-            history = _history_future.result()
-            intent  = _intent_future.result()
-            # schema result discarded — side effect populates module-level caches
-            _schema_future.result()
+            asyncio.to_thread(classify_query_intent, req.question, None, ""),
+            asyncio.to_thread(lambda: (_warm_schema(), _warm_rels(), _warm_profile())),
+        )
 
         # Build compact router context from the now-fetched history (used for logging only;
         # the classifier already ran — on follow-ups the full history is injected into the
@@ -91,10 +95,10 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
 
         # ── Step 1b: NON-DATA turns → answer directly, NO SQL, NO database ──
         if mode in ("conversational", "out_of_scope", "refuse"):
-            reply = answer_conversational(req.question, mode=mode)
+            reply = await asyncio.to_thread(answer_conversational, req.question, mode=mode)
             # Persist so multi-turn context still flows, but no SQL/data.
             try:
-                add_turn(user_id, conversation_id, req.question, reply, "", query_result=None)
+                await asyncio.to_thread(add_turn, user_id, conversation_id, req.question, reply, "", query_result=None)
             except Exception:
                 pass
             yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': reply, 'sql': '', 'data': [], 'insights': '', 'report_eligible': False, 'row_count': 0, 'non_data': True}})}\n\n"
@@ -103,17 +107,62 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
         # ── Step 2a: REPORT intent → full pipeline ──
         if mode == "report":
             try:
-                import asyncio
                 from services.enhanced_pipeline import EnhancedReportPipeline
                 yield f"data: {_json.dumps({'stage': 'report_generating', 'data': {'message': 'Generating full report...'}})}\n\n"
                 pipeline = EnhancedReportPipeline(
                     enable_logging=False, enable_signals=True, enable_optimization=True,
                 )
-                result = asyncio.run(pipeline.generate(
+
+                # The pipeline itself runs in a worker thread (see
+                # EnhancedReportPipeline.generate) and is only checked for
+                # cancellation BETWEEN agent stages via should_stop — an in-flight
+                # LLM call always finishes, since the Anthropic SDK calls here are
+                # synchronous with no interruption point. `stop_event` is a
+                # threading.Event so it's safe to read from the worker thread
+                # while this coroutine sets it from the event loop.
+                stop_event = threading.Event()
+
+                pipeline_task = asyncio.ensure_future(pipeline.generate(
                     question=req.question, provider="claude", force_refresh=False,
+                    should_stop=stop_event.is_set,
                 ))
+
+                async def _poll_disconnect():
+                    while not await request.is_disconnected():
+                        await asyncio.sleep(0.5)
+
+                disconnect_task = asyncio.ensure_future(_poll_disconnect())
+                done, pending = await asyncio.wait(
+                    {pipeline_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if pipeline_task in done:
+                    disconnect_task.cancel()
+                    result = pipeline_task.result()
+                else:
+                    # Client disconnected first — signal the pipeline to stop at
+                    # the next stage boundary and wait for it to wind down
+                    # cleanly (the in-flight agent call still finishes; only the
+                    # NEXT agent is skipped).
+                    logger.info(
+                        "ASK report | client disconnected (user=%s conv=%s) — signalling "
+                        "pipeline to stop before its next agent stage",
+                        user_id, conversation_id,
+                    )
+                    stop_event.set()
+                    result = await pipeline_task
+
                 result["mode"] = "report"
-                yield f"data: {_json.dumps({'stage': 'complete', 'data': _json.loads(_json.dumps(result, default=str))})}\n\n"
+                if result.get("status") == "cancelled":
+                    logger.info(
+                        "ASK report | generation CANCELLED (user=%s conv=%s) — question: %s",
+                        user_id, conversation_id, req.question[:120],
+                    )
+                    # The client already disconnected, so nothing is listening on
+                    # this stream — yielding is harmless but won't be received.
+                    yield f"data: {_json.dumps({'stage': 'cancelled', 'data': _json.loads(_json.dumps(result, default=str))})}\n\n"
+                else:
+                    yield f"data: {_json.dumps({'stage': 'complete', 'data': _json.loads(_json.dumps(result, default=str))})}\n\n"
             except Exception as exc:
                 logger.error("ASK report error: %s", exc)
                 yield f"data: {_json.dumps({'stage': 'complete', 'data': {'mode': 'chat', 'answer': f'Report generation failed: {exc}', 'sql': '', 'data': [], 'insights': '', 'report_eligible': True, 'row_count': 0}})}\n\n"

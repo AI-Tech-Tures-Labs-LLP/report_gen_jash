@@ -341,7 +341,7 @@ export default function ReportPage() {
                     <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: gradient }} />
                     <div style={{ fontSize: "0.64rem", color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: "0.45rem", lineHeight: 1.3 }}>{k.label}</div>
                     <div style={{ fontSize: "1.6rem", fontWeight: 700, color: k.error ? "#ef4444" : t.text, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
-                      {k.error ? "Error" : formatKPIValue(k.value, k.format)}
+                      {k.error ? "Error" : (k.value_inr || k.value_display || formatKPIValue(k.value, k.format))}
                     </div>
                     {editMode && <DeleteBtn t={t} onClick={() => deleteComponent("kpi", rawIdx)} />}
                   </div>

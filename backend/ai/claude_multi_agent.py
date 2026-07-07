@@ -20,7 +20,7 @@ import logging
 import re
 import time
 from datetime import date
-from typing import Any
+from typing import Any, Callable
 
 from core import config
 
@@ -42,6 +42,17 @@ from db.relationships import format_relationships
 from db.profiler import get_data_profile
 
 logger = logging.getLogger(__name__)
+
+
+class GenerationCancelled(Exception):
+    """Raised when the caller's should_stop() reports the client disconnected.
+
+    Only ever raised BETWEEN agent stages (at a boundary), never mid-agent —
+    an in-flight LLM call always finishes; this just stops the NEXT one from
+    starting, since the synchronous Anthropic SDK calls have no interruption
+    point of their own.
+    """
+
 
 # ── Model aliases ─────────────────────────────────────────────────────────────
 _SONNET = config.CLAUDE_MODEL        # Hard SQL (cross-domain, fan-out, many joins)
@@ -1673,13 +1684,29 @@ class ClaudeReportPipeline:
 
 
 
-    def generate(self, question: str, filters: dict | None = None, force_refresh: bool = False) -> dict[str, Any]:
+    def generate(
+        self, question: str, filters: dict | None = None, force_refresh: bool = False,
+        should_stop: "Callable[[], bool] | None" = None,
+    ) -> dict[str, Any]:
         """Generate a complete report using the 6-agent pipeline.
 
         Supports two modes:
         - STANDARD_REPORT: Traditional KPI + chart dashboard
         - DRIFT_INVESTIGATION: Full drift card with causal decomposition
+
+        `should_stop`, if given, is checked BETWEEN agent stages (never mid-agent
+        — the Anthropic SDK calls here are synchronous with no interruption
+        point). If it returns True, generation stops before starting the next
+        agent and raises GenerationCancelled, saving the cost/time of every
+        agent that hadn't started yet.
         """
+        def _check_cancelled(stage_name: str) -> None:
+            if should_stop is not None and should_stop():
+                logger.info(
+                    "Claude pipeline CANCELLED by client before stage '%s' — question: %s",
+                    stage_name, question[:120],
+                )
+                raise GenerationCancelled(f"Client disconnected before stage: {stage_name}")
         if "sales" in question.lower() and "performance" in question.lower():
             return _get_hardcoded_sales_performance_report()
 
@@ -1705,6 +1732,7 @@ class ClaudeReportPipeline:
         )
 
         try:
+            _check_cancelled("Agent 1: Context + Signal Classification")
             # ── Agent 1: Context + Signal Classification ───────────────────
             _agent_header(*_AGENTS_STANDARD[0])
             t0 = time.time()
@@ -1735,6 +1763,7 @@ class ClaudeReportPipeline:
                     f"Tables   : {', '.join(context.get('relevant_tables', [])[:6])}",
                 ])
 
+            _check_cancelled("Agent 2: Business Analyst")
             # ── Agent 2: Business Analyst Agent ───────────────────────────
             _agent_header(*_AGENTS[1])
             t0 = time.time()
@@ -1747,6 +1776,7 @@ class ClaudeReportPipeline:
                 f"Charts  : {', '.join(chart_titles)}",
             ])
 
+            _check_cancelled("Agent 3: SQL Agent")
             # ── Agent 3: SQL Agent ─────────────────────────────────────────
             _agent_header(*_AGENTS[2])
             t0 = time.time()
@@ -1775,6 +1805,7 @@ class ClaudeReportPipeline:
             # ── SQL Traceability Log ──────────────────────────────────────
             self._log_sql_traceability(report_with_data)
 
+            _check_cancelled("Agents 4-5: Data Analyst + Report Writer")
             # ── Agents 4 & 5: Data Analyst + Report Writer ────────────────
             # STANDARD mode: DA is validate-only (does NOT mutate data), so DA and
             # the Report Writer can run CONCURRENTLY from the same SQL output — the
@@ -1824,6 +1855,7 @@ class ClaudeReportPipeline:
                 f"Insights  : {ins_count} generated",
             ])
 
+            _check_cancelled("Agent 6: QA")
             # ── Agent 6: QA Agent ─────────────────────────────────────────
             _agent_header(*_AGENTS[5])
             t0 = time.time()
@@ -1950,6 +1982,17 @@ class ClaudeReportPipeline:
                 }
 
             return response_payload
+
+        except GenerationCancelled as exc:
+            total_elapsed = time.time() - pipeline_start
+            _tee(f"\n  {_c(f'PIPELINE CANCELLED after {total_elapsed:.1f}s: {exc}', _YELLOW, _BOLD)}\n")
+            logger.info("Claude pipeline cancelled by client after %.1fs: %s", total_elapsed, exc)
+            return {
+                "mode": "report",
+                "status": "cancelled",
+                "error": str(exc),
+                "report": None,
+            }
 
         except Exception as exc:
             total_elapsed = time.time() - pipeline_start

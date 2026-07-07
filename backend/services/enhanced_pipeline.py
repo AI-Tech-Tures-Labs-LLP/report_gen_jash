@@ -7,10 +7,11 @@ Wraps the existing ClaudeReportPipeline with:
 - Performance optimizations (caching, batching)
 """
 
+import asyncio
 import uuid
 import time
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
 
 from ai.claude_multi_agent import ClaudeReportPipeline
@@ -82,17 +83,21 @@ class EnhancedReportPipeline:
         filters: Optional[Dict] = None,
         provider: str = "claude",
         force_refresh: bool = False,
-        trace_id: Optional[str] = None
+        trace_id: Optional[str] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """Generate a report with full traceability and intelligence
-        
+
         Args:
             question: User's natural language question
             filters: Optional filters (date range, status, etc.)
             provider: LLM provider (claude, groq, etc.)
             force_refresh: Bypass cache for fresh generation
             trace_id: Optional existing trace ID (for continuing a trace)
-            
+            should_stop: Optional callable checked BETWEEN agent stages (never
+                mid-agent) — if it returns True, generation stops before the
+                next agent starts instead of running the full 6-agent chain.
+
         Returns:
             Enhanced report with trace_id, signals, and performance metrics
         """
@@ -113,14 +118,33 @@ class EnhancedReportPipeline:
             )
         
         try:
-            # Call base pipeline
-            base_result = self._call_base_pipeline(
+            # Call base pipeline in a worker thread — it's fully synchronous
+            # (blocking Anthropic SDK calls with no internal await points), so
+            # running it inline here would block this coroutine's event loop and
+            # starve any concurrent disconnect-poller the caller is racing this
+            # task against, making should_stop() never get a chance to be checked
+            # in time between stages.
+            base_result = await asyncio.to_thread(
+                self._call_base_pipeline,
                 question=question,
                 filters=filters,
                 provider=provider,
-                force_refresh=force_refresh
+                force_refresh=force_refresh,
+                should_stop=should_stop,
             )
-            
+
+            # The base pipeline caught GenerationCancelled internally and returned
+            # a {"status": "cancelled", ...} dict rather than raising — surface that
+            # distinctly instead of treating it as a normal report result.
+            if base_result.get('status') == 'cancelled':
+                logger.info(f"[{trace_id[:8]}] Pipeline cancelled by client — stopped early, agents after the cancellation point never ran.")
+                return {
+                    'trace_id': trace_id,
+                    'status': 'cancelled',
+                    'error': base_result.get('error', 'Cancelled by client'),
+                    'report': None,
+                }
+
             # Extract report
             report = base_result.get('report', {})
             intent_mode = base_result.get('intent_mode', 'STANDARD_REPORT')
@@ -208,13 +232,15 @@ class EnhancedReportPipeline:
         question: str,
         filters: Optional[Dict],
         provider: str,
-        force_refresh: bool
+        force_refresh: bool,
+        should_stop: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """Call the base Claude pipeline (synchronous wrapper)"""
         return self.base_pipeline.generate(
             question=question,
             filters=filters,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
+            should_stop=should_stop,
         )
     
     async def _enhance_report(
