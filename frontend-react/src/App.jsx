@@ -9,11 +9,11 @@ import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
 
 const CHIPS = [
-  { q: "What is the total revenue this year?",                         label: "Total revenue this year" },
-  { q: "Top 10 customers by revenue",                                  label: "Top 10 customers" },
-  { q: "Which vendor has the highest purchase order value?",           label: "Top vendor by PO value" },
-  { q: "What is the average order value?",                             label: "Average order value" },
-  { q: "Show me the current inventory and stock status",               label: "Inventory & stock status" },
+  { q: "What is total revenue in the last 30 days compared to the prior 30 days?", label: "Revenue: last 30 days" },
+  { q: "Which are the last 5 products which were returned?",           label: "Last 5 products returned" },
+  { q: "What is our current total inventory quantity on hand?",        label: "Total inventory on hand" },
+  { q: "How many orders are currently unpaid or partially paid?",      label: "Unpaid / partial invoices" },
+  { q: "What is our average profit margin this quarter?",              label: "Avg profit margin" },
 ];
 
 

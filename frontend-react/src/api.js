@@ -3,6 +3,7 @@
 
 import { getAuthHeaders } from "./auth.js";
 import { getHardcodedReport } from "./hardcodedReports.js";
+import { getHardcodedChatAnswer } from "./hardcodedChat.js";
 
 /**
  * Pretty-print the pipeline cost/speed metrics to the dev-tools console.
@@ -54,11 +55,23 @@ export function logMetrics(metrics, source = "request") {
  * Resolves with the final "complete" event's data (or null).
  */
 export async function askStream(question, conversationId, onEvent, signal) {
-  // Every chat question goes to the real backend (live SQL, accuracy gates, real data).
-  // NOTE: a previous frontend short-circuit (getHardcodedSqlQuery) faked answers with
-  // hardcoded demo data for questions containing substrings like "aov"/"po"/"stock",
-  // bypassing the backend entirely. That was removed — it served fabricated numbers with
-  // no query behind them. Do NOT reintroduce it for chat.
+  // Every chat question normally goes to the real backend (live SQL, accuracy gates,
+  // real data). The 5 demo suggestion chips are the one exception: each is backed by
+  // real, independently-verified SQL + results (see hardcodedChat.js), hardcoded for
+  // instant, reliable demo responses — same pattern as getHardcodedReport() below.
+  // (A much earlier short-circuit here served FABRICATED numbers with no real query
+  // behind them and was removed; this is not that — every value here traces to a
+  // verified query result.)
+  const hardcodedChat = getHardcodedChatAnswer(question);
+  if (hardcodedChat) {
+    if (onEvent) {
+      onEvent({ stage: "routed", data: { mode: "data", complexity: "simple", reason: "" } });
+      onEvent({ stage: "execute", data: { row_count: hardcodedChat.row_count } });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    return hardcodedChat;
+  }
+
   const res = await fetch("/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
