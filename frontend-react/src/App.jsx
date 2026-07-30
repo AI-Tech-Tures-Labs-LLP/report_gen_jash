@@ -8,6 +8,7 @@ import ChatMessage from "./components/ChatMessage.jsx";
 import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
 import { CANNED_CHAT_CHIPS, getCannedChat } from "./cannedChats.js";
+import { apiUrl } from "./config.js";
 
 // Suggestion chips = the ten canned chat turns (real saved answers, see
 // cannedChats.js). Clicking one replays its stored answer after a short delay;
@@ -113,7 +114,7 @@ export default function App() {
 
   async function initConversations() {
     try {
-      const res = await fetch("/conversations", { headers: getAuthHeaders() });
+      const res = await fetch(apiUrl("/conversations"), { headers: getAuthHeaders() });
       if (!res.ok) return;
       const mongoConvs = await res.json();
 
@@ -143,7 +144,7 @@ export default function App() {
 
   async function syncToMongo(cId, title, msgs) {
     try {
-      const res = await fetch("/conversations", {
+      const res = await fetch(apiUrl("/conversations"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ conv_id: cId, title, messages: msgs }),
@@ -156,7 +157,7 @@ export default function App() {
 
   async function deleteFromMongo(cId) {
     try {
-      const res = await fetch(`/conversations/${cId}`, {
+      const res = await fetch(apiUrl(`/conversations/${cId}`), {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
@@ -359,7 +360,7 @@ export default function App() {
   async function loadConvFromMongo(targetConvId) {
     isLoadingConv.current = true; // prevent sync useEffect from firing during load
     try {
-      const res = await fetch(`/conversations/${targetConvId}`, { headers: getAuthHeaders() });
+      const res = await fetch(apiUrl(`/conversations/${targetConvId}`), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.messages && data.messages.length > 0) {
@@ -465,7 +466,7 @@ export default function App() {
     });
     // Sync just the title to MongoDB (PATCH — no message reload).
     try {
-      const res = await fetch(`/conversations/${convIdToRename}`, {
+      const res = await fetch(apiUrl(`/conversations/${convIdToRename}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ title: newTitle }),

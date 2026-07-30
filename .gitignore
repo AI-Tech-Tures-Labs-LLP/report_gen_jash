@@ -7,8 +7,11 @@ venv/
 .venv/
 
 # Local environment / secrets
+# Covers backend/.env and frontend-react/.env — these hold real values and must
+# never be committed. The .example templates ARE committed, so re-include them.
 .env
 .env.*
+!.env.example
 
 # Data files
 *.xlsx

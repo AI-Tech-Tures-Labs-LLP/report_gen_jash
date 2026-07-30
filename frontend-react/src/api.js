@@ -2,6 +2,7 @@
 // backend /ask endpoint (intent router) and streams SSE events back.
 
 import { getAuthHeaders } from "./auth.js";
+import { apiUrl } from "./config.js";
 import { getHardcodedReport } from "./hardcodedReports.js";
 
 /**
@@ -59,7 +60,7 @@ export async function askStream(question, conversationId, onEvent, signal) {
   // hardcoded demo data for questions containing substrings like "aov"/"po"/"stock",
   // bypassing the backend entirely. That was removed — it served fabricated numbers with
   // no query behind them. Do NOT reintroduce it for chat.
-  const res = await fetch("/ask", {
+  const res = await fetch(apiUrl("/ask"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ question, conversation_id: conversationId }),
@@ -112,7 +113,7 @@ export async function generateReport(question) {
     return new Promise((resolve) => setTimeout(() => resolve(hardcoded), HARDCODED_REPORT_DELAY_MS));
   }
 
-  const res = await fetch("/report", {
+  const res = await fetch(apiUrl("/report"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question }),
@@ -166,7 +167,7 @@ export async function fetchReport(reportId, { retries = 6, delayMs = 400 } = {})
   const { getAuthHeaders } = await import("./auth.js");
   let lastStatus = 0;
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(`/reports/${encodeURIComponent(reportId)}`, {
+    const res = await fetch(apiUrl(`/reports/${encodeURIComponent(reportId)}`), {
       headers: getAuthHeaders(),
     });
     if (res.ok) return res.json();
@@ -183,7 +184,7 @@ export async function fetchReport(reportId, { retries = 6, delayMs = 400 } = {})
 export async function updateReportData(reportId, reportData) {
   try {
     const { getAuthHeaders } = await import("./auth.js");
-    const res = await fetch(`/reports/${encodeURIComponent(reportId)}`, {
+    const res = await fetch(apiUrl(`/reports/${encodeURIComponent(reportId)}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
       body: JSON.stringify({ report_data: reportData }),
@@ -198,7 +199,7 @@ export async function updateReportData(reportId, reportData) {
 async function syncReportToMongo(reportId, question, reportData, convId) {
   try {
     const { getAuthHeaders } = await import("./auth.js");
-    const res = await fetch("/reports/save", {
+    const res = await fetch(apiUrl("/reports/save"), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
       body: JSON.stringify({

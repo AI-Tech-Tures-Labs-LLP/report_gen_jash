@@ -1,5 +1,7 @@
 // Authentication helper — manages JWT tokens and auth API calls.
 
+import { apiUrl } from "./config.js";
+
 const TOKEN_KEY = "sqlbot_auth_token";
 const USER_KEY = "sqlbot_auth_user";
 
@@ -61,7 +63,7 @@ export function logout() {
 
 /** Register a new user. Returns { token, user }. */
 export async function register(email, password, name) {
-  const res = await fetch("/auth/register", {
+  const res = await fetch(apiUrl("/auth/register"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, name }),
@@ -74,7 +76,7 @@ export async function register(email, password, name) {
 
 /** Log in an existing user. Returns { token, user }. */
 export async function login(email, password) {
-  const res = await fetch("/auth/login", {
+  const res = await fetch(apiUrl("/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -90,7 +92,7 @@ export async function validateSession() {
   const token = getToken();
   if (!token) return null;
   try {
-    const res = await fetch("/auth/me", {
+    const res = await fetch(apiUrl("/auth/me"), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
