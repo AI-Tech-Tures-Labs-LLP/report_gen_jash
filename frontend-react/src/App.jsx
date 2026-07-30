@@ -7,14 +7,16 @@ import { CHAT_STEPS, MIN_STEP_MS, stepIndexForStage, rowCountSuffix, reasoningFo
 import ChatMessage from "./components/ChatMessage.jsx";
 import ReportOffer from "./components/ReportOffer.jsx";
 import ReportSuccess from "./components/ReportSuccess.jsx";
+import { CANNED_CHAT_CHIPS, getCannedChat } from "./cannedChats.js";
 
-const CHIPS = [
-  { q: "What is the total revenue this year?",                         label: "Total revenue this year" },
-  { q: "Top 10 customers by revenue",                                  label: "Top 10 customers" },
-  { q: "Which vendor has the highest purchase order value?",           label: "Top vendor by PO value" },
-  { q: "What is the average order value?",                             label: "Average order value" },
-  { q: "Show me the current inventory and stock status",               label: "Inventory & stock status" },
-];
+// Suggestion chips = the ten canned chat turns (real saved answers, see
+// cannedChats.js). Clicking one replays its stored answer after a short delay;
+// anything the user TYPES still goes to the live backend.
+const CHIPS = CANNED_CHAT_CHIPS;
+
+// How long to hold a canned chat answer before showing it, so the progress
+// steps animate instead of the answer appearing instantly.
+const CANNED_CHAT_DELAY_MS = 3_000;
 
 
 // Hardcoded report queries — clicking these calls /report directly,
@@ -49,6 +51,9 @@ export default function App() {
   const shownStepRef = useRef(-1);   // step currently rendered
   const lastAdvanceRef = useRef(0);  // timestamp of the last visible advance
   const paceTimerRef = useRef(null); // pending delayed advance
+  // Pending timers for the canned-chat replay, so Stop / unmount can cancel them
+  // instead of letting an answer land in a conversation the user already left.
+  const cannedTimersRef = useRef([]);
   // Resume the last-open conversation on reload; only mint a fresh one if there's none.
   const [convId, setConvId] = useState(() => loadActiveConvId() || newConversationId());
   const [convs, setConvs] = useState(() => loadConversations());
@@ -216,6 +221,17 @@ export default function App() {
     else paceTimerRef.current = setTimeout(doAdvance, wait);
   }
 
+  // Cancel any in-flight canned-chat replay. Kept separate from resetProgress()
+  // because the replay's own final timer calls resetProgress() — clearing the
+  // timers there would cancel the callback that is currently running.
+  function cancelCannedReplay() {
+    cannedTimersRef.current.forEach(clearTimeout);
+    cannedTimersRef.current = [];
+  }
+
+  // Drop any pending replay if the component goes away mid-answer.
+  useEffect(() => cancelCannedReplay, []);
+
   function resetProgress() {
     if (paceTimerRef.current) { clearTimeout(paceTimerRef.current); paceTimerRef.current = null; }
     stepRef.current = -1;
@@ -249,6 +265,31 @@ export default function App() {
       saveConversations(next);
       return next;
     });
+
+    // ── Canned chat path ──────────────────────────────────────────────────
+    // One of the ten saved questions (chip click, or the exact question typed):
+    // replay the stored answer instead of re-running the pipeline. Steps are
+    // driven on a timer here because there is no SSE stream to drive them.
+    const canned = getCannedChat(q);
+    if (canned) {
+      const perStep = CANNED_CHAT_DELAY_MS / CHAT_STEPS.length;
+      for (let i = 1; i < CHAT_STEPS.length; i++) {
+        cannedTimersRef.current.push(setTimeout(() => {
+          stepRef.current = i;
+          paceToStep(i);
+        }, perStep * i));
+      }
+      cannedTimersRef.current.push(setTimeout(() => {
+        setRowCount(canned.row_count ?? (canned.data || []).length);
+        pushMessage({
+          role: "ai", data: canned, showOffer: canned.report_eligible !== false,
+          question: q, ts: new Date().toISOString(),
+        });
+        setLoading(false);
+        resetProgress();
+      }, CANNED_CHAT_DELAY_MS));
+      return;
+    }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -707,7 +748,17 @@ export default function App() {
             />
             {loading ? (
               <button
-                onClick={() => abortRef.current?.abort()}
+                onClick={() => {
+                  // A canned replay has no in-flight request to abort — cancel its
+                  // timers and clear the loading state directly.
+                  if (cannedTimersRef.current.length > 0) {
+                    cancelCannedReplay();
+                    setLoading(false);
+                    resetProgress();
+                    return;
+                  }
+                  abortRef.current?.abort();
+                }}
                 title="Stop generating"
                 style={{
                   border: "none", borderRadius: 10, width: 36, height: 36, flexShrink: 0,
