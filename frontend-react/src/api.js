@@ -96,11 +96,20 @@ export async function askStream(question, conversationId, onEvent, signal) {
   return finalData;
 }
 
+// How long to stall a hardcoded report before resolving it. Applies to all five
+// canned reports (sales performance / gold analysis / customer analytics /
+// vendor and po / monthly revenue) — they're matched in getHardcodedReport and
+// returned from memory, so without this they'd appear instantly.
+const HARDCODED_REPORT_DELAY_MS = 12_000;
+
 /** Generate a full report directly (used by the "Generate Report" button). */
 export async function generateReport(question) {
   const hardcoded = getHardcodedReport(question);
   if (hardcoded) {
-    return new Promise((resolve) => setTimeout(() => resolve(hardcoded), 400));
+    // Hold the canned report behind a delay so the progress UI plays through
+    // instead of snapping to a finished report — a real generation takes far
+    // longer than an object lookup.
+    return new Promise((resolve) => setTimeout(() => resolve(hardcoded), HARDCODED_REPORT_DELAY_MS));
   }
 
   const res = await fetch("/report", {
