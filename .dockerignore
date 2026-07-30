@@ -17,3 +17,15 @@ venv/
 .ruff_cache/
 .report_cache/
 claude.md
+
+# Node deps + any local build output. The image runs `npm ci` and `npm run build`
+# itself (see backend/Dockerfile), so shipping these in the build context would
+# only bloat it — and a host-built dist/ could shadow the one we build.
+node_modules/
+frontend-react/dist/
+
+# Agent/editor config
+.claude/
+.windsurf/
+.idea/
+.vscode/

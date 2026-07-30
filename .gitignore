@@ -23,3 +23,7 @@ Thumbs.db
 
 # Runtime caches
 .report_cache/
+
+# Node / frontend build output (the image builds dist/ itself — see backend/Dockerfile)
+node_modules/
+frontend-react/dist/
