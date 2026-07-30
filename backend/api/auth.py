@@ -14,10 +14,12 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 from fastapi import APIRouter, HTTPException, Depends, Header
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+
+from sqlalchemy import text
 
 from core.config import JWT_SECRET, JWT_EXPIRY_DAYS
-from db.mongo import get_db
+from db.app_connection import get_app_engine
 
 logger = logging.getLogger("auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -87,6 +89,16 @@ def get_current_user(authorization: str = Header(None)) -> dict:
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.split(" ", 1)[1]
     payload = _decode_token(token)
+
+    # user_id must be a UUID — it is interpolated into `CAST(... AS uuid)` queries,
+    # and a stale token from the old Mongo build carries an ObjectId hex string,
+    # which would surface as a 500 instead of "log in again".
+    from uuid import UUID
+    try:
+        UUID(str(payload.get("user_id")))
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=401, detail="Invalid token — please log in again")
+
     return {"user_id": payload["user_id"], "email": payload["email"]}
 
 
@@ -95,40 +107,42 @@ def get_current_user(authorization: str = Header(None)) -> dict:
 @router.post("/register")
 def register(req: RegisterRequest):
     """Create a new user account."""
-    db = get_db()
-
     # Validate input
     if not req.email or not req.password or not req.name:
         raise HTTPException(status_code=400, detail="All fields are required")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-    # Check if email already exists
-    existing = db.users.find_one({"email": req.email.lower().strip()})
-    if existing:
-        raise HTTPException(status_code=409, detail="An account with this email already exists")
+    email = req.email.lower().strip()
 
-    # Create user
-    now = datetime.now(timezone.utc)
-    user_doc = {
-        "email": req.email.lower().strip(),
-        "password_hash": _hash_password(req.password),
-        "name": req.name.strip(),
-        "created_at": now,
-    }
-    result = db.users.insert_one(user_doc)
-    user_id = str(result.inserted_id)
+    with get_app_engine().begin() as conn:
+        existing = conn.execute(
+            text("SELECT 1 FROM users WHERE LOWER(email) = :email"),
+            {"email": email},
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="An account with this email already exists")
 
-    # Generate token
-    token = _create_token(user_id, user_doc["email"])
+        row = conn.execute(text("""
+            INSERT INTO users (email, password_hash, name)
+            VALUES (:email, :password_hash, :name)
+            RETURNING user_id, email, name, created_at
+        """), {
+            "email": email,
+            "password_hash": _hash_password(req.password),
+            "name": req.name.strip(),
+        }).fetchone()
+
+    user_id = str(row.user_id)
+    token = _create_token(user_id, row.email)
 
     return {
         "token": token,
         "user": {
             "id": user_id,
-            "email": user_doc["email"],
-            "name": user_doc["name"],
-            "created_at": now.isoformat(),
+            "email": row.email,
+            "name": row.name,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
         },
     }
 
@@ -136,27 +150,31 @@ def register(req: RegisterRequest):
 @router.post("/login")
 def login(req: LoginRequest):
     """Authenticate a user and return a JWT token."""
-    db = get_db()
+    with get_app_engine().connect() as conn:
+        user = conn.execute(text("""
+            SELECT user_id, email, name, password_hash, is_active, created_at
+            FROM users WHERE LOWER(email) = :email
+        """), {"email": req.email.lower().strip()}).fetchone()
 
-    # Find user
-    user = db.users.find_one({"email": req.email.lower().strip()})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Check password
-    if not _check_password(req.password, user["password_hash"]):
+    if not _check_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    user_id = str(user["_id"])
-    token = _create_token(user_id, user["email"])
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="This account has been deactivated")
+
+    user_id = str(user.user_id)
+    token = _create_token(user_id, user.email)
 
     return {
         "token": token,
         "user": {
             "id": user_id,
-            "email": user["email"],
-            "name": user["name"],
-            "created_at": user["created_at"].isoformat() if user.get("created_at") else None,
+            "email": user.email,
+            "name": user.name,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
         },
     }
 
@@ -164,16 +182,18 @@ def login(req: LoginRequest):
 @router.get("/me")
 def me(current_user: dict = Depends(get_current_user)):
     """Return the current user's profile (validates the JWT)."""
-    db = get_db()
-    from bson import ObjectId
+    with get_app_engine().connect() as conn:
+        user = conn.execute(text("""
+            SELECT user_id, email, name, created_at
+            FROM users WHERE user_id = CAST(:user_id AS uuid)
+        """), {"user_id": current_user["user_id"]}).fetchone()
 
-    user = db.users.find_one({"_id": ObjectId(current_user["user_id"])})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     return {
-        "id": str(user["_id"]),
-        "email": user["email"],
-        "name": user["name"],
-        "created_at": user["created_at"].isoformat() if user.get("created_at") else None,
+        "id": str(user.user_id),
+        "email": user.email,
+        "name": user.name,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
     }

@@ -1,4 +1,4 @@
-"""Conversation persistence API — save/load/delete user conversations in MongoDB.
+"""Conversation persistence API — save/load/delete user conversations in the app DB.
 
 Endpoints:
     GET    /conversations          → list user's conversations

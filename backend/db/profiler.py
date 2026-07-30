@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from db.app_connection import get_app_engine
 from db.connection import get_engine
 from db.schema import get_schema
 
@@ -35,7 +36,7 @@ _CACHE_KEY = "data_profile"
 
 def _ensure_cache_table() -> None:
     """Create system_cache table if it doesn't exist."""
-    engine = get_engine()
+    engine = get_app_engine()
     with engine.begin() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS system_cache (
@@ -49,7 +50,7 @@ def _ensure_cache_table() -> None:
 def _load_from_db() -> str | None:
     """Load profile from DB cache. Returns None if missing or too old."""
     try:
-        engine = get_engine()
+        engine = get_app_engine()
         with engine.connect() as conn:
             row = conn.execute(text(
                 "SELECT cache_value, built_at FROM system_cache WHERE cache_key = :k"
@@ -70,7 +71,7 @@ def _load_from_db() -> str | None:
 def _save_to_db(profile: str) -> None:
     """Persist profile string to DB so future startups are instant."""
     try:
-        engine = get_engine()
+        engine = get_app_engine()
         with engine.begin() as conn:
             conn.execute(text("""
                 INSERT INTO system_cache (cache_key, cache_value, built_at)

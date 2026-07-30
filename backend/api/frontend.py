@@ -54,7 +54,7 @@ def serve_frontend():
 def serve_report_view():
     """Report viewer — a client-side route, so hand back the SPA shell.
 
-    ReportPage reads ?id= from the URL and fetches the report from Mongo, so a
+    ReportPage reads ?id= from the URL and fetches the report from the app DB, so a
     hard refresh on this URL must still return index.html rather than 404.
     """
     return _index()

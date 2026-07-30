@@ -30,7 +30,7 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
     on the final event's `mode` ("report" | "chat").
 
     LOGIN-ONLY: requires a valid auth token. Conversation memory is stored per-user
-    in Mongo (db.user_data), keyed by (user_id, conversation_id) — the central business
+    in Postgres (db.user_data), keyed by (user_id, conversation_id) — the central business
     Postgres is no longer touched for chat history. Auth is resolved HERE (not inside
     the generator) so a bad token returns a clean 401 before the SSE stream starts.
     """
@@ -49,10 +49,10 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
 
         # ── Step 1: history fetch + intent classify + schema warm — all in parallel. ──
         # Three fully independent operations:
-        #   • history fetch  — MongoDB read, needs only (user_id, conv_id)
+        #   • history fetch  — app-DB read, needs only (user_id, conv_id)
         #   • intent classify — Haiku API call, needs only the question text
         #   • schema warm    — DB reads that populate module-level caches
-        # Running all three concurrently hides the ~100ms Mongo fetch and the
+        # Running all three concurrently hides the ~100ms history fetch and the
         # ~1.5s classifier behind the schema load that would happen anyway.
         from db.schema import format_schema as _warm_schema
         from db.relationships import format_relationships as _warm_rels
@@ -157,7 +157,7 @@ def ask_endpoint(req: QuestionRequest, current_user: dict = Depends(get_current_
                     # Per Joel's goal: ALWAYS offer a report on the fast-chat path.
                     result["report_eligible"] = True
                     # Yield the final event FIRST so the user gets their answer
-                    # immediately, then persist to Mongo in a background thread.
+                    # immediately, then persist to the app DB in a background thread.
                     # History is only needed on the NEXT question — the ~100ms
                     # write latency is fully hidden from the user.
                     yield f"data: {_json.dumps(event, default=str)}\n\n"

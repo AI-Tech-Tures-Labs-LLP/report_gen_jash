@@ -24,7 +24,7 @@ class SaveReportRequest(BaseModel):
 
 @router.post("/reports/save")
 def save_report_endpoint(req: SaveReportRequest, current_user: dict = Depends(get_current_user)):
-    """Persist a generated report to MongoDB (user-scoped via JWT)."""
+    """Persist a generated report to the app DB (user-scoped via JWT)."""
     from db.user_data import save_report
 
     save_report(

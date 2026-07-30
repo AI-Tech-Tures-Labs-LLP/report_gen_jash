@@ -5,8 +5,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Database ────────────────────────────────────────────────────────────────
+# ── Databases ───────────────────────────────────────────────────────────────
+# DATABASE_URL     → analytics DB (V2_inventory_management). READ-ONLY: this is
+#                    what the LLM writes SQL against. Never store app data here.
+# APP_DATABASE_URL → our own DB (stacklogix_reportgeneration): users,
+#                    conversations, reports, caches. Read-write, never exposed
+#                    to generated SQL.
 DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:universe@localhost:5432/postgres").strip()
+APP_DB_NAME: str = os.getenv("APP_DB_NAME", "stacklogix_reportgeneration").strip()
+
+
+def _derive_app_url(analytics_url: str, db_name: str) -> str:
+    """Swap the database name in a Postgres URL, keeping host/creds/params.
+
+    Used only when APP_DATABASE_URL is not set explicitly — the app DB normally
+    lives on the same RDS instance as the analytics DB.
+    """
+    import re
+    return re.sub(r"/[^/?]+(\?|$)", f"/{db_name}\\1", analytics_url)
+
+
+APP_DATABASE_URL: str = (
+    os.getenv("APP_DATABASE_URL", "").strip()
+    or _derive_app_url(DATABASE_URL, APP_DB_NAME)
+)
 
 # ── Anthropic (Claude) ──────────────────────────────────────────────────────
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -24,11 +46,6 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
 }
 _DEFAULT_PRICING = {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75}
 
-
-# ── MongoDB ─────────────────────────────────────────────────────────────────
-# Change MONGO_URI in your .env to connect to any MongoDB instance (local or Atlas).
-MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "sql_analyst")
 
 # ── JWT ──────────────────────────────────────────────────────────────────────
 JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production-use-a-long-random-string")
