@@ -3,10 +3,7 @@ import { getTheme } from "../theme.js";
 import { formatKPIValue, formatColumnName, isCurrencyColumn, formatNum } from "./format.js";
 import ChartCard from "./ChartCard.jsx";
 import ExplainModal from "./ExplainModal.jsx";
-import ModifyPanel from "./ModifyPanel.jsx";
-import FilterBar from "./FilterBar.jsx";
-import PlaceholderCard from "./PlaceholderCard.jsx";
-import { exportPDF, exportExcel } from "./exporters.js";
+import { exportPDF } from "./exporters.js";
 import { logMetrics, fetchReport, updateReportData } from "../api.js";
 
 export default function ReportPage() {
@@ -82,12 +79,6 @@ export default function ReportPage() {
     } catch { /* */ }
   }, [reportId]);
 
-  const updateReport = persist;
-
-  const applyFiltered = useCallback((newPayload) => {
-    setPayload((p) => ({ ...(p || {}), ...newPayload }));
-  }, []);
-
   const handleChartReady = useCallback((idx, instance) => {
     if (instance) chartInstances.current[idx] = instance;
     else delete chartInstances.current[idx];
@@ -106,38 +97,34 @@ export default function ReportPage() {
   const table = report.table;
   const insights = report.insights || [];
 
-  // KPIs shown: placeholders always; otherwise filter out empty/NaN values.
-  const kpiVisible = editMode
-    ? rawKpis
-    : rawKpis.filter((k) => {
-        if (k._placeholder) return false;
-        if (k.error) return true;
-        const v = k.value;
-        if (v === null || v === undefined || v === "") return false;
-        if (String(v).trim().toLowerCase() === "nan") return false;
-        // NOTE: the backend now re-executes each KPI's SQL and OWNS the value
-        // (label KPIs carry their real name, e.g. "Round"), so no special-case
-        // hiding of "which/top/best" KPIs is needed — just show what the API sends.
-        return true;
-      });
+  // KPIs shown: filter out empty/NaN values. (Visibility no longer depends on
+  // editMode — edit mode used to also reveal empty "placeholder" slots for the
+  // AI add-component flow, which has been removed.)
+  const kpiVisible = rawKpis.filter((k) => {
+    if (k.error) return true;
+    const v = k.value;
+    if (v === null || v === undefined || v === "") return false;
+    if (String(v).trim().toLowerCase() === "nan") return false;
+    // NOTE: the backend now re-executes each KPI's SQL and OWNS the value
+    // (label KPIs carry their real name, e.g. "Round"), so no special-case
+    // hiding of "which/top/best" KPIs is needed — just show what the API sends.
+    return true;
+  });
 
-  // Charts shown: placeholders always (edit mode); skip empty/errored/all-zero.
-  const chartVisible = editMode
-    ? rawCharts
-    : rawCharts.filter((c) => {
-        if (c._placeholder) return false;
-        if (c.error) return false;
-        if (!c.data || c.data.length === 0) return false;
-        const keys = Object.keys(c.data[0]);
-        if (keys.length < 2) return false;
-        const valueKeys = keys.slice(1);
-        const allZero = c.data.every((row) => valueKeys.every((k) => { const v = Number(row[k]); return isNaN(v) || v === 0; }));
-        return !allZero;
-      });
+  // Charts shown: skip empty/errored/all-zero.
+  const chartVisible = rawCharts.filter((c) => {
+    if (c.error) return false;
+    if (!c.data || c.data.length === 0) return false;
+    const keys = Object.keys(c.data[0]);
+    if (keys.length < 2) return false;
+    const valueKeys = keys.slice(1);
+    const allZero = c.data.every((row) => valueKeys.every((k) => { const v = Number(row[k]); return isNaN(v) || v === 0; }));
+    return !allZero;
+  });
 
   // ── Wide-chart placement (faithful port of shouldBeWide logic) ──────────
   const naturallyWide = chartVisible.map((c) =>
-    !c._placeholder && ["line", "area", "stackedbar"].includes((c.type || "bar").toLowerCase())
+    ["line", "area", "stackedbar"].includes((c.type || "bar").toLowerCase())
   );
   const shouldBeWide = [...naturallyWide];
   {
@@ -156,47 +143,32 @@ export default function ReportPage() {
   const rawChartIndex = (visIdx) => rawCharts.indexOf(chartVisible[visIdx]);
 
   // ── Edit-mode mutations ────────────────────────────────────────────────
+  // Delete removes the component outright. (It used to leave a `_placeholder`
+  // slot behind so an "Add KPI/Chart here" card could regenerate it via
+  // /report/modify — that AI add-component flow has been removed.)
   function deleteComponent(type, rawIdx) {
     const next = JSON.parse(JSON.stringify(report));
     const arr = type === "kpi" ? next.kpis : next.charts;
-    if (arr && rawIdx >= 0 && rawIdx < arr.length) arr[rawIdx] = { _placeholder: true };
+    if (arr && rawIdx >= 0 && rawIdx < arr.length) arr.splice(rawIdx, 1);
     persist(next);
   }
-  function removePlaceholder(type, rawIdx) {
-    const next = JSON.parse(JSON.stringify(report));
-    const arr = type === "kpi" ? next.kpis : next.charts;
-    if (arr && rawIdx >= 0) arr.splice(rawIdx, 1);
-    persist(next);
-  }
-  function addSlot(type) {
-    const next = JSON.parse(JSON.stringify(report));
-    if (type === "kpi") { next.kpis = next.kpis || []; next.kpis.push({ _placeholder: true, _autoOpen: true }); }
-    else { next.charts = next.charts || []; next.charts.push({ _placeholder: true, _autoOpen: true }); }
-    persist(next);
-  }
-  function onDrop(type, dstRawIdx, dstIsPlaceholder) {
+  function onDrop(type, dstRawIdx) {
     const d = drag.current;
     if (d.type !== type || d.idx < 0 || d.idx === dstRawIdx) return;
     const next = JSON.parse(JSON.stringify(report));
     const arr = type === "kpi" ? next.kpis : next.charts;
     if (!arr) return;
-    if (dstIsPlaceholder) {
-      const [item] = arr.splice(d.idx, 1);
-      const adjustedDst = d.idx < dstRawIdx ? dstRawIdx - 1 : dstRawIdx;
-      arr[adjustedDst] = item;
-    } else {
-      const [item] = arr.splice(d.idx, 1);
-      arr.splice(dstRawIdx, 0, item);
-    }
+    const [item] = arr.splice(d.idx, 1);
+    arr.splice(dstRawIdx, 0, item);
     drag.current = { type: null, idx: -1 };
     persist(next);
   }
 
-  const dragProps = (type, rawIdx, isPlaceholder) => editMode ? {
-    draggable: !isPlaceholder,
+  const dragProps = (type, rawIdx) => editMode ? {
+    draggable: true,
     onDragStart: (e) => { drag.current = { type, idx: rawIdx }; e.dataTransfer.effectAllowed = "move"; },
     onDragOver: (e) => { if (drag.current.type === type) e.preventDefault(); },
-    onDrop: (e) => { e.preventDefault(); e.stopPropagation(); onDrop(type, rawIdx, isPlaceholder); },
+    onDrop: (e) => { e.preventDefault(); e.stopPropagation(); onDrop(type, rawIdx); },
     onDragEnd: () => { drag.current = { type: null, idx: -1 }; },
   } : {};
 
@@ -220,12 +192,6 @@ export default function ReportPage() {
         <span style={{ flex: 1, fontSize: "0.875rem", fontWeight: 600, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {report.title || "Analytics Report"}
         </span>
-        {editMode && (
-          <>
-            <button onClick={() => addSlot("kpi")} className="rpt-toolbar-btn" style={topBtn(t)}>+ KPI</button>
-            <button onClick={() => addSlot("chart")} className="rpt-toolbar-btn" style={topBtn(t)}>+ Chart</button>
-          </>
-        )}
         <button onClick={() => setEditMode((e) => !e)} className="rpt-toolbar-btn"
           style={editMode ? topBtnActive(t) : topBtn(t)}>
           {editMode ? "✓ Done" : "Edit"}
@@ -237,12 +203,6 @@ export default function ReportPage() {
           </svg>
           PDF
         </button>
-        <button onClick={() => exportExcel(report)} className="rpt-toolbar-btn" style={topBtn(t)}>
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginRight: 4 }}>
-            <path d="M1 12h11M1 1h11M4 1v11M9 1v11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          Excel
-        </button>
       </div>
 
       {/* ── Page body ── */}
@@ -252,11 +212,6 @@ export default function ReportPage() {
           <div style={{ background: "#fef3c7", border: "1px solid #fbbf24", color: "#92400e", borderRadius: 8, padding: "0.55rem 0.85rem", marginBottom: "0.85rem", fontSize: "0.8rem", display: "flex", gap: "0.4rem", alignItems: "center" }}>
             <span>⚠</span> {loadError}
           </div>
-        )}
-
-        {/* Global filters — inline row ABOVE summary */}
-        {payload.applicable_filters && Object.keys(payload.applicable_filters).length > 0 && (
-          <FilterBar applicable={payload.applicable_filters} report={report} onApplied={applyFiltered} t={t} />
         )}
 
         {/* Summary — bullet points */}
@@ -290,15 +245,9 @@ export default function ReportPage() {
                   "linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)"
                 ];
                 const gradient = kpiGradients[i % kpiGradients.length];
-                if (k._placeholder) {
-                  return (
-                    <PlaceholderCard key={"kph" + rawIdx} phType="kpi" phIdx={rawIdx} report={report} t={t}
-                      autoOpen={k._autoOpen} onUpdate={persist} onRemove={() => removePlaceholder("kpi", rawIdx)} />
-                  );
-                }
                 return (
                   <div key={i} className="rpt-kpi-card"
-                    {...dragProps("kpi", rawIdx, false)}
+                    {...dragProps("kpi", rawIdx)}
                     style={{
                       background: t.bgCard, border: `1px solid ${t.border}`,
                       borderRadius: 10, overflow: "hidden",
@@ -328,20 +277,11 @@ export default function ReportPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.6rem", marginBottom: 0 }}>
               {chartVisible.map((c, i) => {
                 const rawIdx = rawChartIndex(i);
-                if (c._placeholder) {
-                  return (
-                    <div key={"cph" + rawIdx} {...dragProps("chart", rawIdx, true)} style={{ gridColumn: shouldBeWide[i] ? "1 / -1" : "auto" }}>
-                      <PlaceholderCard phType="chart" phIdx={rawIdx} report={report} t={t}
-                        autoOpen={c._autoOpen} onUpdate={persist} onRemove={() => removePlaceholder("chart", rawIdx)} />
-                    </div>
-                  );
-                }
                 return (
-                  <div key={i} {...dragProps("chart", rawIdx, false)}
+                  <div key={i} {...dragProps("chart", rawIdx)}
                     style={{ gridColumn: shouldBeWide[i] ? "1 / -1" : "auto", cursor: editMode ? "grab" : "default", position: "relative" }}>
                     <ChartCard
                       spec={c} chartIdx={rawIdx} themeMode={themeMode} t={t} wide={shouldBeWide[i]}
-                      report={report} onUpdateReport={persist}
                       onExplain={setExplain} onChartReady={handleChartReady} editMode={editMode}
                     />
                     {editMode && <DeleteBtn t={t} onClick={() => deleteComponent("chart", rawIdx)} />}
@@ -413,7 +353,6 @@ export default function ReportPage() {
       </div>
 
       {explain && <ExplainModal {...explain} t={t} onClose={() => setExplain(null)} />}
-      <ModifyPanel report={report} onUpdate={updateReport} t={t} />
     </div>
   );
 }
