@@ -1,4 +1,7 @@
-"""FastAPI application — AI SQL Analyst API and frontend server.
+"""FastAPI application — AI SQL Analyst API.
+
+API only: the React SPA is served by its own nginx container, which also
+reverse-proxies these API paths (see frontend-react/Dockerfile + docker-compose.yml).
 
 Thin assembler: creates the app, configures CORS, warms caches at startup, and
 includes the routers from the api/ layer. All route logic lives in api/*.
@@ -11,7 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import chat, reports, meta, frontend, auth, conversations
+from api import chat, reports, meta, auth, conversations
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s  %(name)s  %(message)s")
 logger = logging.getLogger("api")
@@ -66,12 +69,8 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(reports.router)
 app.include_router(meta.router)
-app.include_router(frontend.router)
 app.include_router(auth.router)
 app.include_router(conversations.router)
-
-# Static assets mount (must be registered on the app, not a router)
-frontend.mount_static(app)
 
 
 # ── Run ─────────────────────────────────────────────────────────────────────

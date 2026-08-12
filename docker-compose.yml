@@ -45,9 +45,6 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-      # API-only image: stops before the stage that embeds the SPA, so the Node
-      # build stage is skipped entirely here.
-      target: backend
     restart: unless-stopped
 
     expose:
