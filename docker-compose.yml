@@ -1,0 +1,79 @@
+# Dokploy "Compose" deployment for the AI SQL Analyst — split services.
+#
+#   frontend  nginx serving the Vite build; also reverse-proxies the API prefixes
+#             to `backend`, so the browser sees ONE origin (no CORS, and
+#             VITE_API_BASE_URL stays empty). This is the service to attach the
+#             domain to in Dokploy.
+#   backend   FastAPI/uvicorn, API only (--target backend skips the SPA build).
+#             Internal — never gets a domain of its own.
+#
+# No database service: DATABASE_URL / APP_DATABASE_URL point at existing Postgres
+# (RDS/Neon/Dokploy Postgres), so nothing is provisioned here.
+#
+# Both builds use the repo ROOT as context (the Dockerfiles COPY from backend/
+# and frontend-react/).
+#
+# Set every value from Dokploy -> Environment (see .env.example); Dokploy injects
+# that file as the compose .env, so ${VAR} below resolves from it.
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend-react/Dockerfile
+    restart: unless-stopped
+
+    # `expose` (not `ports`) — Traefik reaches the container over the shared
+    # dokploy-network, so nothing needs to be published on the host.
+    # Point the Dokploy domain at this service, container port 80.
+    expose:
+      - 80
+
+    environment:
+      PORT: 80
+      # Compose DNS name of the API container — resolved at container start by
+      # envsubst, not at build time.
+      BACKEND_ORIGIN: http://backend:7860
+
+    depends_on:
+      - backend
+
+    networks:
+      - dokploy-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      # API-only image: stops before the stage that embeds the SPA, so the Node
+      # build stage is skipped entirely here.
+      target: backend
+    restart: unless-stopped
+
+    expose:
+      - 7860
+
+    environment:
+      PORT: 7860
+
+      # ── Anthropic ─────────────────────────────────────────────────────────
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL:-claude-haiku-4-6}
+
+      # ── Databases ─────────────────────────────────────────────────────────
+      # DATABASE_URL     -> analytics DB the LLM writes SQL against (read-only)
+      # APP_DATABASE_URL -> users / conversations / reports (read-write)
+      DATABASE_URL: ${DATABASE_URL}
+      APP_DATABASE_URL: ${APP_DATABASE_URL}
+
+      # ── Auth ──────────────────────────────────────────────────────────────
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRY_DAYS: ${JWT_EXPIRY_DAYS:-7}
+
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true

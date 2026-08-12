@@ -5,6 +5,15 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
+@router.get("/health")
+def health():
+    """Liveness probe for Docker/Traefik. Deliberately does NOT touch Postgres or
+    Anthropic — it answers "is the process serving HTTP", so a slow DB does not
+    get the container killed while the startup cache warm-up is still running.
+    """
+    return {"status": "ok"}
+
+
 @router.get("/schema")
 def schema_endpoint():
     from db.schema import get_schema

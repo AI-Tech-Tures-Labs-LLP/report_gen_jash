@@ -1,0 +1,67 @@
+# nginx site config for the SPA container. Rendered by envsubst at startup —
+# ${BACKEND_ORIGIN} and ${PORT} come from the environment (see Dockerfile).
+
+server {
+    listen ${PORT};
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Reports embed large tables; keep gzip on for the JSON responses too.
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # Container-level probe. Does not reach the backend on purpose, so a slow API
+    # never marks the frontend unhealthy.
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+
+    # ── API proxying ─────────────────────────────────────────────────────────
+    # This prefix list mirrors API_PREFIXES in vite.config.js — the dev proxy and
+    # this config must agree, or a route works under `npm run dev` and 404s in
+    # production.
+    #
+    # The trailing (/|$) is load-bearing: it makes /report and /report/modify
+    # match while leaving /report-view alone. /report-view is a CLIENT-SIDE React
+    # route, and a bare ^/report would proxy it to the API instead.
+    location ~ ^/(ask|report|reports|history|schema|relationships|auth|conversations|health)(/|$) {
+        proxy_pass ${BACKEND_ORIGIN};
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Report generation runs several Claude calls plus SQL, so it can sit well
+        # past nginx's 60s default. Raised to 10 min to avoid a spurious 504.
+        proxy_connect_timeout 30s;
+        proxy_send_timeout    600s;
+        proxy_read_timeout    600s;
+
+        # Streamed/large responses should reach the browser as they arrive.
+        proxy_buffering off;
+
+        # Report payloads and Excel uploads are big.
+        client_max_body_size 50m;
+    }
+
+    # ── Static assets ────────────────────────────────────────────────────────
+    # Vite fingerprints everything in /assets, so it is safe to cache forever.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Everything else is a client-side route (/, /report-view, ...) — hand back
+    # the SPA shell and let the React router resolve it. index.html itself must
+    # never be cached, or users get a stale bundle reference after a deploy.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache";
+    }
+}
