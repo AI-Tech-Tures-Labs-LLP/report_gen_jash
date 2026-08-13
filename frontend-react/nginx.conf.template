@@ -1,6 +1,16 @@
 # nginx site config for the SPA container. Rendered by envsubst at startup —
 # ${BACKEND_ORIGIN} and ${PORT} come from the environment (see Dockerfile).
 
+# Docker's embedded DNS (127.0.0.11) — used so `backend` re-resolves on every
+# request instead of once at nginx startup. A literal `proxy_pass http://backend:7860`
+# resolves the hostname a single time and caches that IP for the container's
+# whole lifetime; when the backend container is recreated (redeploy, restart,
+# crash) it gets a new IP on the overlay network and nginx keeps sending
+# requests into the void until nginx itself restarts. Routing proxy_pass
+# through a variable forces a fresh DNS lookup (subject to `valid`) on each
+# request, so a backend-only redeploy no longer requires a frontend restart.
+resolver 127.0.0.11 valid=10s;
+
 server {
     listen ${PORT};
     server_name _;
@@ -29,7 +39,10 @@ server {
     # match while leaving /report-view alone. /report-view is a CLIENT-SIDE React
     # route, and a bare ^/report would proxy it to the API instead.
     location ~ ^/(ask|report|reports|history|schema|relationships|auth|conversations|health)(/|$) {
-        proxy_pass ${BACKEND_ORIGIN};
+        # Must be a variable (not a literal in proxy_pass) for the resolver
+        # directive above to take effect — see comment at the top of this file.
+        set $backend_upstream ${BACKEND_ORIGIN};
+        proxy_pass $backend_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
